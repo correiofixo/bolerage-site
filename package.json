@@ -1,0 +1,17 @@
+{
+  "name": "bolerage-fd",
+  "version": "1.0.0",
+  "description": "Site de sorteio e avaliacao da pelada do Bolerage F.D.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0"
+  }
+}

@@ -1,0 +1,669 @@
+/* ============================================================
+   Bolerage F.D. — Site de sorteio e avaliação da pelada
+   Backend Node.js + Express + SQLite (better-sqlite3)
+   ============================================================ */
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const Database = require('better-sqlite3');
+
+const PORT = process.env.PORT || 3000;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'bolerage.db');
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+
+/* ============================================================
+   ESQUEMA DO BANCO
+   ============================================================ */
+db.exec(`
+CREATE TABLE IF NOT EXISTS jogadores (
+  id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL,
+  pin TEXT NOT NULL,
+  posicao_padrao TEXT NOT NULL CHECK(posicao_padrao IN ('linha','goleiro')),
+  ativo INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  admin_pin TEXT NOT NULL,
+  min_rodadas INTEGER NOT NULL DEFAULT 4,
+  min_votos INTEGER NOT NULL DEFAULT 3,
+  simulado_now TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rodadas (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'aguardando_confirmacao'
+);
+
+CREATE TABLE IF NOT EXISTS confirmacoes (
+  id TEXT PRIMARY KEY,
+  rodada_id TEXT NOT NULL,
+  jogador_id TEXT NOT NULL,
+  confirmado_em TEXT,
+  desconfirmado_em TEXT,
+  UNIQUE(rodada_id, jogador_id)
+);
+
+CREATE TABLE IF NOT EXISTS times_sorteados (
+  id TEXT PRIMARY KEY,
+  rodada_id TEXT NOT NULL,
+  nome_time TEXT NOT NULL,
+  jogador_id TEXT NOT NULL,
+  papel_na_partida TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reservas (
+  id TEXT PRIMARY KEY,
+  rodada_id TEXT NOT NULL,
+  jogador_id TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rodada_meta (
+  rodada_id TEXT PRIMARY KEY,
+  modo_sorteio TEXT
+);
+
+CREATE TABLE IF NOT EXISTS votos (
+  id TEXT PRIMARY KEY,
+  rodada_id TEXT NOT NULL,
+  jogador_avaliado_id TEXT NOT NULL,
+  jogador_avaliador_id TEXT NOT NULL,
+  nota INTEGER NOT NULL,
+  criado_em TEXT NOT NULL,
+  UNIQUE(rodada_id, jogador_avaliado_id, jogador_avaliador_id)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  jogador_id TEXT,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  criado_em TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS eventos_log (
+  id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,
+  mensagem TEXT NOT NULL
+);
+`);
+
+/* ============================================================
+   SEED INICIAL
+   ============================================================ */
+function idGen(prefix){ return prefix + '_' + crypto.randomBytes(8).toString('hex'); }
+function nowISO(){ return new Date().toISOString(); }
+
+function logEvento(msg){
+  db.prepare('INSERT INTO eventos_log (id, ts, mensagem) VALUES (?,?,?)').run(idGen('e'), nowISO(), msg);
+}
+
+function seedSeNecessario(){
+  const totalJogadores = db.prepare('SELECT COUNT(*) c FROM jogadores').get().c;
+  if(totalJogadores === 0){
+    const insert = db.prepare('INSERT INTO jogadores (id,nome,pin,posicao_padrao,ativo) VALUES (?,?,?,?,1)');
+    for(let i=1;i<=22;i++) insert.run('j'+String(i).padStart(2,'0'), 'Jogador '+String(i).padStart(2,'0'), String(1000+i), 'linha');
+    for(let i=1;i<=3;i++) insert.run('g'+String(i).padStart(2,'0'), 'Goleiro '+String(i).padStart(2,'0'), String(2000+i), 'goleiro');
+    logEvento('Elenco inicial de exemplo criado (25 jogadores).');
+  }
+  const cfg = db.prepare('SELECT * FROM config WHERE id=1').get();
+  if(!cfg){
+    db.prepare('INSERT INTO config (id, admin_pin, min_rodadas, min_votos, simulado_now) VALUES (1,?,4,3,NULL)').run('9999');
+    logEvento('PIN administrativo inicial definido como 9999 — troque antes de usar com o grupo.');
+  }
+  const totalRodadas = db.prepare('SELECT COUNT(*) c FROM rodadas').get().c;
+  if(totalRodadas === 0){
+    const data = nextSundayFrom(todaySPDateStr());
+    const id = idGen('r');
+    db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(id, data, 'aguardando_confirmacao');
+    logEvento('Primeira rodada criada automaticamente para ' + data + '.');
+  }
+}
+
+/* ============================================================
+   DATA / FUSO HORÁRIO (America/Sao_Paulo, seguro p/ horário de verão)
+   ============================================================ */
+function pad(n){ return String(n).padStart(2,'0'); }
+
+function spWallClockNow(){
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+  }).formatToParts(new Date());
+  const g = t => parts.find(p=>p.type===t).value;
+  return g('year')+'-'+g('month')+'-'+g('day')+'T'+g('hour')+':'+g('minute')+':'+g('second');
+}
+
+function nowSP(){
+  const cfg = db.prepare('SELECT simulado_now FROM config WHERE id=1').get();
+  if(cfg && cfg.simulado_now) return cfg.simulado_now + ':00';
+  return spWallClockNow();
+}
+
+function addDaysToDateStr(dateStr, days){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d));
+  dt.setUTCDate(dt.getUTCDate()+days);
+  return dt.getUTCFullYear()+'-'+pad(dt.getUTCMonth()+1)+'-'+pad(dt.getUTCDate());
+}
+function weekdayOf(dateStr){
+  const [y,m,d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y,m-1,d)).getUTCDay();
+}
+function nextSundayFrom(dateStr){
+  let d = dateStr;
+  while(weekdayOf(d)!==0){ d = addDaysToDateStr(d,1); }
+  return d;
+}
+function todaySPDateStr(){ return nowSP().slice(0,10); }
+
+function janelas(rodadaData){
+  return {
+    confirmOpen:  addDaysToDateStr(rodadaData,-1)+'T08:00:00',
+    confirmClose: rodadaData+'T08:00:00',
+    voteOpen:     rodadaData+'T10:00:00',
+    voteClose:    rodadaData+'T18:00:00',
+  };
+}
+
+function computeFase(rodada){
+  if(!rodada) return {chave:'sem_rodada', label:'Nenhuma rodada agendada', cor:'muted'};
+  const now = nowSP();
+  const j = janelas(rodada.data);
+  if(rodada.status==='nao_viabilizado') return {chave:'nao_viabilizado', label:'Racha não viabilizado nesta semana', cor:'red'};
+  if(rodada.status==='sorteado'){
+    if(now < j.voteOpen) return {chave:'sorteado_aguardando_votacao', label:'Times sorteados — votação abre domingo às 10h', cor:'gold'};
+    if(now < j.voteClose) return {chave:'votacao_aberta', label:'Votação aberta até as 18h', cor:'green'};
+    return {chave:'encerrada', label:'Rodada encerrada', cor:'muted'};
+  }
+  if(now < j.confirmOpen) return {chave:'pre_confirmacao', label:'Confirmação abre sábado às 8h', cor:'muted'};
+  if(now < j.confirmClose) return {chave:'confirmacao_aberta', label:'Confirmação aberta até domingo às 8h', cor:'green'};
+  return {chave:'aguardando_sorteio', label:'Confirmação encerrada — aguardando sorteio', cor:'gold'};
+}
+
+/* ============================================================
+   CONSULTAS AUXILIARES
+   ============================================================ */
+function getJogadores(){ return db.prepare('SELECT * FROM jogadores').all(); }
+function getJogadorPorId(id){ return db.prepare('SELECT * FROM jogadores WHERE id=?').get(id); }
+function getConfig(){ return db.prepare('SELECT * FROM config WHERE id=1').get(); }
+function getRodadas(){ return db.prepare('SELECT * FROM rodadas ORDER BY data DESC').all(); }
+function getRodadaPorId(id){ return db.prepare('SELECT * FROM rodadas WHERE id=?').get(id); }
+function getRodadaAtual(){
+  // "rodada atual" = a mais antiga que ainda não está finalizada (encerrada ou não viabilizada).
+  // Isso evita que criar a rodada da próxima semana "esconda" uma rodada ainda em andamento
+  // (ex.: votação aberta) na semana corrente.
+  const rows = db.prepare('SELECT * FROM rodadas ORDER BY data ASC').all();
+  if(!rows.length) return null;
+  for(const r of rows){
+    atualizarStatusSeNecessario(r);
+    const fase = computeFase(r);
+    if(fase.chave!=='encerrada' && fase.chave!=='nao_viabilizado') return r;
+  }
+  return rows[rows.length-1]; // todas finalizadas: mostra a mais recente
+}
+function getConfirmadosAtivos(rodadaId){
+  const rows = db.prepare(`
+    SELECT j.* FROM confirmacoes c
+    JOIN jogadores j ON j.id = c.jogador_id
+    WHERE c.rodada_id = ? AND c.desconfirmado_em IS NULL
+  `).all(rodadaId);
+  return rows;
+}
+function calcViabilidade(rodadaId){
+  const confirmados = getConfirmadosAtivos(rodadaId);
+  const linha = confirmados.filter(j=>j.posicao_padrao==='linha').length;
+  const goleiro = confirmados.filter(j=>j.posicao_padrao==='goleiro').length;
+  const viaPadrao = linha>=10 && goleiro>=2;
+  const viaConversao = linha>=12;
+  return {viavel: viaPadrao||viaConversao, linha, goleiro, viaConversao: !viaPadrao && viaConversao};
+}
+
+// verifica/marca automaticamente como não viabilizado quando a janela fechou
+function atualizarStatusSeNecessario(rodada){
+  if(rodada.status === 'aguardando_confirmacao'){
+    const j = janelas(rodada.data);
+    if(nowSP() >= j.confirmClose){
+      const v = calcViabilidade(rodada.id);
+      if(!v.viavel){
+        db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('nao_viabilizado', rodada.id);
+        logEvento('Rodada de '+rodada.data+' marcada como não viabilizada automaticamente ('+v.linha+' linha, '+v.goleiro+' goleiros).');
+        rodada.status = 'nao_viabilizado';
+      }
+    }
+  }
+  return rodada;
+}
+
+/* ============================================================
+   RANKING
+   ============================================================ */
+function calcularRanking(){
+  const rows = db.prepare(`
+    SELECT v.jogador_avaliado_id as jogadorId, t.papel_na_partida as papel, v.nota as nota
+    FROM votos v
+    JOIN times_sorteados t ON t.rodada_id = v.rodada_id AND t.jogador_id = v.jogador_avaliado_id
+  `).all();
+  const acc = {};
+  rows.forEach(r=>{
+    acc[r.jogadorId] = acc[r.jogadorId] || {linha:{soma:0,total:0}, goleiro:{soma:0,total:0}};
+    acc[r.jogadorId][r.papel].soma += r.nota;
+    acc[r.jogadorId][r.papel].total += 1;
+  });
+  const result = {};
+  Object.keys(acc).forEach(id=>{
+    result[id] = {
+      linha:{media: acc[id].linha.total? acc[id].linha.soma/acc[id].linha.total : null, total: acc[id].linha.total},
+      goleiro:{media: acc[id].goleiro.total? acc[id].goleiro.soma/acc[id].goleiro.total : null, total: acc[id].goleiro.total},
+    };
+  });
+  return result;
+}
+
+function mediaGlobalDoPapel(ranking, papel){
+  const vals = Object.values(ranking).map(r=>r[papel] && r[papel].media).filter(v=>v!=null);
+  if(!vals.length) return 2.5;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+function mediaOuFallback(ranking, jogadorId, papel, mediaGlobal){
+  const r = ranking[jogadorId];
+  if(r && r[papel] && r[papel].media!=null) return r[papel].media;
+  return mediaGlobal;
+}
+
+function fase2Atingida(ranking){
+  const cfg = getConfig();
+  const rodadasSorteadas = db.prepare("SELECT * FROM rodadas WHERE status='sorteado'").all();
+  let rodadasEncerradas = 0;
+  const jogaramAlgumaVez = new Set();
+  rodadasSorteadas.forEach(r=>{
+    const j = janelas(r.data);
+    if(nowSP() >= j.voteClose){
+      rodadasEncerradas++;
+      db.prepare('SELECT DISTINCT jogador_id FROM times_sorteados WHERE rodada_id=?').all(r.id)
+        .forEach(row=>jogaramAlgumaVez.add(row.jogador_id));
+    }
+  });
+  if(rodadasEncerradas < cfg.min_rodadas) return false;
+  for(const id of jogaramAlgumaVez){
+    const jogador = getJogadorPorId(id);
+    if(!jogador || !jogador.ativo) continue;
+    const r = ranking[id];
+    const totalVotos = (r? r.linha.total:0) + (r? r.goleiro.total:0);
+    if(totalVotos < cfg.min_votos) return false;
+  }
+  return true;
+}
+
+/* ============================================================
+   SORTEIO
+   ============================================================ */
+const NOMES_TIMES = ['Brasil','Argentina','Alemanha','Itália','Holanda'];
+
+function shuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){
+    const k=Math.floor(Math.random()*(i+1));
+    [a[i],a[k]]=[a[k],a[i]];
+  }
+  return a;
+}
+function snakeDraft(sortedDesc, n){
+  const buckets = Array.from({length:n},()=>[]);
+  sortedDesc.forEach((item,i)=>{
+    const round = Math.floor(i/n);
+    const pos = round%2===0 ? (i%n) : (n-1-(i%n));
+    buckets[pos].push(item);
+  });
+  return buckets;
+}
+
+function realizarSorteio(rodadaId){
+  const rodada = getRodadaPorId(rodadaId);
+  if(!rodada) return {ok:false, erro:'Rodada não encontrada.'};
+  const j = janelas(rodada.data);
+  if(rodada.status !== 'aguardando_confirmacao') return {ok:false, erro:'Esta rodada já foi sorteada ou não está mais aguardando confirmação.'};
+  if(nowSP() < j.confirmClose) return {ok:false, erro:'A janela de confirmação ainda está aberta.'};
+  const v = calcViabilidade(rodadaId);
+  if(!v.viavel) return {ok:false, erro:'Jogo não viabilizado: confirmações insuficientes.'};
+
+  const confirmados = getConfirmadosAtivos(rodadaId);
+  const linhaPool = confirmados.filter(x=>x.posicao_padrao==='linha');
+  const goleiroPool = confirmados.filter(x=>x.posicao_padrao==='goleiro');
+
+  let n = 0;
+  for(let cand=5; cand>=1; cand--){
+    const conv = Math.max(0, cand-goleiroPool.length);
+    if(linhaPool.length >= cand*5+conv){ n=cand; break; }
+  }
+  if(n===0) return {ok:false, erro:'Jogadores insuficientes para formar um time.'};
+
+  const conversoesNecessarias = Math.max(0, n-goleiroPool.length);
+  const golDesignados = goleiroPool.slice(0,n);
+  const golReserva = goleiroPool.slice(n);
+
+  const ranking = calcularRanking();
+  const usarFase2 = fase2Atingida(ranking);
+
+  let linhaOrdenada, golOrdenado;
+  if(usarFase2){
+    const mgLinha = mediaGlobalDoPapel(ranking,'linha');
+    const mgGol = mediaGlobalDoPapel(ranking,'goleiro');
+    linhaOrdenada = [...linhaPool].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha) - mediaOuFallback(ranking,a.id,'linha',mgLinha));
+    golOrdenado = [...golDesignados].sort((a,b)=> mediaOuFallback(ranking,b.id,'goleiro',mgGol) - mediaOuFallback(ranking,a.id,'goleiro',mgGol));
+  }else{
+    linhaOrdenada = shuffle(linhaPool);
+    golOrdenado = shuffle(golDesignados);
+  }
+
+  const linhaEmCampo = linhaOrdenada.slice(0, n*5);
+  const convertidos = linhaOrdenada.slice(n*5, n*5+conversoesNecessarias);
+  const linhaReserva = linhaOrdenada.slice(n*5+conversoesNecessarias);
+
+  const linhaBuckets = usarFase2
+    ? snakeDraft(linhaEmCampo, n)
+    : (()=>{ const b=Array.from({length:n},()=>[]); linhaEmCampo.forEach((jg,i)=>b[i%n].push(jg)); return b; })();
+
+  const golCandidatos = [...golOrdenado, ...convertidos];
+  const golBuckets = usarFase2
+    ? snakeDraft(
+        golCandidatos.sort((a,b)=>{
+          const pa = golOrdenado.includes(a) ? mediaOuFallback(ranking,a.id,'goleiro',mediaGlobalDoPapel(ranking,'goleiro')) : mediaOuFallback(ranking,a.id,'linha',mediaGlobalDoPapel(ranking,'linha'));
+          const pb = golOrdenado.includes(b) ? mediaOuFallback(ranking,b.id,'goleiro',mediaGlobalDoPapel(ranking,'goleiro')) : mediaOuFallback(ranking,b.id,'linha',mediaGlobalDoPapel(ranking,'linha'));
+          return pb-pa;
+        }), n)
+    : (()=>{ const b=Array.from({length:n},()=>[]); shuffle(golCandidatos).forEach((jg,i)=>b[i%n].push(jg)); return b; })();
+
+  const insertTime = db.prepare('INSERT INTO times_sorteados (id,rodada_id,nome_time,jogador_id,papel_na_partida) VALUES (?,?,?,?,?)');
+  const insertReserva = db.prepare('INSERT INTO reservas (id,rodada_id,jogador_id) VALUES (?,?,?)');
+  const tx = db.transaction(()=>{
+    for(let i=0;i<n;i++){
+      linhaBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'linha'));
+      golBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'goleiro'));
+    }
+    [...linhaReserva, ...golReserva].forEach(jg=> insertReserva.run(idGen('rv'), rodadaId, jg.id));
+    db.prepare('INSERT OR REPLACE INTO rodada_meta (rodada_id, modo_sorteio) VALUES (?,?)').run(rodadaId, usarFase2?'fase2':'fase1');
+    db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('sorteado', rodadaId);
+  });
+  tx();
+  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'), '+n+' time(s).');
+  return {ok:true};
+}
+
+/* ============================================================
+   SESSÕES
+   ============================================================ */
+function criarSessao(jogadorId, isAdmin){
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO sessions (token,jogador_id,is_admin,criado_em) VALUES (?,?,?,?)')
+    .run(token, jogadorId||null, isAdmin?1:0, nowISO());
+  return token;
+}
+function getSessao(token){
+  if(!token) return null;
+  return db.prepare('SELECT * FROM sessions WHERE token=?').get(token);
+}
+function extrairToken(req){
+  const h = req.headers.authorization || '';
+  return h.startsWith('Bearer ') ? h.slice(7) : null;
+}
+function requireAuth(req,res,next){
+  const sessao = getSessao(extrairToken(req));
+  if(!sessao || !sessao.jogador_id) return res.status(401).json({erro:'Sessão inválida. Faça login novamente.'});
+  req.jogadorId = sessao.jogador_id;
+  next();
+}
+function requireAdmin(req,res,next){
+  const sessao = getSessao(extrairToken(req));
+  if(!sessao || !sessao.is_admin) return res.status(401).json({erro:'Sessão administrativa inválida.'});
+  next();
+}
+
+/* ============================================================
+   EXPRESS APP
+   ============================================================ */
+seedSeNecessario();
+const app = express();
+app.use(express.json());
+app.set('trust proxy', 1);
+
+const loginLimiter = rateLimit({
+  windowMs: 5*60*1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: {erro:'Muitas tentativas. Aguarde alguns minutos e tente de novo.'}
+});
+
+app.get('/api/health', (req,res)=> res.json({ok:true}));
+
+/* ---- autenticação ---- */
+app.post('/api/login', loginLimiter, (req,res)=>{
+  const pin = String(req.body.pin||'');
+  const jogador = db.prepare('SELECT * FROM jogadores WHERE pin=? AND ativo=1').get(pin);
+  if(!jogador) return res.status(401).json({erro:'PIN não encontrado.'});
+  const token = criarSessao(jogador.id, false);
+  res.json({token, jogador:{id:jogador.id, nome:jogador.nome, posicaoPadrao:jogador.posicao_padrao}});
+});
+
+app.post('/api/admin/login', loginLimiter, (req,res)=>{
+  const pin = String(req.body.pin||'');
+  const cfg = getConfig();
+  if(pin !== cfg.admin_pin) return res.status(401).json({erro:'PIN administrativo incorreto.'});
+  const token = criarSessao(null, true);
+  res.json({adminToken: token});
+});
+
+app.post('/api/logout', requireAuth, (req,res)=>{
+  db.prepare('DELETE FROM sessions WHERE token=?').run(extrairToken(req));
+  res.json({ok:true});
+});
+app.post('/api/admin/logout', requireAdmin, (req,res)=>{
+  db.prepare('DELETE FROM sessions WHERE token=?').run(extrairToken(req));
+  res.json({ok:true});
+});
+
+app.post('/api/trocar-pin', requireAuth, (req,res)=>{
+  const novo = String(req.body.novoPin||'');
+  if(!/^\d{4}$/.test(novo)) return res.status(400).json({erro:'O PIN precisa ter 4 dígitos.'});
+  const emUso = db.prepare('SELECT 1 FROM jogadores WHERE pin=? AND id<>? AND ativo=1').get(novo, req.jogadorId);
+  if(emUso) return res.status(409).json({erro:'Esse PIN já está em uso por outro jogador.'});
+  db.prepare('UPDATE jogadores SET pin=? WHERE id=?').run(novo, req.jogadorId);
+  const jogador = getJogadorPorId(req.jogadorId);
+  logEvento('Jogador "'+jogador.nome+'" trocou o próprio PIN.');
+  res.json({ok:true});
+});
+
+/* ---- elenco ---- */
+app.get('/api/elenco', (req,res)=>{
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo}));
+  res.json({jogadores});
+});
+app.get('/api/admin/elenco', requireAdmin, (req,res)=>{
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo}));
+  const cfg = getConfig();
+  res.json({jogadores, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
+});
+app.post('/api/admin/jogadores', requireAdmin, (req,res)=>{
+  const {nome, pin, posicaoPadrao} = req.body;
+  if(!nome || !/^\d{4}$/.test(String(pin||'')) || !['linha','goleiro'].includes(posicaoPadrao)){
+    return res.status(400).json({erro:'Informe nome, PIN de 4 dígitos e posição válida.'});
+  }
+  const id = idGen('p');
+  db.prepare('INSERT INTO jogadores (id,nome,pin,posicao_padrao,ativo) VALUES (?,?,?,?,1)').run(id, nome, String(pin), posicaoPadrao);
+  logEvento('Jogador "'+nome+'" adicionado ao elenco.');
+  res.json({ok:true, id});
+});
+app.put('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
+  const j = getJogadorPorId(req.params.id);
+  if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
+  const nome = req.body.nome!=null ? String(req.body.nome) : j.nome;
+  const pin = req.body.pin!=null && /^\d{4}$/.test(String(req.body.pin)) ? String(req.body.pin) : j.pin;
+  const posicaoPadrao = ['linha','goleiro'].includes(req.body.posicaoPadrao) ? req.body.posicaoPadrao : j.posicao_padrao;
+  const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : j.ativo;
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=? WHERE id=?').run(nome,pin,posicaoPadrao,ativo,j.id);
+  res.json({ok:true});
+});
+app.delete('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
+  db.prepare('DELETE FROM jogadores WHERE id=?').run(req.params.id);
+  res.json({ok:true});
+});
+app.put('/api/admin/config', requireAdmin, (req,res)=>{
+  const minRodadas = Math.max(1, parseInt(req.body.minRodadas,10)||4);
+  const minVotos = Math.max(1, parseInt(req.body.minVotos,10)||3);
+  db.prepare('UPDATE config SET min_rodadas=?, min_votos=? WHERE id=1').run(minRodadas, minVotos);
+  logEvento('Critérios da fase 2 atualizados: '+minRodadas+' rodadas / '+minVotos+' votos.');
+  res.json({ok:true});
+});
+app.put('/api/admin/admin-pin', requireAdmin, (req,res)=>{
+  const pin = String(req.body.pin||'');
+  if(!/^\d{4}$/.test(pin)) return res.status(400).json({erro:'O PIN deve ter 4 dígitos.'});
+  db.prepare('UPDATE config SET admin_pin=? WHERE id=1').run(pin);
+  res.json({ok:true});
+});
+app.put('/api/admin/simulado', requireAdmin, (req,res)=>{
+  const val = req.body.simuladoNow || null;
+  db.prepare('UPDATE config SET simulado_now=? WHERE id=1').run(val);
+  res.json({ok:true});
+});
+
+/* ---- rodadas ---- */
+function serializarRodada(rodada){
+  rodada = atualizarStatusSeNecessario(rodada);
+  const fase = computeFase(rodada);
+  const confirmados = getConfirmadosAtivos(rodada.id).map(j=>j.id);
+  let times = null;
+  if(rodada.status==='sorteado'){
+    const linhas = db.prepare('SELECT nome_time, jogador_id, papel_na_partida FROM times_sorteados WHERE rodada_id=?').all(rodada.id);
+    const meta = db.prepare('SELECT modo_sorteio FROM rodada_meta WHERE rodada_id=?').get(rodada.id);
+    const porTime = {};
+    NOMES_TIMES.forEach(n=>{});
+    linhas.forEach(l=>{
+      porTime[l.nome_time] = porTime[l.nome_time] || [];
+      porTime[l.nome_time].push({jogadorId:l.jogador_id, papel:l.papel_na_partida});
+    });
+    const reservas = db.prepare('SELECT jogador_id FROM reservas WHERE rodada_id=?').all(rodada.id).map(r=>r.jogador_id);
+    times = {
+      times: Object.keys(porTime).map(nome=>({nome, jogadores:porTime[nome]})),
+      reservas,
+      modo: meta ? meta.modo_sorteio : 'fase1'
+    };
+  }
+  const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota FROM votos WHERE rodada_id=?').all(rodada.id);
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, times, votos};
+}
+
+app.get('/api/rodadas', (req,res)=>{
+  res.json({rodadas: getRodadas().map(r=>({id:r.id, data:r.data, status:r.status}))});
+});
+app.get('/api/rodadas/atual', (req,res)=>{
+  const rodada = getRodadaAtual();
+  if(!rodada) return res.json({rodada:null});
+  res.json({rodada: serializarRodada(rodada)});
+});
+app.get('/api/rodadas/:id', (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  res.json({rodada: serializarRodada(rodada)});
+});
+
+app.post('/api/admin/rodadas', requireAdmin, (req,res)=>{
+  const data = String(req.body.data||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({erro:'Data inválida.'});
+  const id = idGen('r');
+  db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(id, data, 'aguardando_confirmacao');
+  logEvento('Nova rodada criada para '+data+'.');
+  res.json({ok:true, id});
+});
+
+app.post('/api/rodadas/:id/confirmar', requireAuth, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
+  const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  if(existente){
+    db.prepare('UPDATE confirmacoes SET confirmado_em=?, desconfirmado_em=NULL WHERE id=?').run(nowISO(), existente.id);
+  }else{
+    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,desconfirmado_em) VALUES (?,?,?,?,NULL)')
+      .run(idGen('c'), rodada.id, req.jogadorId, nowISO());
+  }
+  res.json({ok:true});
+});
+app.post('/api/rodadas/:id/desconfirmar', requireAuth, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
+  db.prepare('UPDATE confirmacoes SET desconfirmado_em=? WHERE rodada_id=? AND jogador_id=?').run(nowISO(), rodada.id, req.jogadorId);
+  res.json({ok:true});
+});
+
+app.post('/api/admin/rodadas/:id/sortear', requireAdmin, (req,res)=>{
+  const resultado = realizarSorteio(req.params.id);
+  if(!resultado.ok) return res.status(400).json({erro: resultado.erro});
+  res.json({ok:true});
+});
+
+app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada || rodada.status!=='sorteado') return res.status(400).json({erro:'Esta rodada não está com times sorteados.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.voteOpen || n >= j.voteClose) return res.status(403).json({erro:'A janela de votação está fechada.'});
+  const avaliadoId = String(req.body.avaliadoId||'');
+  const nota = parseInt(req.body.nota,10);
+  if(Number.isNaN(nota) || nota<0 || nota>5) return res.status(400).json({erro:'Nota inválida (use 0 a 5).'});
+  if(avaliadoId === req.jogadorId) return res.status(400).json({erro:'Não é permitido avaliar a si mesmo.'});
+  const jogouNaRodada = db.prepare('SELECT 1 FROM times_sorteados WHERE rodada_id=? AND jogador_id=?').get(rodada.id, avaliadoId);
+  if(!jogouNaRodada) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
+  const existente = db.prepare('SELECT * FROM votos WHERE rodada_id=? AND jogador_avaliado_id=? AND jogador_avaliador_id=?')
+    .get(rodada.id, avaliadoId, req.jogadorId);
+  if(existente){
+    db.prepare('UPDATE votos SET nota=?, criado_em=? WHERE id=?').run(nota, nowISO(), existente.id);
+  }else{
+    db.prepare('INSERT INTO votos (id,rodada_id,jogador_avaliado_id,jogador_avaliador_id,nota,criado_em) VALUES (?,?,?,?,?,?)')
+      .run(idGen('v'), rodada.id, avaliadoId, req.jogadorId, nota, nowISO());
+  }
+  res.json({ok:true});
+});
+
+app.get('/api/ranking', (req,res)=>{
+  res.json({ranking: calcularRanking()});
+});
+
+app.get('/api/admin/eventos', requireAdmin, (req,res)=>{
+  const eventos = db.prepare('SELECT ts, mensagem FROM eventos_log ORDER BY ts DESC LIMIT 50').all();
+  res.json({eventos});
+});
+
+app.post('/api/admin/reset', requireAdmin, (req,res)=>{
+  const tx = db.transaction(()=>{
+    db.exec('DELETE FROM votos; DELETE FROM times_sorteados; DELETE FROM reservas; DELETE FROM rodada_meta; DELETE FROM confirmacoes; DELETE FROM rodadas; DELETE FROM eventos_log;');
+    const data = nextSundayFrom(todaySPDateStr());
+    db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(idGen('r'), data, 'aguardando_confirmacao');
+  });
+  tx();
+  logEvento('Dados de rodadas e votos zerados pelo administrador.');
+  res.json({ok:true});
+});
+
+/* ---- arquivos estáticos (frontend) ---- */
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('*', (req,res)=>{
+  if(req.path.startsWith('/api/')) return res.status(404).json({erro:'Rota não encontrada.'});
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, ()=>{
+  console.log('Bolerage F.D. rodando na porta ' + PORT);
+});
