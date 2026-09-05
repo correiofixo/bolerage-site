@@ -365,7 +365,7 @@ async function renderRanking(){
   let ranking = {};
   try{ const data = await api('/api/ranking'); ranking = data.ranking; }catch(e){}
   const papel = state.rankingFiltro;
-  const linhas = state.elenco.filter(j=>j.ativo).map(j=>{
+  const linhas = state.elenco.filter(j=>j.ativo && j.posicaoPadrao===papel).map(j=>{
     const r = ranking[j.id];
     const dados = r ? r[papel] : {media:null,total:0};
     return {nome:j.nome, media:dados.media, total:dados.total};
