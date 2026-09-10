@@ -660,6 +660,8 @@ async function renderAdmin(){
     const podeSortear = rodada.status==='aguardando_confirmacao' && rodada.fase.chave==='aguardando_sorteio';
     html += '<p class="small muted">'+linhaN+' de linha, '+golN+' goleiro(s) confirmados.</p>';
     html += '<button class="btn" data-action="disparar-sorteio" '+(podeSortear?'':'disabled')+'>Realizar sorteio</button>';
+    const ehHistorico = rodada.fase.chave==='encerrada' || rodada.status==='nao_viabilizado';
+    html += '<button class="btn danger" style="margin-top:8px;" data-action="remover-rodada" data-id="'+rodada.id+'" data-data="'+rodada.data+'" data-fase="'+escapeHtml(rodada.fase.label)+'" data-hist="'+(ehHistorico?'1':'0')+'">Remover esta rodada'+(ehHistorico?' (histórico)':'')+'</button>';
   }else{
     html += '<p class="small muted">Nenhuma rodada agendada.</p>';
   }
@@ -759,6 +761,17 @@ async function handleCriarRodada(){
   if(!val) return;
   try{
     await api('/api/admin/rodadas', {method:'POST', adminAuth:true, body:{data:val}});
+    await refreshRodadaAtual();
+    await refreshRodadasLista();
+    await render();
+  }catch(e){ alert(e.message); }
+}
+async function handleRemoverRodada(id, dataStr, faseLabel, ehHistorico){
+  if(!confirm('Remover a rodada de '+formatDataBR(dataStr)+' ('+faseLabel+')?\n\nIsso apaga em definitivo as confirmações, o sorteio e os votos dessa rodada.')) return;
+  if(ehHistorico && !confirm('ATENÇÃO: essa rodada já é HISTÓRICO.\nRemover apaga PARA SEMPRE os votos e o sorteio desse domingo, e ele deixa de contar no ranking. Não dá para desfazer.\n\nConfirmar mesmo assim?')) return;
+  try{
+    await api('/api/admin/rodadas/'+id, {method:'DELETE', adminAuth:true, body:{confirmarHistorico:!!ehHistorico}});
+    state.rodadaVisualizadaId = null; state.rodadaVisualizada = null;
     await refreshRodadaAtual();
     await refreshRodadasLista();
     await render();
@@ -916,6 +929,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
   if(action==='criar-rodada') return handleCriarRodada();
+  if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();
   if(action==='adicionar-jogador') return handleAdicionarJogador();
   if(action==='editar-jogador'){ state.editingJogadorId = el.dataset.id; return render(); }

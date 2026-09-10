@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 
 const path = require('path');
 const fs = require('fs');
@@ -680,6 +680,30 @@ app.post('/api/admin/rodadas', requireAdmin, (req,res)=>{
   db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(id, data, 'aguardando_confirmacao');
   logEvento('Nova rodada criada para '+data+'.');
   res.json({ok:true, id});
+});
+
+// Remove UMA rodada e tudo ligado a ela. Diferente do /reset, aqui o admin
+// pode remover inclusive rodada já encerrada/histórico — mas só com
+// confirmarHistorico=true no corpo (trava contra clique acidental).
+app.delete('/api/admin/rodadas/:id', requireAdmin, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const fase = computeFase(rodada);
+  const ehHistorico = fase.chave === 'encerrada' || rodada.status === 'nao_viabilizado';
+  if(ehHistorico && !req.body.confirmarHistorico){
+    return res.status(409).json({erro:'Essa rodada já é histórico. Reenvie com confirmação explícita para remover.'});
+  }
+  const tx = db.transaction(()=>{
+    db.prepare('DELETE FROM votos WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM times_sorteados WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM reservas WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM rodada_meta WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM confirmacoes WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM rodadas WHERE id=?').run(rodada.id);
+  });
+  tx();
+  logEvento('Rodada de '+rodada.data+' ('+fase.chave+') removida pelo administrador'+(ehHistorico ? ' — HISTÓRICO apagado com confirmação explícita.' : '.'));
+  res.json({ok:true});
 });
 
 app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
