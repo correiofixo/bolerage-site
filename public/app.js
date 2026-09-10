@@ -320,7 +320,7 @@ function renderExtrasIniciais(){
         html += '<details class="evento-item">'+
           '<summary><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></summary>'+
           (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
-          (resp ? '<div class="list-row"><span>Responsável</span><span class="row-right">'+escapeHtml(resp)+
+          (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(resp)+
             (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</span></div>' : '')+
         '</details>';
       }else{
@@ -330,7 +330,7 @@ function renderExtrasIniciais(){
     html += '</div>';
   }
   if(ex.aluguel){
-    html += '<div class="card accent-orange"><h3>Dados de Pagamento - (Aluguel):</h3>'+
+    html += '<div class="card accent-orange"><h3>Dados para Pagamento - (Aluguel da Quadra):</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
@@ -598,7 +598,7 @@ function renderSorteio(){
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
   rod.times.times.forEach(t=>{
     const fl = timeFlag(t.nome);
-    html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?fl+' ':'')+t.nome+'</h2>';
+    html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>';
     t.jogadores.forEach(j=>{
       const isConv = String(j.jogadorId).indexOf('conv:')===0;
       const media = isConv ? null : mediaDoJogador(j.jogadorId, j.papel);
@@ -856,7 +856,7 @@ async function renderAdmin(){
         '<div class="field"><label>Nome</label><input id="edit-ev-nome-'+e.id+'" value="'+escapeHtml(e.nome)+'"></div>'+
         '<div class="field"><label>Data</label><input type="date" id="edit-ev-data-'+e.id+'" value="'+e.data+'"></div>'+
         '<div class="field"><label>Descrição</label><textarea id="edit-ev-desc-'+e.id+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
-        '<div class="field"><label>Responsável pelo evento</label><select id="edit-ev-resp-'+e.id+'">'+respOpc(e.responsavel||'')+'</select></div>'+
+        '<div class="field"><label>Gestor do Evento</label><select id="edit-ev-resp-'+e.id+'">'+respOpc(e.responsavel||'')+'</select></div>'+
         '<label class="small"><input type="checkbox" id="edit-ev-ativo-'+e.id+'" '+(e.ativo?'checked':'')+'> exibir na tela inicial</label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-evento" data-id="'+e.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
@@ -870,7 +870,7 @@ async function renderAdmin(){
     '<div class="field"><label>Nome do evento</label><input id="novo-evento-nome"></div>'+
     '<div class="field"><label>Data</label><input type="date" id="novo-evento-data"></div>'+
     '<div class="field"><label>Descrição</label><textarea id="novo-evento-desc" rows="3" style="'+taStyle+'"></textarea></div>'+
-    '<div class="field"><label>Responsável pelo evento</label><select id="novo-evento-resp">'+respOpc('')+'</select></div>'+
+    '<div class="field"><label>Gestor do Evento</label><select id="novo-evento-resp">'+respOpc('')+'</select></div>'+
     '<button class="btn secondary" data-action="adicionar-evento">Adicionar evento</button></div>';
 
   html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
