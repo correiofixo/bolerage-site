@@ -79,6 +79,8 @@ const state = {
   rodadaVisualizada: null,
   rankingFiltro: 'linha',
   editingJogadorId: null,
+  editingEventoId: null,
+  adminWhats: '',
   trocaPinErro: '',
   mostrouDicaPin: false,
   pollHandle: null,
@@ -115,7 +117,7 @@ function starsHtml(media, grande){
 async function refreshElenco(){
   try{ const data = await api('/api/elenco'); state.elenco = data.jogadores; }catch(e){}
 }
-async function refreshVersion(){ try{ const data = await api('/api/version'); state.appVersion = data.version; }catch(e){} }
+async function refreshVersion(){ try{ const data = await api('/api/version'); state.appVersion = data.version; state.adminWhats = data.adminWhats||''; }catch(e){} }
 async function refreshMe(){
   if(!state.token) return;
   try{
@@ -162,7 +164,7 @@ function renderTopbar(){
   document.getElementById('version-slot').textContent = state.appVersion ? ('Versão '+state.appVersion) : '';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
-    ? '<div class="who-mens-line">Craque, sua mensalidade está <span class="who-mens '+m.cls+'">'+m.emoji+' '+m.lbl+'</span></div>'
+    ? '<div class="who-mens-line">Craque, sua mensalidade está <span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
     : '';
   document.getElementById('who-slot').innerHTML =
     '<div class="who-row1">'+
@@ -209,7 +211,9 @@ function renderLogin(){
       '<div class="pin-dots">'+dots+'</div>'+
       '<div class="keypad">'+keypad+'</div>'+
       '<div class="login-error">'+escapeHtml(state.loginError)+'</div>'+
-      '<div class="login-hint">Não sabe seu PIN? Peça para o administrador do grupo.</div>'+
+      '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo.'+
+        (waLink(state.adminWhats) ? ' <a class="wa-link" href="'+waLink(state.adminWhats)+'" target="_blank" rel="noopener" title="Falar com o administrador no WhatsApp">'+WA_ICON+'</a>' : '')+
+      '</div>'+
     '</div>';
 }
 
@@ -309,7 +313,19 @@ function renderExtrasIniciais(){
   if(ex.eventos && ex.eventos.length){
     html += '<div class="card accent-green"><h3>\u26BD Eventos:</h3>';
     ex.eventos.forEach(e=>{
-      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
+      const desc = (e.descricao||'').trim();
+      const resp = (e.responsavel||'').trim();
+      if(desc || resp){
+        const wa = waLink(e.responsavelTel);
+        html += '<details class="evento-item">'+
+          '<summary><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></summary>'+
+          (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
+          (resp ? '<div class="list-row"><span>Responsável</span><span class="row-right">'+escapeHtml(resp)+
+            (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</span></div>' : '')+
+        '</details>';
+      }else{
+        html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
+      }
     });
     html += '</div>';
   }
@@ -830,15 +846,31 @@ async function renderAdmin(){
   } /* fim isSuper (rodada / critérios / elenco) */
 
   if(can('conteudo')){
+  const respOpc = sel => '<option value="">— sem responsável —</option>'+
+    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nome)+'" '+(j.nome===sel?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
+  const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
-    html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
-      '<span><button class="btn secondary small" data-action="toggle-evento-ativo" data-id="'+e.id+'" data-ativo="'+(e.ativo?'1':'0')+'">'+(e.ativo?'desativar':'ativar')+'</button> '+
-      '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
+    if(state.editingEventoId===e.id){
+      html += '<div class="list-row" style="flex-direction:column;align-items:stretch;gap:6px;">'+
+        '<div class="field"><label>Nome</label><input id="edit-ev-nome-'+e.id+'" value="'+escapeHtml(e.nome)+'"></div>'+
+        '<div class="field"><label>Data</label><input type="date" id="edit-ev-data-'+e.id+'" value="'+e.data+'"></div>'+
+        '<div class="field"><label>Descrição</label><textarea id="edit-ev-desc-'+e.id+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
+        '<div class="field"><label>Responsável pelo evento</label><select id="edit-ev-resp-'+e.id+'">'+respOpc(e.responsavel||'')+'</select></div>'+
+        '<label class="small"><input type="checkbox" id="edit-ev-ativo-'+e.id+'" '+(e.ativo?'checked':'')+'> exibir na tela inicial</label>'+
+        '<div class="btn-row"><button class="btn small" data-action="salvar-evento" data-id="'+e.id+'">Salvar</button>'+
+        '<button class="btn secondary small" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
+    }else{
+      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+'</span>'+
+        '<span><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button> '+
+        '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
+    }
   });
-  html += '<div class="divider"></div>'+
+  html += '<div class="divider"></div><h3>Adicionar evento</h3>'+
     '<div class="field"><label>Nome do evento</label><input id="novo-evento-nome"></div>'+
     '<div class="field"><label>Data</label><input type="date" id="novo-evento-data"></div>'+
+    '<div class="field"><label>Descrição</label><textarea id="novo-evento-desc" rows="3" style="'+taStyle+'"></textarea></div>'+
+    '<div class="field"><label>Responsável pelo evento</label><select id="novo-evento-resp">'+respOpc('')+'</select></div>'+
     '<button class="btn secondary" data-action="adicionar-evento">Adicionar evento</button></div>';
 
   html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
@@ -985,9 +1017,25 @@ async function handleSalvarAdminPin(){
 async function handleAdicionarEvento(){
   const nome = document.getElementById('novo-evento-nome').value.trim();
   const data = document.getElementById('novo-evento-data').value;
+  const descricao = document.getElementById('novo-evento-desc').value;
+  const responsavel = document.getElementById('novo-evento-resp').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
-  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data}}); await refreshHomeExtras(); await render(); }
+  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data,descricao,responsavel}}); await refreshHomeExtras(); await render(); }
   catch(e){ alert(e.message); }
+}
+async function handleSalvarEvento(id){
+  const nome = document.getElementById('edit-ev-nome-'+id).value.trim();
+  const data = document.getElementById('edit-ev-data-'+id).value;
+  const descricao = document.getElementById('edit-ev-desc-'+id).value;
+  const responsavel = document.getElementById('edit-ev-resp-'+id).value;
+  const ativo = document.getElementById('edit-ev-ativo-'+id).checked;
+  if(!nome || !data){ alert('Informe nome e data.'); return; }
+  try{
+    await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{nome,data,descricao,responsavel,ativo}});
+    state.editingEventoId = null;
+    await refreshHomeExtras();
+    await render();
+  }catch(e){ alert(e.message); }
 }
 async function handleToggleEventoAtivo(id, ativoAtual){
   try{ await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{ativo: ativoAtual!=='1'}}); await refreshHomeExtras(); await render(); }
@@ -1086,11 +1134,11 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='abrir-troca-pin'){ state.trocaPinErro=''; state.tab='trocarPin'; return render(); }
   if(action==='salvar-meu-pin') return handleSalvarMeuPin();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
-  if(action==='tab'){ state.tab = el.dataset.tab; state.editingJogadorId=null; return render(); }
+  if(action==='tab'){ state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='toggle-presenca') return handleTogglePresenca(el.dataset.atual);
   if(action==='toggle-convidado') return handleToggleConvidado(el.dataset.atual);
   if(action==='toggle-resenha') return handleToggleResenha(el.dataset.atual);
-  if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; return render(); }
+  if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
@@ -1104,6 +1152,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
   if(action==='adicionar-evento') return handleAdicionarEvento();
+  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; return render(); }
+  if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; return render(); }
+  if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
   if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
   if(action==='remover-evento') return handleRemoverEvento(el.dataset.id);
   if(action==='salvar-noticia') return handleSalvarNoticia();

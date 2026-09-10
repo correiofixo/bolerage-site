@@ -6,7 +6,7 @@
 
 // Contador de release: some 1 a cada deploy. A virada de "major" é automática —
 // no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 14;
+const APP_BUILD = 15;
 function computeVersion(b){
   let major, minor;
   if(b <= 20){ major = 1; minor = b; }
@@ -145,6 +145,8 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN super_admin INTEGER NOT NULL DEFA
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin_perms TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN mensalidade TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN telefone TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN descricao TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN responsavel TEXT NOT NULL DEFAULT ''"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -570,7 +572,11 @@ const loginLimiter = rateLimit({
 });
 
 app.get('/api/health', (req,res)=> res.json({ok:true}));
-app.get('/api/version', (req,res)=> res.json({version: APP_VERSION}));
+app.get('/api/version', (req,res)=>{
+  const a = db.prepare("SELECT telefone FROM jogadores WHERE super_admin=1 AND ativo=1 AND telefone<>'' LIMIT 1").get()
+         || db.prepare("SELECT telefone FROM jogadores WHERE admin=1 AND ativo=1 AND telefone<>'' LIMIT 1").get();
+  res.json({version: APP_VERSION, adminWhats: (a && a.telefone) ? a.telefone : ''});
+});
 
 /* ---- autenticação ---- */
 app.post('/api/login', loginLimiter, (req,res)=>{
@@ -947,11 +953,12 @@ app.post('/api/admin/reset', requireSuper, (req,res)=>{
 
 /* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
 app.get('/api/home-extras', (req,res)=>{
-  const eventos = db.prepare('SELECT id,nome,data FROM eventos WHERE ativo=1 ORDER BY data ASC').all();
+  const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
+  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
+    .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel)}));
   const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
   const aluguelRow = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
   const gestaoRow = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
-  const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
   res.json({
     eventos,
     noticia: (noticiaRow && noticiaRow.ativo) ? {descricao: noticiaRow.descricao} : null,
@@ -961,14 +968,16 @@ app.get('/api/home-extras', (req,res)=>{
 });
 
 app.get('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
-  res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo}))});
+  res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||''}))});
 });
 app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   const nome = String(req.body.nome||'').trim();
   const data = String(req.body.data||'').trim();
   if(!nome || !data) return res.status(400).json({erro:'Informe nome e data do evento.'});
+  const descricao = String(req.body.descricao||'');
+  const responsavel = String(req.body.responsavel||'');
   const id = idGen('ev');
-  db.prepare('INSERT INTO eventos (id,nome,data,ativo) VALUES (?,?,?,1)').run(id, nome, data);
+  db.prepare('INSERT INTO eventos (id,nome,data,ativo,descricao,responsavel) VALUES (?,?,?,1,?,?)').run(id, nome, data, descricao, responsavel);
   res.json({ok:true, id});
 });
 app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
@@ -977,7 +986,9 @@ app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
   const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
   const data = req.body.data!=null ? String(req.body.data) : ev.data;
   const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : ev.ativo;
-  db.prepare('UPDATE eventos SET nome=?,data=?,ativo=? WHERE id=?').run(nome,data,ativo,ev.id);
+  const descricao = req.body.descricao!=null ? String(req.body.descricao) : (ev.descricao||'');
+  const responsavel = req.body.responsavel!=null ? String(req.body.responsavel) : (ev.responsavel||'');
+  db.prepare('UPDATE eventos SET nome=?,data=?,ativo=?,descricao=?,responsavel=? WHERE id=?').run(nome,data,ativo,descricao,responsavel,ev.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{

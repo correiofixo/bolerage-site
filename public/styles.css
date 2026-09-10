@@ -268,6 +268,13 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .presence-toggle-label{font-size:14px;}
 .info-box{background:var(--bg-elevated-2);border:1px dashed var(--line);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text-muted);margin-bottom:12px;}
 details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8px;}
+.evento-item{border-bottom:1px solid var(--line);}
+.evento-item:last-child{border-bottom:none;}
+.evento-item>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--text);font-size:15px;font-weight:500;padding:9px 0;margin:0;}
+.evento-item>summary::-webkit-details-marker{display:none;}
+.evento-item>summary::after{content:'▾';color:var(--text-muted);font-size:12px;flex-shrink:0;}
+.evento-item[open]>summary::after{content:'▴';}
+.evento-item[open]{padding-bottom:8px;}
 .row-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .wa-link{display:inline-flex;align-items:center;}
 .wa-icon{width:20px;height:20px;fill:#25D366;}
