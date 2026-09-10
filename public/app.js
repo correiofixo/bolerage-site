@@ -261,17 +261,17 @@ function renderExtrasIniciais(){
   if(!ex) return '';
   let html = '';
   if(ex.noticia && ex.noticia.descricao){
-    html += '<div class="card accent-gold"><h3>Notícia</h3><p class="small">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+    html += '<div class="card accent-gold"><h3>\u{1F4E2} Avisos</h3><p class="small">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
   if(ex.eventos && ex.eventos.length){
-    html += '<div class="card"><h3>Próximos eventos</h3>';
+    html += '<div class="card"><h3>\u26BD Eventos</h3>';
     ex.eventos.forEach(e=>{
       html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
     });
     html += '</div>';
   }
   if(ex.aluguel){
-    html += '<div class="card"><h3>Aluguel da quadra</h3>'+
+    html += '<div class="card"><h3>Quadra</h3>'+
       '<div class="list-row"><span>Responsável</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
