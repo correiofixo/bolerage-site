@@ -46,6 +46,10 @@ const MENS_OPCOES = [['','—'],['em_dia','Em Dia'],['em_atraso','Em Atraso'],['
 function mensOptionsHtml(atual){
   return MENS_OPCOES.map(([v,l])=>'<option value="'+v+'" '+((atual||'')===v?'selected':'')+'>'+l+'</option>').join('');
 }
+function saudacao(){
+  const h = new Date().getHours();
+  return h < 12 ? 'Bom Dia' : h < 18 ? 'Boa Tarde' : 'Boa Noite';
+}
 
 /* ============================================================
    ESTADO
@@ -150,14 +154,19 @@ function renderTopbar(){
   bottomnav.style.display='flex';
   document.getElementById('version-slot').textContent = '';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
-  const mensHtml = m
-    ? ' Craque, sua mensalidade está = <span class="who-mens '+m.cls+'">'+m.emoji+' '+m.lbl+'</span>'
+  const mensLine = m
+    ? '<div class="who-mens-line">Craque, sua mensalidade está <span class="who-mens '+m.cls+'">'+m.emoji+' '+m.lbl+'</span></div>'
     : '';
   document.getElementById('who-slot').innerHTML =
-    '<span class="who-name">Opa, '+escapeHtml(state.currentPlayer.nome)+' !'+mensHtml+'</span>'+
-    '<button data-action="abrir-troca-pin">trocar PIN</button>'+
-    (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
-    '<button data-action="logout">sair</button>';
+    '<div class="who-row1">'+
+      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !</span>'+
+      '<span class="who-actions">'+
+        '<button data-action="abrir-troca-pin">Trocar meu PIN</button>'+
+        (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
+        '<button data-action="logout">Sair</button>'+
+      '</span>'+
+    '</div>'+
+    mensLine;
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
     '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>'+
@@ -289,24 +298,24 @@ function renderExtrasIniciais(){
   if(!ex) return '';
   let html = '';
   if(ex.noticia && ex.noticia.descricao){
-    html += '<div class="card accent-gold"><h3>\u{1F4E2} Se Liga - Craque</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+    html += '<div class="card accent-gold"><h3>\u{1F4E2} Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
   if(ex.eventos && ex.eventos.length){
-    html += '<div class="card accent-green"><h3>\u26BD Eventos</h3>';
+    html += '<div class="card accent-green"><h3>\u26BD Eventos:</h3>';
     ex.eventos.forEach(e=>{
       html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
     });
     html += '</div>';
   }
   if(ex.aluguel){
-    html += '<div class="card accent-orange"><h3>Dados de Pagamento - (Aluguel)</h3>'+
+    html += '<div class="card accent-orange"><h3>Dados de Pagamento - (Aluguel):</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
       '</div>';
   }
   if(ex.gestao){
-    html += '<div class="card accent-cyan"><h3>Gestão</h3>'+
+    html += '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
       '<div class="list-row"><span>Presidente</span><span>'+escapeHtml(ex.gestao.presidente)+'</span></div>'+
       '<div class="list-row"><span>Vice-Presidente</span><span>'+escapeHtml(ex.gestao.vicePresidente)+'</span></div>'+
       '</div>';

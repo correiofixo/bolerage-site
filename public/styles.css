@@ -95,8 +95,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .app-version{font-family:var(--font-body);font-size:10.5px;font-weight:500;color:var(--text-muted);}
 #phase-chip-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .phase-version{margin-left:auto;}
-#topbar .who{font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px;}
-#topbar .who .who-name{white-space:normal;}
+#topbar .who{font-size:15px;font-weight:600;color:var(--text);display:flex;flex-direction:column;gap:4px;}
+.who-row1{display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px;}
+.who-row1 .who-name{flex:1;min-width:0;white-space:normal;}
+.who-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.who-mens-line{font-size:15px;font-weight:600;}
 .who-mens{font-weight:600;white-space:nowrap;}
 .who-mens.ok{color:var(--green);}
 .who-mens.atrasada{color:var(--red);}
