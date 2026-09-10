@@ -96,8 +96,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 #phase-chip-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .phase-version{margin-left:auto;}
 #topbar .who{font-size:15px;font-weight:600;color:var(--text);display:flex;align-items:center;flex-wrap:wrap;gap:8px;row-gap:6px;}
-#topbar .who .who-name{white-space:nowrap;}
-.who-mens{font-weight:600;}
+#topbar .who .who-name{white-space:normal;}
+.who-mens{font-weight:600;white-space:nowrap;}
 .who-mens.ok{color:var(--green);}
 .who-mens.atrasada{color:var(--red);}
 .who-mens.isenta{color:var(--gold);}

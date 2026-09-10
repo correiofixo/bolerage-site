@@ -151,11 +151,10 @@ function renderTopbar(){
   document.getElementById('version-slot').textContent = '';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensHtml = m
-    ? '<span class="who-mens '+m.cls+'"> , sua mensalidade está = '+m.emoji+' '+m.lbl+'</span>'
+    ? ' Craque, sua mensalidade está = <span class="who-mens '+m.cls+'">'+m.emoji+' '+m.lbl+'</span>'
     : '';
   document.getElementById('who-slot').innerHTML =
-    '<span class="who-name">Olá, '+escapeHtml(state.currentPlayer.nome)+'</span>'+
-    mensHtml+
+    '<span class="who-name">Opa, '+escapeHtml(state.currentPlayer.nome)+' !'+mensHtml+'</span>'+
     '<button data-action="abrir-troca-pin">trocar PIN</button>'+
     (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">sair</button>';

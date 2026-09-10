@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.9';
+const APP_VERSION = '1.0.10';
 
 const path = require('path');
 const fs = require('fs');
