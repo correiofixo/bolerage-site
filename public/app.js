@@ -298,7 +298,7 @@ function renderExtrasIniciais(){
 function linhaListaPresenca(j, ehConvidado){
   const media = mediaDoJogador(j.id, j.posicaoPadrao);
   return '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
-    '<span class="row-right">'+starsHtml(media)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>'+
+    '<span class="row-right">'+starsHtml(media, true)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>'+
     (ehConvidado ? '<div class="list-row convidado-row"><span>↳ Convidado de '+escapeHtml(j.nome)+'</span></div>' : '');
 }
 
@@ -452,15 +452,44 @@ function renderResenha(){
   if(!rod){
     c.innerHTML = '<div class="empty">Nenhuma rodada agendada ainda.</div>'; return;
   }
-  const ids = rod.resenha || [];
-  const gente = ids.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  const meuId = state.currentPlayer.id;
+  const idsResenha = rod.resenha || [];
+  const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  const euNaResenha = idsResenha.includes(meuId);
+  const souPresente = (rod.confirmados||[]).includes(meuId);
+  const janelaLivre = !!rod.resenhaEdicaoLivre;
+  const rachaAconteceu = rod.status==='sorteado';
+  const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
+
+  let aviso;
+  if(janelaLivre){
+    aviso = souPresente
+      ? 'Você pode ajustar sua presença na resenha agora, até as 11h.'
+      : (rachaAconteceu
+          ? 'A resenha está aberta para entrada de última hora, até as 11h.'
+          : 'Entrada de última hora só vale para rodada que teve jogo.');
+  }else{
+    aviso = 'O flag da resenha fica em leitura. Durante a confirmação (sáb 8h → dom 8h) você marca pela tela Início; das 10h às 11h de domingo dá para ajustar por aqui.';
+  }
+
   let html = '<div class="card"><h2>Resenha — '+formatDataBR(rod.data)+'</h2>'+
-    '<p class="small muted">Jogadores presentes que marcaram que vão ficar pra resenha. Marque a sua opção na tela Início, durante a janela de confirmação.</p></div>';
+    '<p class="small muted">'+aviso+'</p></div>';
+
+  html += '<div class="card"><h3>Sua resenha</h3>'+
+    '<div class="presence-toggle-wrap">'+
+      '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" '+(podeEditar?'':'disabled')+' data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+      '<div class="presence-toggle-label">'+(euNaResenha
+        ? '<strong style="color:var(--green)">Você está na resenha</strong>'
+        : '<span class="muted">Você não está na resenha</span>')+'</div>'+
+    '</div>'+
+    (podeEditar ? '' : '<p class="small muted" style="margin-top:6px;">Somente leitura no momento.</p>')+
+  '</div>';
+
   html += '<div class="card"><h3>Confirmados na resenha ('+gente.length+')</h3>';
   if(gente.length){
-    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span></div>');
+    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge" style="color:var(--green);border-color:#2c6b3c;">ON</span></div>');
   }else{
-    html += '<p class="small muted">Ninguém marcou resenha ainda.</p>';
+    html += '<p class="small muted">Ninguém na resenha ainda.</p>';
   }
   html += '</div>';
   c.innerHTML = html;

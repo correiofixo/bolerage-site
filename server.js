@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 
 const path = require('path');
 const fs = require('fs');
@@ -225,6 +225,9 @@ function janelas(rodadaData){
     confirmClose: rodadaData+'T08:00:00',
     voteOpen:     rodadaData+'T10:00:00',
     voteClose:    rodadaData+'T18:00:00',
+    // janela de "última hora" da resenha: domingo 10h → 11h
+    resenhaLivreOpen:  rodadaData+'T10:00:00',
+    resenhaLivreClose: rodadaData+'T11:00:00',
   };
 }
 
@@ -637,7 +640,10 @@ function serializarRodada(rodada){
   const confirmados = getPorStatus(rodada.id, 'presente').map(j=>j.id);
   const ausentes = getPorStatus(rodada.id, 'ausente').map(j=>j.id);
   const convidados = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodada.id).map(r=>r.jogador_id);
-  const resenha = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND resenha=1").all(rodada.id).map(r=>r.jogador_id);
+  const resenha = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND resenha=1").all(rodada.id).map(r=>r.jogador_id);
+  const _jr = janelas(rodada.data), _nr = nowSP();
+  const resenhaEdicaoConfirmacao = _nr >= _jr.confirmOpen && _nr < _jr.confirmClose;
+  const resenhaEdicaoLivre = _nr >= _jr.resenhaLivreOpen && _nr < _jr.resenhaLivreClose;
   let times = null;
   if(rodada.status==='sorteado'){
     const linhas = db.prepare('SELECT nome_time, jogador_id, papel_na_partida FROM times_sorteados WHERE rodada_id=?').all(rodada.id);
@@ -656,7 +662,7 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, times, votos};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, times, votos};
 }
 
 app.get('/api/rodadas', (req,res)=>{
@@ -745,11 +751,36 @@ app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const j = janelas(rodada.data);
   const n = nowSP();
-  if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
-  if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de entrar na resenha.'});
-  db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
-  res.json({ok:true});
+  const emJanelaConfirmacao = n >= j.confirmOpen && n < j.confirmClose;
+  const emJanelaLivre = n >= j.resenhaLivreOpen && n < j.resenhaLivreClose;
+
+  // Janela normal (sáb 8h → dom 8h): só quem marcou presença, ajusta pela tela Início.
+  if(emJanelaConfirmacao){
+    if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de entrar na resenha.'});
+    db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
+    return res.json({ok:true});
+  }
+
+  // Janela de última hora (dom 10h → 11h): editável pela tela Resenha.
+  if(emJanelaLivre){
+    if(existente && existente.status==='presente'){
+      // quem confirmou presença pode sair (ou voltar) da resenha
+      db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
+      return res.json({ok:true});
+    }
+    // quem NÃO confirmou presença só entra na resenha se o racha aconteceu
+    if(rodada.status !== 'sorteado') return res.status(400).json({erro:'A resenha só aceita entradas de última hora se o racha foi sorteado.'});
+    if(existente){
+      db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
+    }else{
+      db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
+        .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), 'ausente', 0, vaiResenha?1:0);
+    }
+    return res.json({ok:true});
+  }
+
+  return res.status(403).json({erro:'Fora da janela de ajuste da resenha (domingo, das 10h às 11h).'});
 });
 
 app.post('/api/admin/rodadas/:id/sortear', requireAdmin, (req,res)=>{

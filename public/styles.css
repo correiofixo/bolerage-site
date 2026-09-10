@@ -251,6 +251,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .presence-toggle.is-on .presence-toggle-knob{left:31px;}
 .presence-toggle.is-off .presence-toggle-knob{left:3px;}
 .presence-toggle.is-pending .presence-toggle-knob{left:17px;}
+.presence-toggle:disabled{opacity:.55;cursor:default;}
 .presence-toggle-label{font-size:14px;}
 .info-box{background:var(--bg-elevated-2);border:1px dashed var(--line);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text-muted);margin-bottom:12px;}
 details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8px;}
