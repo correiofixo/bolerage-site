@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 
 const path = require('path');
 const fs = require('fs');
@@ -119,18 +119,33 @@ CREATE TABLE IF NOT EXISTS aluguel_quadra (
   valor_mensalidade TEXT NOT NULL DEFAULT '',
   ativo INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS gestao (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  presidente TEXT NOT NULL DEFAULT '',
+  vice_presidente TEXT NOT NULL DEFAULT '',
+  ativo INTEGER NOT NULL DEFAULT 0
+);
 `);
 
 // migração: coluna 'status' (presente/ausente) na tabela confirmacoes.
 // usa try/catch porque ALTER TABLE falha se a coluna já existir (idempotente entre reinícios).
 try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN status TEXT"); }catch(e){}
 try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN trouxe_convidado INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN resenha INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 
 function seedExtrasSeNecessario(){
   const n = db.prepare('SELECT * FROM noticia WHERE id=1').get();
   if(!n) db.prepare('INSERT INTO noticia (id,descricao,ativo) VALUES (1,\'\',0)').run();
   const a = db.prepare('SELECT * FROM aluguel_quadra WHERE id=1').get();
   if(!a) db.prepare('INSERT INTO aluguel_quadra (id,nome,chave_pix,valor_mensalidade,ativo) VALUES (1,\'\',\'\',\'\',0)').run();
+  const g = db.prepare('SELECT * FROM gestao WHERE id=1').get();
+  if(!g) db.prepare('INSERT INTO gestao (id,presidente,vice_presidente,ativo) VALUES (1,\'\',\'\',0)').run();
+  // acesso administrativo agora é por jogador (coluna admin). Se ninguém for admin
+  // ainda, promove o Josué pelo nome — feito uma única vez.
+  const temAdmin = db.prepare('SELECT 1 FROM jogadores WHERE admin=1').get();
+  if(!temAdmin) db.prepare("UPDATE jogadores SET admin=1 WHERE nome='Josué'").run();
 }
 seedExtrasSeNecessario();
 
@@ -475,10 +490,20 @@ function requireAuth(req,res,next){
   req.jogadorId = sessao.jogador_id;
   next();
 }
+function jogadorEhAdmin(jogadorId){
+  if(!jogadorId) return false;
+  const j = db.prepare('SELECT admin FROM jogadores WHERE id=? AND ativo=1').get(jogadorId);
+  return !!(j && j.admin);
+}
 function requireAdmin(req,res,next){
   const sessao = getSessao(extrairToken(req));
-  if(!sessao || !sessao.is_admin) return res.status(401).json({erro:'Sessão administrativa inválida.'});
-  next();
+  // aceita tanto uma sessão administrativa (token de admin) quanto a sessão
+  // comum de um jogador marcado como admin no elenco.
+  if(sessao && (sessao.is_admin || jogadorEhAdmin(sessao.jogador_id))){
+    if(sessao.jogador_id) req.jogadorId = sessao.jogador_id;
+    return next();
+  }
+  return res.status(401).json({erro:'Sessão administrativa inválida.'});
 }
 
 /* ============================================================
@@ -507,7 +532,13 @@ app.post('/api/login', loginLimiter, (req,res)=>{
   const jogador = db.prepare('SELECT * FROM jogadores WHERE pin=? AND ativo=1').get(pin);
   if(!jogador) return res.status(401).json({erro:'PIN não encontrado.'});
   const token = criarSessao(jogador.id, false);
-  res.json({token, jogador:{id:jogador.id, nome:jogador.nome, posicaoPadrao:jogador.posicao_padrao}});
+  res.json({token, jogador:{id:jogador.id, nome:jogador.nome, posicaoPadrao:jogador.posicao_padrao, admin:!!jogador.admin}});
+});
+
+app.get('/api/me', requireAuth, (req,res)=>{
+  const j = getJogadorPorId(req.jogadorId);
+  if(!j) return res.status(401).json({erro:'Sessão inválida.'});
+  res.json({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, admin:!!j.admin});
 });
 
 app.post('/api/admin/login', loginLimiter, (req,res)=>{
@@ -515,6 +546,13 @@ app.post('/api/admin/login', loginLimiter, (req,res)=>{
   const cfg = getConfig();
   if(pin !== cfg.admin_pin) return res.status(401).json({erro:'PIN administrativo incorreto.'});
   const token = criarSessao(null, true);
+  res.json({adminToken: token});
+});
+
+// entra no painel admin sem PIN: só funciona para um jogador marcado como admin.
+app.post('/api/admin/enter', requireAuth, (req,res)=>{
+  if(!jogadorEhAdmin(req.jogadorId)) return res.status(403).json({erro:'Seu acesso não tem permissão administrativa.'});
+  const token = criarSessao(req.jogadorId, true);
   res.json({adminToken: token});
 });
 
@@ -544,7 +582,7 @@ app.get('/api/elenco', (req,res)=>{
   res.json({jogadores});
 });
 app.get('/api/admin/elenco', requireAdmin, (req,res)=>{
-  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo}));
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, admin:!!j.admin}));
   const cfg = getConfig();
   res.json({jogadores, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
 });
@@ -565,7 +603,8 @@ app.put('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
   const pin = req.body.pin!=null && /^\d{4}$/.test(String(req.body.pin)) ? String(req.body.pin) : j.pin;
   const posicaoPadrao = ['linha','goleiro'].includes(req.body.posicaoPadrao) ? req.body.posicaoPadrao : j.posicao_padrao;
   const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : j.ativo;
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=? WHERE id=?').run(nome,pin,posicaoPadrao,ativo,j.id);
+  const admin = req.body.admin!=null ? (req.body.admin?1:0) : (j.admin||0);
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=? WHERE id=?').run(nome,pin,posicaoPadrao,ativo,admin,j.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
@@ -598,6 +637,7 @@ function serializarRodada(rodada){
   const confirmados = getPorStatus(rodada.id, 'presente').map(j=>j.id);
   const ausentes = getPorStatus(rodada.id, 'ausente').map(j=>j.id);
   const convidados = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodada.id).map(r=>r.jogador_id);
+  const resenha = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND resenha=1").all(rodada.id).map(r=>r.jogador_id);
   let times = null;
   if(rodada.status==='sorteado'){
     const linhas = db.prepare('SELECT nome_time, jogador_id, papel_na_partida FROM times_sorteados WHERE rodada_id=?').all(rodada.id);
@@ -616,7 +656,7 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, times, votos};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, times, votos};
 }
 
 app.get('/api/rodadas', (req,res)=>{
@@ -652,11 +692,12 @@ app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
   if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
   const convidadoFlag = status==='ausente' ? 0 : (existente ? existente.trouxe_convidado : 0);
+  const resenhaFlag = status==='ausente' ? 0 : (existente ? existente.resenha : 0);
   if(existente){
-    db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=? WHERE id=?').run(status, nowISO(), convidadoFlag, existente.id);
+    db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=?, resenha=? WHERE id=?').run(status, nowISO(), convidadoFlag, resenhaFlag, existente.id);
   }else{
-    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado) VALUES (?,?,?,?,?,?)')
-      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), status, convidadoFlag);
+    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
+      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), status, convidadoFlag, resenhaFlag);
   }
   res.json({ok:true});
 });
@@ -671,6 +712,19 @@ app.post('/api/rodadas/:id/convidado', requireAuth, (req,res)=>{
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
   if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de indicar se vai levar convidado.'});
   db.prepare('UPDATE confirmacoes SET trouxe_convidado=? WHERE id=?').run(trouxeConvidado?1:0, existente.id);
+  res.json({ok:true});
+});
+
+app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
+  const vaiResenha = !!req.body.resenha;
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
+  const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de entrar na resenha.'});
+  db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
   res.json({ok:true});
 });
 
@@ -752,10 +806,12 @@ app.get('/api/home-extras', (req,res)=>{
   const eventos = db.prepare('SELECT id,nome,data FROM eventos WHERE ativo=1 ORDER BY data ASC').all();
   const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
   const aluguelRow = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
+  const gestaoRow = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
   res.json({
     eventos,
     noticia: (noticiaRow && noticiaRow.ativo) ? {descricao: noticiaRow.descricao} : null,
     aluguel: (aluguelRow && aluguelRow.ativo) ? {nome:aluguelRow.nome, chavePix:aluguelRow.chave_pix, valorMensalidade:aluguelRow.valor_mensalidade} : null,
+    gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente} : null,
   });
 });
 
@@ -805,6 +861,18 @@ app.put('/api/admin/aluguel', requireAdmin, (req,res)=>{
   const valorMensalidade = String(req.body.valorMensalidade||'');
   const ativo = req.body.ativo?1:0;
   db.prepare('UPDATE aluguel_quadra SET nome=?,chave_pix=?,valor_mensalidade=?,ativo=? WHERE id=1').run(nome,chavePix,valorMensalidade,ativo);
+  res.json({ok:true});
+});
+
+app.get('/api/admin/gestao', requireAdmin, (req,res)=>{
+  const g = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
+  res.json({presidente:g.presidente, vicePresidente:g.vice_presidente, ativo:!!g.ativo});
+});
+app.put('/api/admin/gestao', requireAdmin, (req,res)=>{
+  const presidente = String(req.body.presidente||'');
+  const vicePresidente = String(req.body.vicePresidente||'');
+  const ativo = req.body.ativo?1:0;
+  db.prepare('UPDATE gestao SET presidente=?,vice_presidente=?,ativo=? WHERE id=1').run(presidente,vicePresidente,ativo);
   res.json({ok:true});
 });
 

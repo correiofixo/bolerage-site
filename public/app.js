@@ -91,6 +91,14 @@ async function refreshElenco(){
   try{ const data = await api('/api/elenco'); state.elenco = data.jogadores; }catch(e){}
 }
 async function refreshVersion(){ try{ const data = await api('/api/version'); state.appVersion = data.version; }catch(e){} }
+async function refreshMe(){
+  if(!state.token) return;
+  try{
+    const j = await api('/api/me', {auth:true});
+    state.currentPlayer = Object.assign({}, state.currentPlayer, j);
+    localStorage.setItem('bolerage_player', JSON.stringify(state.currentPlayer));
+  }catch(e){}
+}
 async function refreshRanking(){ try{ const data = await api('/api/ranking'); state.ranking = data.ranking; }catch(e){} }
 async function refreshHomeExtras(){ try{ state.homeExtras = await api('/api/home-extras'); }catch(e){} }
 async function refreshRodadaAtual(){
@@ -130,6 +138,7 @@ function renderTopbar(){
   document.getElementById('who-slot').innerHTML =
     escapeHtml(state.currentPlayer.nome)+
     '<button data-action="abrir-troca-pin">trocar PIN</button>'+
+    (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">sair</button>';
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
@@ -140,7 +149,7 @@ function renderTopbar(){
     {key:'sorteio', label:'Sorteio', icon:'<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="9" cy="15" r="1.2"/><circle cx="15" cy="15" r="1.2"/><circle cx="12" cy="12" r="1.2"/>'},
     {key:'votacao', label:'Votação', icon:'<path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9z"/><path d="M4 9l3-5h10l3 5"/><path d="M9 13l2 2 4-4"/>'},
     {key:'ranking', label:'Ranking', icon:'<line x1="5" y1="20" x2="5" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="19" y1="20" x2="19" y2="4"/>'},
-    {key:'admin', label:'Admin', icon:'<line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2"/>'},
+    {key:'resenha', label:'Resenha', icon:'<path d="M20 4H8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="10" y1="9" x2="16" y2="9"/>'},
   ];
   bottomnav.innerHTML = tabs.map(t=>
     '<button data-action="tab" data-tab="'+t.key+'" class="'+(state.tab===t.key?'active':'')+'">'+
@@ -261,20 +270,26 @@ function renderExtrasIniciais(){
   if(!ex) return '';
   let html = '';
   if(ex.noticia && ex.noticia.descricao){
-    html += '<div class="card accent-gold"><h3>\u{1F4E2} Avisos</h3><p class="small">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+    html += '<div class="card accent-gold"><h3>\u{1F4E2} Se Liga - Craque</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
   if(ex.eventos && ex.eventos.length){
-    html += '<div class="card"><h3>\u26BD Eventos</h3>';
+    html += '<div class="card accent-green"><h3>\u26BD Eventos</h3>';
     ex.eventos.forEach(e=>{
       html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
     });
     html += '</div>';
   }
   if(ex.aluguel){
-    html += '<div class="card"><h3>Quadra</h3>'+
-      '<div class="list-row"><span>Responsável</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
+    html += '<div class="card accent-orange"><h3>Dados de Pagamento - (Aluguel)</h3>'+
+      '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
+      '</div>';
+  }
+  if(ex.gestao){
+    html += '<div class="card accent-cyan"><h3>Gestão</h3>'+
+      '<div class="list-row"><span>Presidente</span><span>'+escapeHtml(ex.gestao.presidente)+'</span></div>'+
+      '<div class="list-row"><span>Vice-Presidente</span><span>'+escapeHtml(ex.gestao.vicePresidente)+'</span></div>'+
       '</div>';
   }
   return html;
@@ -312,15 +327,16 @@ function renderInicio(){
   const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha').length + convidadosDeIds.size;
   const golN = presentes.filter(j=>j.posicaoPadrao==='goleiro').length;
 
-  let html = '<div class="card"><h2>Rodada de '+formatDataBR(rodada.data)+'</h2>';
+  let html = '<div class="card accent-blue"><h2>Rodada de '+formatDataBR(rodada.data)+'</h2>';
 
   if(fase.chave==='pre_confirmacao'){
-    html += '<p class="muted small">A confirmação de presença ainda não abriu. Ela abre no sábado às 8h e fecha no domingo às 8h.</p>';
+    html += '<p class="muted small">A confirmação de presença ainda não foi aberta. Ela abre no sábado às 8hrs e fecha no domingo às 8hrs.</p>';
   }
   if(fase.chave==='confirmacao_aberta'){
     html += renderMedidorConfirmacao(linhaN, golN);
     html += renderTogglePresenca(meuStatus);
     if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
+    if(meuStatus==='presente') html += renderToggleResenha((rodada.resenha||[]).includes(state.currentPlayer.id));
   }
   if(fase.chave==='aguardando_sorteio'){
     html += renderMedidorConfirmacao(linhaN, golN);
@@ -401,6 +417,23 @@ async function handleToggleConvidado(atual){
   }catch(e){ alert(e.message); }
 }
 
+function renderToggleResenha(euResenha){
+  return '<div class="presence-toggle-wrap" style="margin-top:10px;">'+
+    '<button class="presence-toggle '+(euResenha?'is-on':'is-off')+'" data-action="toggle-resenha" data-atual="'+(euResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+    '<div class="presence-toggle-label">'+(euResenha
+      ? '<strong style="color:var(--green)">Resenha: sim</strong> — vou ficar pra resenha'
+      : '<span class="muted">Resenha: não</span> — não vou ficar')+'</div>'+
+  '</div>';
+}
+async function handleToggleResenha(atual){
+  const novo = atual!=='sim';
+  try{
+    await api('/api/rodadas/'+state.rodadaAtual.id+'/resenha', {method:'POST', auth:true, body:{resenha:novo}});
+    await refreshRodadaAtual();
+    render();
+  }catch(e){ alert(e.message); }
+}
+
 async function handleTogglePresenca(atual){
   const novo = atual==='presente' ? 'ausente' : 'presente';
   try{
@@ -408,6 +441,29 @@ async function handleTogglePresenca(atual){
     await refreshRodadaAtual();
     render();
   }catch(e){ alert(e.message); }
+}
+
+/* ============================================================
+   RENDER: TAB RESENHA
+   ============================================================ */
+function renderResenha(){
+  const c = document.getElementById('content');
+  const rod = state.rodadaAtual;
+  if(!rod){
+    c.innerHTML = '<div class="empty">Nenhuma rodada agendada ainda.</div>'; return;
+  }
+  const ids = rod.resenha || [];
+  const gente = ids.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  let html = '<div class="card"><h2>Resenha — '+formatDataBR(rod.data)+'</h2>'+
+    '<p class="small muted">Jogadores presentes que marcaram que vão ficar pra resenha. Marque a sua opção na tela Início, durante a janela de confirmação.</p></div>';
+  html += '<div class="card"><h3>Confirmados na resenha ('+gente.length+')</h3>';
+  if(gente.length){
+    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span></div>');
+  }else{
+    html += '<p class="small muted">Ninguém marcou resenha ainda.</p>';
+  }
+  html += '</div>';
+  c.innerHTML = html;
 }
 
 /* ============================================================
@@ -562,20 +618,34 @@ async function handleAdminLogout(){
   try{ await api('/api/admin/logout', {method:'POST', adminAuth:true}); }catch(e){}
   state.adminToken=null; state.isAdmin=false;
   localStorage.removeItem('bolerage_admin_token');
+  state.tab='inicio';
   render();
 }
 
 async function renderAdmin(){
-  if(!state.isAdmin){ renderAdminGate(); return; }
   const c = document.getElementById('content');
+  if(!state.currentPlayer || !state.currentPlayer.admin){
+    c.innerHTML = '<div class="empty">Área restrita à administração.</div>'; return;
+  }
+  if(!state.isAdmin){
+    try{
+      const data = await api('/api/admin/enter', {method:'POST', auth:true});
+      state.adminToken = data.adminToken; state.isAdmin = true;
+      localStorage.setItem('bolerage_admin_token', data.adminToken);
+    }catch(e){
+      c.innerHTML = '<div class="empty">Não foi possível abrir o painel: '+escapeHtml(e.message||'')+'</div>'; return;
+    }
+  }
   let elencoAdmin, eventos=[];
   try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); }
-  catch(e){ if(e.status===401) return render(); c.innerHTML='<div class="empty">Erro ao carregar painel administrativo.</div>'; return; }
+  catch(e){ if(e.status===401){ state.isAdmin=false; state.adminToken=null; localStorage.removeItem('bolerage_admin_token'); return render(); } c.innerHTML='<div class="empty">Erro ao carregar painel administrativo.</div>'; return; }
   try{ const ev = await api('/api/admin/eventos', {adminAuth:true}); eventos = ev.eventos; }catch(e){}
   let agenda=[], noticia={descricao:'',ativo:false}, aluguel={nome:'',chavePix:'',valorMensalidade:'',ativo:false};
   try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){}
   try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){}
   try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){}
+  let gestao = {presidente:'',vicePresidente:'',ativo:false};
+  try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){}
   state.elencoAdmin = elencoAdmin;
 
   const rodada = state.rodadaAtual;
@@ -610,10 +680,11 @@ async function renderAdmin(){
         '<input id="edit-pin-'+j.id+'" value="'+j.pin+'" maxlength="4">'+
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
+        '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-jogador" data-id="'+j.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao">Cancelar</button></div></div>';
     }else{
-      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+(j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
+      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+(j.admin?' <span class="badge gk">admin</span>':'')+(j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> <button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button></span></div>';
     }
   });
@@ -646,9 +717,11 @@ async function renderAdmin(){
     '<label class="small"><input type="checkbox" id="aluguel-ativo" '+(aluguel.ativo?'checked':'')+'> exibir na tela inicial</label>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-aluguel">Salvar aluguel</button></div>';
 
-  html += '<div class="card"><h3>PIN administrativo</h3>'+
-    '<div class="field"><input id="novo-admin-pin" maxlength="4" placeholder="novo PIN"></div>'+
-    '<button class="btn secondary" data-action="salvar-admin-pin">Alterar PIN</button></div>';
+  html += '<div class="card"><h3>Gestão (tela inicial)</h3>'+
+    '<div class="field"><label>Presidente</label><input id="gestao-presidente" value="'+escapeHtml(gestao.presidente)+'"></div>'+
+    '<div class="field"><label>Vice-Presidente</label><input id="gestao-vice" value="'+escapeHtml(gestao.vicePresidente)+'"></div>'+
+    '<label class="small"><input type="checkbox" id="gestao-ativo" '+(gestao.ativo?'checked':'')+'> exibir na tela inicial</label>'+
+    '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-gestao">Salvar gestão</button></div>';
 
   html += '<div class="card"><h3>Modo de teste — simular horário</h3>'+
     '<p class="small muted">Ferramenta para testar as fases em homologação sem esperar o domingo real. Afeta o site inteiro enquanto estiver ativo — desligue antes de usar de verdade.</p>'+
@@ -712,8 +785,9 @@ async function handleSalvarJogador(id){
   const pin = document.getElementById('edit-pin-'+id).value.trim();
   const posicaoPadrao = document.getElementById('edit-pos-'+id).value;
   const ativo = document.getElementById('edit-ativo-'+id).checked;
+  const admin = document.getElementById('edit-admin-'+id).checked;
   try{
-    await api('/api/admin/jogadores/'+id, {method:'PUT', adminAuth:true, body:{nome,pin,posicaoPadrao,ativo}});
+    await api('/api/admin/jogadores/'+id, {method:'PUT', adminAuth:true, body:{nome,pin,posicaoPadrao,ativo,admin}});
     state.editingJogadorId = null;
     await refreshElenco();
     await render();
@@ -749,6 +823,13 @@ async function handleSalvarNoticia(){
   const descricao = document.getElementById('noticia-descricao').value;
   const ativo = document.getElementById('noticia-ativo').checked;
   try{ await api('/api/admin/noticia', {method:'PUT', adminAuth:true, body:{descricao,ativo}}); await refreshHomeExtras(); alert('Notícia salva.'); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleSalvarGestao(){
+  const presidente = document.getElementById('gestao-presidente').value;
+  const vicePresidente = document.getElementById('gestao-vice').value;
+  const ativo = document.getElementById('gestao-ativo').checked;
+  try{ await api('/api/admin/gestao', {method:'PUT', adminAuth:true, body:{presidente,vicePresidente,ativo}}); await refreshHomeExtras(); alert('Gestão salva.'); await render(); }
   catch(e){ alert(e.message); }
 }
 async function handleSalvarAluguel(){
@@ -787,7 +868,7 @@ function startPolling(){
   if(state.pollHandle) return;
   state.pollHandle = setInterval(async ()=>{
     if(!state.currentPlayer) return;
-    if(['inicio','votacao','sorteio'].includes(state.tab)){
+    if(['inicio','votacao','sorteio','resenha'].includes(state.tab)){
       await refreshRodadaAtual();
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
@@ -806,6 +887,7 @@ async function render(){
   renderTopbar();
   if(!state.currentPlayer){ renderLogin(); return; }
   if(state.tab==='inicio') renderInicio();
+  else if(state.tab==='resenha') renderResenha();
   else if(state.tab==='sorteio') renderSorteio();
   else if(state.tab==='votacao') renderVotacao();
   else if(state.tab==='ranking') await renderRanking();
@@ -828,6 +910,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='tab'){ state.tab = el.dataset.tab; state.editingJogadorId=null; return render(); }
   if(action==='toggle-presenca') return handleTogglePresenca(el.dataset.atual);
   if(action==='toggle-convidado') return handleToggleConvidado(el.dataset.atual);
+  if(action==='toggle-resenha') return handleToggleResenha(el.dataset.atual);
+  if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
@@ -844,6 +928,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='remover-evento') return handleRemoverEvento(el.dataset.id);
   if(action==='salvar-noticia') return handleSalvarNoticia();
   if(action==='salvar-aluguel') return handleSalvarAluguel();
+  if(action==='salvar-gestao') return handleSalvarGestao();
   if(action==='aplicar-sim-time') return handleAplicarSimTime();
   if(action==='resetar-sim-time') return handleResetarSimTime();
   if(action==='resetar-dados') return handleResetarDados();
@@ -865,6 +950,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
 async function boot(){
   document.getElementById('content').innerHTML = '<div class="empty">Carregando…</div>';
   await refreshVersion();
+  await refreshMe();
   await refreshElenco();
   await refreshRodadaAtual();
   await refreshRodadasLista();
