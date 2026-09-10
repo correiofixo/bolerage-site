@@ -138,8 +138,12 @@ function renderTopbar(){
   topbar.style.display='block';
   bottomnav.style.display='flex';
   document.getElementById('version-slot').textContent = state.appVersion ? ('v'+state.appVersion) : '';
+  const mens = state.currentPlayer.mensalidade;
+  const mensHtml = mens==='ok' ? '<span class="who-mens ok">sua mensalidade esta: Em Dia</span>'
+    : mens==='atrasada' ? '<span class="who-mens atrasada">sua mensalidade esta: Atrasada</span>' : '';
   document.getElementById('who-slot').innerHTML =
-    escapeHtml(state.currentPlayer.nome)+
+    '<span class="who-name">'+escapeHtml(state.currentPlayer.nome)+'</span>'+
+    mensHtml+
     '<button data-action="abrir-troca-pin">trocar PIN</button>'+
     (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">sair</button>';
@@ -313,9 +317,6 @@ function renderInicio(){
     dica = '<div class="info-box">Dica: você pode trocar seu PIN quando quiser clicando em "trocar PIN" no topo da tela.</div>';
     state.mostrouDicaPin = true;
   }
-  const mens = state.currentPlayer.mensalidade;
-  if(mens==='ok') dica = '<div style="margin-bottom:12px;"><span class="chip green"><span class="dot"></span>Mensalidade: OK</span></div>' + dica;
-  else if(mens==='atrasada') dica = '<div style="margin-bottom:12px;"><span class="chip red"><span class="dot"></span>Mensalidade: Atrasada</span></div>' + dica;
   const extrasHtml = renderExtrasIniciais();
   if(!rodada){
     c.innerHTML = dica+'<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>'+extrasHtml;
@@ -475,7 +476,7 @@ function renderResenha(){
           ? 'A resenha com churras está aberta para entrada de última hora, até as 11h.'
           : 'Entrada de última hora só vale para rodada que teve jogo.');
   }else{
-    aviso = 'O flag da resenha fica em modo leitura durante todo o período da confirmação de sábado 8hrs até domingo 8hrs, quando você marca ou desmarca pela tela Início. Das 10hrs às 11hrs do domingo o status fica liberado para movimentação por esta tela.';
+    aviso = 'O flag da resenha fica em modo leitura durante todo o período da confirmação de sábado 8hrs até domingo 8hrs, quando você ativa pela tela de início. Das 10hrs às 11hrs do domingo o status fica liberado para movimentação por esta tela.';
   }
 
   let html = '<div class="card"><h2>Resenha com Churras — '+formatDataBR(rod.data)+'</h2>'+
