@@ -4,9 +4,16 @@
    ============================================================ */
 'use strict';
 
-// Fonte única de verdade da versão do app. Atualize aqui a cada release
-// (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.11';
+// Contador de release: some 1 a cada deploy. A virada de "major" é automática —
+// no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
+const APP_BUILD = 12;
+function computeVersion(b){
+  let major, minor;
+  if(b <= 20){ major = 1; minor = b; }
+  else { const k = b - 21; major = 2 + Math.floor(k / 21); minor = k % 21; }
+  return major + '.' + String(minor).padStart(2, '0');
+}
+const APP_VERSION = computeVersion(APP_BUILD); // ex.: 12 -> "1.12"
 
 const path = require('path');
 const fs = require('fs');

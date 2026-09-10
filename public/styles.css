@@ -275,8 +275,9 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .stars-fg{position:absolute;top:0;left:0;overflow:hidden;white-space:nowrap;color:var(--gold);letter-spacing:1px;}
 .stars-num{font-size:11px;color:var(--text-muted);}
 .stars-empty{white-space:nowrap;}
-.convidado-row{padding-top:0;padding-bottom:9px;}
-.convidado-row span{color:var(--text-muted);font-size:12.5px;font-style:italic;}
+.convidado-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 10px;padding:8px 10px;background:var(--bg-elevated-2);border-left:3px solid var(--gold);border-radius:6px;}
+.convidado-row .conv-txt{color:var(--text);font-size:13px;font-weight:600;}
+.badge.conv-badge{color:var(--gold);border-color:var(--gold-dim);flex-shrink:0;}
 .star-vote-btn{font-size:19px;color:var(--line);}
 .star-vote-btn.selected{color:var(--gold);background:var(--bg-elevated-2);border-color:var(--gold-dim);}
 .star-vote-btn:disabled{opacity:.5;}

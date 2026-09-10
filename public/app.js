@@ -170,7 +170,7 @@ function renderTopbar(){
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
     '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>'+
-    '<span class="app-version phase-version">'+(state.appVersion ? ('v'+state.appVersion) : '')+'</span>';
+    '<span class="app-version phase-version">'+(state.appVersion ? ('Versão '+state.appVersion) : '')+'</span>';
 
   const tabs = [
     {key:'inicio', label:'Início', icon:'<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/>'},
@@ -327,7 +327,7 @@ function linhaListaPresenca(j, ehConvidado){
   const media = mediaDoJogador(j.id, j.posicaoPadrao);
   return '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
     '<span class="row-right">'+starsHtml(media, true)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>'+
-    (ehConvidado ? '<div class="list-row convidado-row"><span>↳ Convidado de '+escapeHtml(j.nome)+'</span></div>' : '');
+    (ehConvidado ? '<div class="convidado-row"><span class="conv-txt">Convidado de '+escapeHtml(j.nome)+'</span><span class="badge conv-badge">convidado</span></div>' : '');
 }
 
 function renderInicio(){
@@ -355,7 +355,7 @@ function renderInicio(){
   const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha').length + convidadosDeIds.size;
   const golN = presentes.filter(j=>j.posicaoPadrao==='goleiro').length;
 
-  let html = '<div class="card accent-blue"><h2>Rodada de '+formatDataBR(rodada.data)+'</h2>';
+  let html = '<div class="card accent-blue"><h2>Rodada do Domingão - '+formatDataBR(rodada.data)+'</h2>';
 
   if(fase.chave==='pre_confirmacao'){
     html += '<p class="muted small">A confirmação de presença ainda não foi aberta. Ela abre no sábado às 8hrs e fecha no domingo às 8hrs.</p>';
@@ -512,6 +512,29 @@ function renderResenha(){
     '</div>'+
     (podeEditar ? '' : '<p class="small muted" style="margin-top:6px;">Somente leitura no momento.</p>')+
   '</div>';
+
+  // Bola Cheia / Bola Murcha — só com os votos DESTA rodada (ignora o ranking geral)
+  const aggRod = {};
+  (rod.votos || []).forEach(v=>{
+    if(!v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
+    const a = aggRod[v.avaliadoId] || (aggRod[v.avaliadoId] = {soma:0, n:0});
+    a.soma += v.nota; a.n += 1;
+  });
+  const rankRod = Object.keys(aggRod)
+    .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
+    .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
+  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
+  html += '<div class="card"><h3>Bola Cheia e Bola Murcha da Rodada</h3>';
+  if(rankRod.length){
+    const cheia = rankRod[0];
+    const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;
+    html += '<div class="list-row"><span>🏆 Bola Cheia — <strong>'+escapeHtml(nomeDe(cheia.id))+'</strong></span><span class="row-right">'+starsHtml(cheia.media)+'</span></div>';
+    if(murcha) html += '<div class="list-row"><span>📉 Bola Murcha — <strong>'+escapeHtml(nomeDe(murcha.id))+'</strong></span><span class="row-right">'+starsHtml(murcha.media)+'</span></div>';
+    html += '<p class="small muted" style="margin-top:6px;">Considera só os votos desta rodada.</p>';
+  }else{
+    html += '<p class="small muted">Ainda sem votos nesta rodada.</p>';
+  }
+  html += '</div>';
 
   html += '<div class="card"><h3>Confirmados na resenha com churras ('+gente.length+')</h3>';
   if(gente.length){
