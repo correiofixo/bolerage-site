@@ -78,10 +78,13 @@ function mediaDoJogador(jogadorId, papel){
 }
 function starsHtml(media, grande){
   if(media==null) return '<span class="stars-empty small muted">sem avaliações</span>';
-  const arredondado = Math.round(media);
-  let s = '';
-  for(let i=1;i<=5;i++) s += '<span class="star '+(i<=arredondado?'on':'off')+'">★</span>';
-  return '<span class="stars'+(grande?' stars-lg':'')+'" title="'+media.toFixed(1)+' de 5">'+s+'<span class="stars-num">'+media.toFixed(1)+'</span></span>';
+  const pct = Math.max(0, Math.min(100, media/5*100));
+  return '<span class="stars'+(grande?' stars-lg':'')+'" title="'+media.toFixed(1)+' de 5">'+
+    '<span class="stars-track">'+
+      '<span class="stars-bg">★★★★★</span>'+
+      '<span class="stars-fg" style="width:'+pct.toFixed(1)+'%">★★★★★</span>'+
+    '</span>'+
+    '<span class="stars-num">'+media.toFixed(1)+'</span></span>';
 }
 
 /* ============================================================
@@ -310,6 +313,9 @@ function renderInicio(){
     dica = '<div class="info-box">Dica: você pode trocar seu PIN quando quiser clicando em "trocar PIN" no topo da tela.</div>';
     state.mostrouDicaPin = true;
   }
+  const mens = state.currentPlayer.mensalidade;
+  if(mens==='ok') dica = '<div style="margin-bottom:12px;"><span class="chip green"><span class="dot"></span>Mensalidade: OK</span></div>' + dica;
+  else if(mens==='atrasada') dica = '<div style="margin-bottom:12px;"><span class="chip red"><span class="dot"></span>Mensalidade: Atrasada</span></div>' + dica;
   const extrasHtml = renderExtrasIniciais();
   if(!rodada){
     c.innerHTML = dica+'<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>'+extrasHtml;
@@ -464,15 +470,15 @@ function renderResenha(){
   let aviso;
   if(janelaLivre){
     aviso = souPresente
-      ? 'Você pode ajustar sua presença na resenha agora, até as 11h.'
+      ? 'Você pode ajustar sua presença na resenha com churras agora, até as 11h.'
       : (rachaAconteceu
-          ? 'A resenha está aberta para entrada de última hora, até as 11h.'
+          ? 'A resenha com churras está aberta para entrada de última hora, até as 11h.'
           : 'Entrada de última hora só vale para rodada que teve jogo.');
   }else{
-    aviso = 'O flag da resenha fica em leitura. Durante a confirmação (sáb 8h → dom 8h) você marca pela tela Início; das 10h às 11h de domingo dá para ajustar por aqui.';
+    aviso = 'O flag da resenha fica em modo leitura durante todo o período da confirmação de sábado 8hrs até domingo 8hrs, quando você marca ou desmarca pela tela Início. Das 10hrs às 11hrs do domingo o status fica liberado para movimentação por esta tela.';
   }
 
-  let html = '<div class="card"><h2>Resenha — '+formatDataBR(rod.data)+'</h2>'+
+  let html = '<div class="card"><h2>Resenha com Churras — '+formatDataBR(rod.data)+'</h2>'+
     '<p class="small muted">'+aviso+'</p></div>';
 
   html += '<div class="card"><h3>Sua resenha</h3>'+
@@ -485,7 +491,7 @@ function renderResenha(){
     (podeEditar ? '' : '<p class="small muted" style="margin-top:6px;">Somente leitura no momento.</p>')+
   '</div>';
 
-  html += '<div class="card"><h3>Confirmados na resenha ('+gente.length+')</h3>';
+  html += '<div class="card"><h3>Confirmados na resenha com churras ('+gente.length+')</h3>';
   if(gente.length){
     gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge" style="color:var(--green);border-color:#2c6b3c;">ON</span></div>');
   }else{
@@ -665,21 +671,36 @@ async function renderAdmin(){
       c.innerHTML = '<div class="empty">Não foi possível abrir o painel: '+escapeHtml(e.message||'')+'</div>'; return;
     }
   }
-  let elencoAdmin, eventos=[];
-  try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); }
-  catch(e){ if(e.status===401){ state.isAdmin=false; state.adminToken=null; localStorage.removeItem('bolerage_admin_token'); return render(); } c.innerHTML='<div class="empty">Erro ao carregar painel administrativo.</div>'; return; }
-  try{ const ev = await api('/api/admin/eventos', {adminAuth:true}); eventos = ev.eventos; }catch(e){}
-  let agenda=[], noticia={descricao:'',ativo:false}, aluguel={nome:'',chavePix:'',valorMensalidade:'',ativo:false};
-  try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){}
-  try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){}
-  try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){}
-  let gestao = {presidente:'',vicePresidente:'',ativo:false};
-  try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){}
-  state.elencoAdmin = elencoAdmin;
+  const isSuper = !!state.currentPlayer.superAdmin;
+  const permsMe = state.currentPlayer.perms || [];
+  const can = p => isSuper || permsMe.includes(p);
+  const permLabel = p => p==='conteudo' ? 'Conteúdo da tela inicial' : p==='mensalidades' ? 'Mensalidades' : p;
+  const on401 = e => { if(e && e.status===401){ state.isAdmin=false; state.adminToken=null; localStorage.removeItem('bolerage_admin_token'); render(); return true; } return false; };
+
+  let elencoAdmin=null, eventos=[], permsDisp=['conteudo','mensalidades'];
+  let agenda=[], noticia={descricao:'',ativo:false}, aluguel={nome:'',chavePix:'',valorMensalidade:'',ativo:false}, gestao={presidente:'',vicePresidente:'',ativo:false};
+  let mensalPlayers=[];
+  if(isSuper){
+    try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); permsDisp = elencoAdmin.permsDisponiveis || permsDisp; }
+    catch(e){ if(on401(e)) return; c.innerHTML='<div class="empty">Erro ao carregar o elenco.</div>'; return; }
+    try{ eventos = (await api('/api/admin/eventos', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
+  }
+  if(can('conteudo')){
+    try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
+    try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+    try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+    try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+  }
+  if(can('mensalidades') && !isSuper){
+    try{ mensalPlayers = (await api('/api/admin/mensalidades', {adminAuth:true})).jogadores; }catch(e){ if(on401(e)) return; }
+  }
+  if(elencoAdmin) state.elencoAdmin = elencoAdmin;
 
   const rodada = state.rodadaAtual;
-  let html = '<div class="card"><div class="list-row" style="border:none;padding:0;"><h2>Painel administrativo</h2><button class="btn secondary small" data-action="admin-logout">sair do admin</button></div></div>';
+  const papelLabel = isSuper ? 'Super Admin' : ('Admin — '+(permsMe.length ? permsMe.map(permLabel).join(', ') : 'sem áreas atribuídas'));
+  let html = '<div class="card"><div class="list-row" style="border:none;padding:0;"><span><h2 style="margin:0;">Painel administrativo</h2><span class="small muted">'+escapeHtml(papelLabel)+'</span></span><button class="btn secondary small" data-action="admin-logout">sair do admin</button></div></div>';
 
+  if(isSuper){
   html += '<div class="card"><h3>Rodada atual</h3>';
   if(rodada){
     html += '<p class="small">'+formatDataBR(rodada.data)+' — '+rodada.fase.label+'</p>';
@@ -711,12 +732,24 @@ async function renderAdmin(){
         '<input id="edit-pin-'+j.id+'" value="'+j.pin+'" maxlength="4">'+
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
-        '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
+        (j.superAdmin
+          ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
+          : '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
+            '<div class="small muted" style="margin-top:2px;">Áreas do acesso admin:</div>'+
+            permsDisp.map(p=>'<label class="small" style="margin-left:12px;"><input type="checkbox" id="edit-perm-'+p+'-'+j.id+'" '+((j.adminPerms||[]).includes(p)?'checked':'')+'> '+permLabel(p)+'</label>').join(''))+
+        '<label class="small">Mensalidade: <select id="edit-mens-'+j.id+'">'+
+          '<option value="" '+(!j.mensalidade?'selected':'')+'>—</option>'+
+          '<option value="ok" '+(j.mensalidade==='ok'?'selected':'')+'>OK</option>'+
+          '<option value="atrasada" '+(j.mensalidade==='atrasada'?'selected':'')+'>Atrasada</option></select></label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-jogador" data-id="'+j.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao">Cancelar</button></div></div>';
     }else{
-      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+(j.admin?' <span class="badge gk">admin</span>':'')+(j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
-        '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> <button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button></span></div>';
+      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
+        (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
+        (j.mensalidade==='ok'?' <span class="badge" style="color:var(--green);border-color:#2c6b3c;">mens. OK</span>':j.mensalidade==='atrasada'?' <span class="badge" style="color:var(--red);border-color:#6b3630;">mens. atrasada</span>':'')+
+        (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
+        '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
+        (j.superAdmin?'':'<button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button>')+'</span></div>';
     }
   });
   html += '<div class="divider"></div><h3>Adicionar jogador</h3>'+
@@ -724,7 +757,9 @@ async function renderAdmin(){
     '<div class="field"><label>PIN (4 dígitos)</label><input id="novo-pin" maxlength="4"></div>'+
     '<div class="field"><label>Posição padrão</label><select id="novo-pos"><option value="linha">Linha</option><option value="goleiro">Goleiro</option></select></div>'+
     '<button class="btn secondary" data-action="adicionar-jogador">Adicionar</button></div>';
+  } /* fim isSuper (rodada / critérios / elenco) */
 
+  if(can('conteudo')){
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
     html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
@@ -753,7 +788,23 @@ async function renderAdmin(){
     '<div class="field"><label>Vice-Presidente</label><input id="gestao-vice" value="'+escapeHtml(gestao.vicePresidente)+'"></div>'+
     '<label class="small"><input type="checkbox" id="gestao-ativo" '+(gestao.ativo?'checked':'')+'> exibir na tela inicial</label>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-gestao">Salvar gestão</button></div>';
+  } /* fim can(conteudo) */
 
+  if(can('mensalidades') && !isSuper){
+    html += '<div class="card"><h3>Mensalidades</h3>'+
+      '<p class="small muted">Marque cada jogador. Aparece na tela Início de cada um como selo verde (OK) ou vermelho (Atrasada).</p>';
+    mensalPlayers.forEach(j=>{
+      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
+        '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+
+          '<option value="" '+(!j.mensalidade?'selected':'')+'>—</option>'+
+          '<option value="ok" '+(j.mensalidade==='ok'?'selected':'')+'>OK</option>'+
+          '<option value="atrasada" '+(j.mensalidade==='atrasada'?'selected':'')+'>Atrasada</option>'+
+        '</select></div>';
+    });
+    html += '</div>';
+  }
+
+  if(isSuper){
   html += '<div class="card"><h3>Modo de teste — simular horário</h3>'+
     '<p class="small muted">Ferramenta para testar as fases em homologação sem esperar o domingo real. Afeta o site inteiro enquanto estiver ativo — desligue antes de usar de verdade.</p>'+
     '<div class="field"><input type="datetime-local" id="sim-time" value="'+(elencoAdmin.config.simuladoNow||'')+'"></div>'+
@@ -771,6 +822,7 @@ async function renderAdmin(){
   html += '<div class="card"><h3>Zerar rodada de teste</h3>'+
     '<p class="small muted">Apaga confirmações, sorteio e votos de rodadas que AINDA NÃO ENCERRARAM (em teste ou em andamento). Rodadas já encerradas ficam intocadas — o histórico real nunca é apagado por aqui. O elenco e os PINs também são mantidos.</p>'+
     '<button class="btn danger" data-action="resetar-dados">Apagar rodada em teste</button></div>';
+  } /* fim isSuper (modo teste / log / zerar) */
 
   c.innerHTML = html;
 }
@@ -827,13 +879,27 @@ async function handleSalvarJogador(id){
   const pin = document.getElementById('edit-pin-'+id).value.trim();
   const posicaoPadrao = document.getElementById('edit-pos-'+id).value;
   const ativo = document.getElementById('edit-ativo-'+id).checked;
-  const admin = document.getElementById('edit-admin-'+id).checked;
+  const body = {nome,pin,posicaoPadrao,ativo};
+  const adminEl = document.getElementById('edit-admin-'+id);
+  if(adminEl){
+    body.admin = adminEl.checked;
+    body.adminPerms = ['conteudo','mensalidades'].filter(p=>{
+      const el = document.getElementById('edit-perm-'+p+'-'+id);
+      return el && el.checked;
+    });
+  }
+  const mensEl = document.getElementById('edit-mens-'+id);
+  if(mensEl) body.mensalidade = mensEl.value;
   try{
-    await api('/api/admin/jogadores/'+id, {method:'PUT', adminAuth:true, body:{nome,pin,posicaoPadrao,ativo,admin}});
+    await api('/api/admin/jogadores/'+id, {method:'PUT', adminAuth:true, body});
     state.editingJogadorId = null;
     await refreshElenco();
     await render();
   }catch(e){ alert(e.message); }
+}
+async function handleSalvarMensalidade(id, valor){
+  try{ await api('/api/admin/jogadores/'+id+'/mensalidade', {method:'PUT', adminAuth:true, body:{mensalidade:valor}}); }
+  catch(e){ alert(e.message); }
 }
 async function handleRemoverJogador(id){
   if(!confirm('Remover este jogador do elenco?')) return;
@@ -984,6 +1050,9 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
   if(e.target.dataset.action==='mudar-rodada-visualizada'){
     await carregarRodadaVisualizada(e.target.value);
     render();
+  }
+  if(e.target.dataset.action==='salvar-mensalidade'){
+    await handleSalvarMensalidade(e.target.dataset.id, e.target.value);
   }
 });
 

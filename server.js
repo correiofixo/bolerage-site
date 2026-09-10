@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 
 const path = require('path');
 const fs = require('fs');
@@ -134,6 +134,13 @@ try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN status TEXT"); }catch(e){}
 try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN trouxe_convidado INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN resenha INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin_perms TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN mensalidade TEXT NOT NULL DEFAULT ''"); }catch(e){}
+
+// permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
+const PERMS_ADMIN = ['conteudo','mensalidades'];
+const MENSALIDADE_VALORES = ['', 'ok', 'atrasada'];
 
 function seedExtrasSeNecessario(){
   const n = db.prepare('SELECT * FROM noticia WHERE id=1').get();
@@ -146,6 +153,9 @@ function seedExtrasSeNecessario(){
   // ainda, promove o Josué pelo nome — feito uma única vez.
   const temAdmin = db.prepare('SELECT 1 FROM jogadores WHERE admin=1').get();
   if(!temAdmin) db.prepare("UPDATE jogadores SET admin=1 WHERE nome='Josué'").run();
+  // Josué é o Super Admin — sempre. Se ninguém for super ainda, promove pelo nome.
+  const temSuper = db.prepare('SELECT 1 FROM jogadores WHERE super_admin=1').get();
+  if(!temSuper) db.prepare("UPDATE jogadores SET super_admin=1, admin=1 WHERE nome='Josué'").run();
 }
 seedExtrasSeNecessario();
 
@@ -493,20 +503,42 @@ function requireAuth(req,res,next){
   req.jogadorId = sessao.jogador_id;
   next();
 }
+function getJogadorAuth(jogadorId){
+  const j = jogadorId ? db.prepare('SELECT admin,super_admin,admin_perms FROM jogadores WHERE id=? AND ativo=1').get(jogadorId) : null;
+  const perms = (j && j.admin_perms) ? j.admin_perms.split(',').filter(Boolean) : [];
+  return { admin: !!(j && j.admin), superAdmin: !!(j && j.super_admin), perms };
+}
 function jogadorEhAdmin(jogadorId){
-  if(!jogadorId) return false;
-  const j = db.prepare('SELECT admin FROM jogadores WHERE id=? AND ativo=1').get(jogadorId);
-  return !!(j && j.admin);
+  return getJogadorAuth(jogadorId).admin;
 }
 function requireAdmin(req,res,next){
   const sessao = getSessao(extrairToken(req));
-  // aceita tanto uma sessão administrativa (token de admin) quanto a sessão
-  // comum de um jogador marcado como admin no elenco.
-  if(sessao && (sessao.is_admin || jogadorEhAdmin(sessao.jogador_id))){
-    if(sessao.jogador_id) req.jogadorId = sessao.jogador_id;
+  if(!sessao) return res.status(401).json({erro:'Sessão administrativa inválida.'});
+  if(sessao.jogador_id){
+    const a = getJogadorAuth(sessao.jogador_id);
+    if(a.admin || sessao.is_admin){
+      req.jogadorId = sessao.jogador_id;
+      req.auth = a.admin ? a : { admin:true, superAdmin:true, perms:PERMS_ADMIN.slice() };
+      return next();
+    }
+  }else if(sessao.is_admin){
+    // token do PIN administrativo legado = acesso total (Super).
+    req.auth = { admin:true, superAdmin:true, perms:PERMS_ADMIN.slice() };
     return next();
   }
   return res.status(401).json({erro:'Sessão administrativa inválida.'});
+}
+function requireSuper(req,res,next){
+  requireAdmin(req,res,()=>{
+    if(req.auth && req.auth.superAdmin) return next();
+    return res.status(403).json({erro:'Ação restrita ao Super Admin.'});
+  });
+}
+function requirePerm(perm){
+  return (req,res,next)=>requireAdmin(req,res,()=>{
+    if(req.auth && (req.auth.superAdmin || req.auth.perms.includes(perm))) return next();
+    return res.status(403).json({erro:'Seu acesso não inclui essa área.'});
+  });
 }
 
 /* ============================================================
@@ -535,13 +567,22 @@ app.post('/api/login', loginLimiter, (req,res)=>{
   const jogador = db.prepare('SELECT * FROM jogadores WHERE pin=? AND ativo=1').get(pin);
   if(!jogador) return res.status(401).json({erro:'PIN não encontrado.'});
   const token = criarSessao(jogador.id, false);
-  res.json({token, jogador:{id:jogador.id, nome:jogador.nome, posicaoPadrao:jogador.posicao_padrao, admin:!!jogador.admin}});
+  res.json({token, jogador:jogadorPublico(jogador)});
 });
+
+function jogadorPublico(j){
+  return {
+    id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao,
+    admin:!!j.admin, superAdmin:!!j.super_admin,
+    perms: (j.admin_perms||'').split(',').filter(Boolean),
+    mensalidade: j.mensalidade || '',
+  };
+}
 
 app.get('/api/me', requireAuth, (req,res)=>{
   const j = getJogadorPorId(req.jogadorId);
   if(!j) return res.status(401).json({erro:'Sessão inválida.'});
-  res.json({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, admin:!!j.admin});
+  res.json(jogadorPublico(j));
 });
 
 app.post('/api/admin/login', loginLimiter, (req,res)=>{
@@ -584,12 +625,30 @@ app.get('/api/elenco', (req,res)=>{
   const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo}));
   res.json({jogadores});
 });
-app.get('/api/admin/elenco', requireAdmin, (req,res)=>{
-  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, admin:!!j.admin}));
+app.get('/api/admin/elenco', requireSuper, (req,res)=>{
+  const jogadores = getJogadores().map(j=>({
+    id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo,
+    admin:!!j.admin, superAdmin:!!j.super_admin,
+    adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
+    mensalidade:j.mensalidade||'',
+  }));
   const cfg = getConfig();
-  res.json({jogadores, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
+  res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
 });
-app.post('/api/admin/jogadores', requireAdmin, (req,res)=>{
+// lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
+app.get('/api/admin/mensalidades', requirePerm('mensalidades'), (req,res)=>{
+  const jogadores = getJogadores().filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, mensalidade:j.mensalidade||''}));
+  res.json({jogadores});
+});
+app.put('/api/admin/jogadores/:id/mensalidade', requirePerm('mensalidades'), (req,res)=>{
+  const j = getJogadorPorId(req.params.id);
+  if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
+  const val = String(req.body.mensalidade||'');
+  if(!MENSALIDADE_VALORES.includes(val)) return res.status(400).json({erro:'Valor de mensalidade inválido.'});
+  db.prepare('UPDATE jogadores SET mensalidade=? WHERE id=?').run(val, j.id);
+  res.json({ok:true});
+});
+app.post('/api/admin/jogadores', requireSuper, (req,res)=>{
   const {nome, pin, posicaoPadrao} = req.body;
   if(!nome || !/^\d{4}$/.test(String(pin||'')) || !['linha','goleiro'].includes(posicaoPadrao)){
     return res.status(400).json({erro:'Informe nome, PIN de 4 dígitos e posição válida.'});
@@ -599,35 +658,52 @@ app.post('/api/admin/jogadores', requireAdmin, (req,res)=>{
   logEvento('Jogador "'+nome+'" adicionado ao elenco.');
   res.json({ok:true, id});
 });
-app.put('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
+app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   const j = getJogadorPorId(req.params.id);
   if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
   const nome = req.body.nome!=null ? String(req.body.nome) : j.nome;
   const pin = req.body.pin!=null && /^\d{4}$/.test(String(req.body.pin)) ? String(req.body.pin) : j.pin;
   const posicaoPadrao = ['linha','goleiro'].includes(req.body.posicaoPadrao) ? req.body.posicaoPadrao : j.posicao_padrao;
   const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : j.ativo;
-  const admin = req.body.admin!=null ? (req.body.admin?1:0) : (j.admin||0);
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=? WHERE id=?').run(nome,pin,posicaoPadrao,ativo,admin,j.id);
+  // o Super Admin nunca perde o acesso admin
+  let admin = req.body.admin!=null ? (req.body.admin?1:0) : (j.admin||0);
+  if(j.super_admin) admin = 1;
+  // permissões concedidas (só valem se admin e não super)
+  let permsArr;
+  if(req.body.adminPerms!=null){
+    const raw = Array.isArray(req.body.adminPerms) ? req.body.adminPerms : String(req.body.adminPerms).split(',');
+    permsArr = raw.map(p=>String(p).trim()).filter(p=>PERMS_ADMIN.includes(p));
+  }else{
+    permsArr = (j.admin_perms||'').split(',').filter(Boolean);
+  }
+  const adminPerms = admin ? permsArr.join(',') : '';
+  // mensalidade
+  let mensalidade = j.mensalidade || '';
+  if(req.body.mensalidade!=null && MENSALIDADE_VALORES.includes(String(req.body.mensalidade))){
+    mensalidade = String(req.body.mensalidade);
+  }
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,j.id);
   res.json({ok:true});
 });
-app.delete('/api/admin/jogadores/:id', requireAdmin, (req,res)=>{
+app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   db.prepare('DELETE FROM jogadores WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });
-app.put('/api/admin/config', requireAdmin, (req,res)=>{
+app.put('/api/admin/config', requireSuper, (req,res)=>{
   const minRodadas = Math.max(1, parseInt(req.body.minRodadas,10)||4);
   const minVotos = Math.max(1, parseInt(req.body.minVotos,10)||3);
   db.prepare('UPDATE config SET min_rodadas=?, min_votos=? WHERE id=1').run(minRodadas, minVotos);
   logEvento('Critérios da fase 2 atualizados: '+minRodadas+' rodadas / '+minVotos+' votos.');
   res.json({ok:true});
 });
-app.put('/api/admin/admin-pin', requireAdmin, (req,res)=>{
+app.put('/api/admin/admin-pin', requireSuper, (req,res)=>{
   const pin = String(req.body.pin||'');
   if(!/^\d{4}$/.test(pin)) return res.status(400).json({erro:'O PIN deve ter 4 dígitos.'});
   db.prepare('UPDATE config SET admin_pin=? WHERE id=1').run(pin);
   res.json({ok:true});
 });
-app.put('/api/admin/simulado', requireAdmin, (req,res)=>{
+app.put('/api/admin/simulado', requireSuper, (req,res)=>{
   const val = req.body.simuladoNow || null;
   db.prepare('UPDATE config SET simulado_now=? WHERE id=1').run(val);
   res.json({ok:true});
@@ -679,7 +755,7 @@ app.get('/api/rodadas/:id', (req,res)=>{
   res.json({rodada: serializarRodada(rodada)});
 });
 
-app.post('/api/admin/rodadas', requireAdmin, (req,res)=>{
+app.post('/api/admin/rodadas', requireSuper, (req,res)=>{
   const data = String(req.body.data||'');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({erro:'Data inválida.'});
   const id = idGen('r');
@@ -691,7 +767,7 @@ app.post('/api/admin/rodadas', requireAdmin, (req,res)=>{
 // Remove UMA rodada e tudo ligado a ela. Diferente do /reset, aqui o admin
 // pode remover inclusive rodada já encerrada/histórico — mas só com
 // confirmarHistorico=true no corpo (trava contra clique acidental).
-app.delete('/api/admin/rodadas/:id', requireAdmin, (req,res)=>{
+app.delete('/api/admin/rodadas/:id', requireSuper, (req,res)=>{
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const fase = computeFase(rodada);
@@ -783,7 +859,7 @@ app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
   return res.status(403).json({erro:'Fora da janela de ajuste da resenha (domingo, das 10h às 11h).'});
 });
 
-app.post('/api/admin/rodadas/:id/sortear', requireAdmin, (req,res)=>{
+app.post('/api/admin/rodadas/:id/sortear', requireSuper, (req,res)=>{
   const resultado = realizarSorteio(req.params.id);
   if(!resultado.ok) return res.status(400).json({erro: resultado.erro});
   res.json({ok:true});
@@ -821,12 +897,12 @@ app.get('/api/ranking', (req,res)=>{
   res.json({ranking: calcularRanking()});
 });
 
-app.get('/api/admin/eventos', requireAdmin, (req,res)=>{
+app.get('/api/admin/eventos', requireSuper, (req,res)=>{
   const eventos = db.prepare('SELECT ts, mensagem FROM eventos_log ORDER BY ts DESC LIMIT 50').all();
   res.json({eventos});
 });
 
-app.post('/api/admin/reset', requireAdmin, (req,res)=>{
+app.post('/api/admin/reset', requireSuper, (req,res)=>{
   // Segurança: só apaga rodadas que AINDA NÃO terminaram (aguardando confirmação, ou
   // sorteadas mas dentro da janela de votação). Rodadas 'encerradas' ou 'não viabilizadas'
   // são histórico real e nunca são tocadas por este botão.
@@ -870,10 +946,10 @@ app.get('/api/home-extras', (req,res)=>{
   });
 });
 
-app.get('/api/admin/agenda', requireAdmin, (req,res)=>{
+app.get('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo}))});
 });
-app.post('/api/admin/agenda', requireAdmin, (req,res)=>{
+app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   const nome = String(req.body.nome||'').trim();
   const data = String(req.body.data||'').trim();
   if(!nome || !data) return res.status(400).json({erro:'Informe nome e data do evento.'});
@@ -881,7 +957,7 @@ app.post('/api/admin/agenda', requireAdmin, (req,res)=>{
   db.prepare('INSERT INTO eventos (id,nome,data,ativo) VALUES (?,?,?,1)').run(id, nome, data);
   res.json({ok:true, id});
 });
-app.put('/api/admin/agenda/:id', requireAdmin, (req,res)=>{
+app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
   const ev = db.prepare('SELECT * FROM eventos WHERE id=?').get(req.params.id);
   if(!ev) return res.status(404).json({erro:'Evento não encontrado.'});
   const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
@@ -890,27 +966,27 @@ app.put('/api/admin/agenda/:id', requireAdmin, (req,res)=>{
   db.prepare('UPDATE eventos SET nome=?,data=?,ativo=? WHERE id=?').run(nome,data,ativo,ev.id);
   res.json({ok:true});
 });
-app.delete('/api/admin/agenda/:id', requireAdmin, (req,res)=>{
+app.delete('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
   db.prepare('DELETE FROM eventos WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });
 
-app.get('/api/admin/noticia', requireAdmin, (req,res)=>{
+app.get('/api/admin/noticia', requirePerm('conteudo'), (req,res)=>{
   const n = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
   res.json({descricao:n.descricao, ativo:!!n.ativo});
 });
-app.put('/api/admin/noticia', requireAdmin, (req,res)=>{
+app.put('/api/admin/noticia', requirePerm('conteudo'), (req,res)=>{
   const descricao = String(req.body.descricao||'');
   const ativo = req.body.ativo?1:0;
   db.prepare('UPDATE noticia SET descricao=?,ativo=? WHERE id=1').run(descricao, ativo);
   res.json({ok:true});
 });
 
-app.get('/api/admin/aluguel', requireAdmin, (req,res)=>{
+app.get('/api/admin/aluguel', requirePerm('conteudo'), (req,res)=>{
   const a = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
   res.json({nome:a.nome, chavePix:a.chave_pix, valorMensalidade:a.valor_mensalidade, ativo:!!a.ativo});
 });
-app.put('/api/admin/aluguel', requireAdmin, (req,res)=>{
+app.put('/api/admin/aluguel', requirePerm('conteudo'), (req,res)=>{
   const nome = String(req.body.nome||'');
   const chavePix = String(req.body.chavePix||'');
   const valorMensalidade = String(req.body.valorMensalidade||'');
@@ -919,11 +995,11 @@ app.put('/api/admin/aluguel', requireAdmin, (req,res)=>{
   res.json({ok:true});
 });
 
-app.get('/api/admin/gestao', requireAdmin, (req,res)=>{
+app.get('/api/admin/gestao', requirePerm('conteudo'), (req,res)=>{
   const g = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
   res.json({presidente:g.presidente, vicePresidente:g.vice_presidente, ativo:!!g.ativo});
 });
-app.put('/api/admin/gestao', requireAdmin, (req,res)=>{
+app.put('/api/admin/gestao', requirePerm('conteudo'), (req,res)=>{
   const presidente = String(req.body.presidente||'');
   const vicePresidente = String(req.body.vicePresidente||'');
   const ativo = req.body.ativo?1:0;
