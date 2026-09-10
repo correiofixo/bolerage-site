@@ -36,6 +36,17 @@ function formatDataBR(dateStr){
   return d+'/'+m+'/'+y;
 }
 
+// estados de mensalidade (valor no banco -> rótulo / emoji / classe de cor)
+const MENS_INFO = {
+  em_dia:    {lbl:'Em Dia',    emoji:'✅', cls:'ok'},
+  em_atraso: {lbl:'Em Atraso', emoji:'⚠️', cls:'atrasada'},
+  isenta:    {lbl:'Isenta',    emoji:'🆓', cls:'isenta'},
+};
+const MENS_OPCOES = [['','—'],['em_dia','Em Dia'],['em_atraso','Em Atraso'],['isenta','Isenta']];
+function mensOptionsHtml(atual){
+  return MENS_OPCOES.map(([v,l])=>'<option value="'+v+'" '+((atual||'')===v?'selected':'')+'>'+l+'</option>').join('');
+}
+
 /* ============================================================
    ESTADO
    ============================================================ */
@@ -137,19 +148,21 @@ function renderTopbar(){
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
-  document.getElementById('version-slot').textContent = state.appVersion ? ('v'+state.appVersion) : '';
-  const mens = state.currentPlayer.mensalidade;
-  const mensHtml = mens==='ok' ? '<span class="who-mens ok">sua mensalidade esta: Em Dia</span>'
-    : mens==='atrasada' ? '<span class="who-mens atrasada">sua mensalidade esta: Atrasada</span>' : '';
+  document.getElementById('version-slot').textContent = '';
+  const m = MENS_INFO[state.currentPlayer.mensalidade];
+  const mensHtml = m
+    ? '<span class="who-mens '+m.cls+'"> , sua mensalidade está = '+m.emoji+' '+m.lbl+'</span>'
+    : '';
   document.getElementById('who-slot').innerHTML =
-    '<span class="who-name">'+escapeHtml(state.currentPlayer.nome)+'</span>'+
+    '<span class="who-name">Olá, '+escapeHtml(state.currentPlayer.nome)+'</span>'+
     mensHtml+
     '<button data-action="abrir-troca-pin">trocar PIN</button>'+
     (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">sair</button>';
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
-    '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>';
+    '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>'+
+    '<span class="app-version phase-version">'+(state.appVersion ? ('v'+state.appVersion) : '')+'</span>';
 
   const tabs = [
     {key:'inicio', label:'Início', icon:'<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/>'},
@@ -738,16 +751,13 @@ async function renderAdmin(){
           : '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
             '<div class="small muted" style="margin-top:2px;">Áreas do acesso admin:</div>'+
             permsDisp.map(p=>'<label class="small" style="margin-left:12px;"><input type="checkbox" id="edit-perm-'+p+'-'+j.id+'" '+((j.adminPerms||[]).includes(p)?'checked':'')+'> '+permLabel(p)+'</label>').join(''))+
-        '<label class="small">Mensalidade: <select id="edit-mens-'+j.id+'">'+
-          '<option value="" '+(!j.mensalidade?'selected':'')+'>—</option>'+
-          '<option value="ok" '+(j.mensalidade==='ok'?'selected':'')+'>OK</option>'+
-          '<option value="atrasada" '+(j.mensalidade==='atrasada'?'selected':'')+'>Atrasada</option></select></label>'+
+        '<label class="small">Mensalidade: <select id="edit-mens-'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-jogador" data-id="'+j.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao">Cancelar</button></div></div>';
     }else{
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
-        (j.mensalidade==='ok'?' <span class="badge" style="color:var(--green);border-color:#2c6b3c;">mens. OK</span>':j.mensalidade==='atrasada'?' <span class="badge" style="color:var(--red);border-color:#6b3630;">mens. atrasada</span>':'')+
+        (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
         (j.superAdmin?'':'<button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button>')+'</span></div>';
@@ -796,11 +806,7 @@ async function renderAdmin(){
       '<p class="small muted">Marque cada jogador. Aparece na tela Início de cada um como selo verde (OK) ou vermelho (Atrasada).</p>';
     mensalPlayers.forEach(j=>{
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
-        '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+
-          '<option value="" '+(!j.mensalidade?'selected':'')+'>—</option>'+
-          '<option value="ok" '+(j.mensalidade==='ok'?'selected':'')+'>OK</option>'+
-          '<option value="atrasada" '+(j.mensalidade==='atrasada'?'selected':'')+'>Atrasada</option>'+
-        '</select></div>';
+        '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></div>';
     });
     html += '</div>';
   }

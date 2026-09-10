@@ -6,7 +6,7 @@
 
 // Fonte única de verdade da versão do app. Atualize aqui a cada release
 // (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
-const APP_VERSION = '1.0.8';
+const APP_VERSION = '1.0.9';
 
 const path = require('path');
 const fs = require('fs');
@@ -140,7 +140,7 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN mensalidade TEXT NOT NULL DEFAULT
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
-const MENSALIDADE_VALORES = ['', 'ok', 'atrasada'];
+const MENSALIDADE_VALORES = ['', 'em_dia', 'em_atraso', 'isenta'];
 
 function seedExtrasSeNecessario(){
   const n = db.prepare('SELECT * FROM noticia WHERE id=1').get();
@@ -156,6 +156,9 @@ function seedExtrasSeNecessario(){
   // Josué é o Super Admin — sempre. Se ninguém for super ainda, promove pelo nome.
   const temSuper = db.prepare('SELECT 1 FROM jogadores WHERE super_admin=1').get();
   if(!temSuper) db.prepare("UPDATE jogadores SET super_admin=1, admin=1 WHERE nome='Josué'").run();
+  // migração dos rótulos antigos de mensalidade (v1.0.7/1.0.8 -> v1.0.9) — idempotente.
+  try{ db.prepare("UPDATE jogadores SET mensalidade='em_dia' WHERE mensalidade='ok'").run(); }catch(e){}
+  try{ db.prepare("UPDATE jogadores SET mensalidade='em_atraso' WHERE mensalidade='atrasada'").run(); }catch(e){}
 }
 seedExtrasSeNecessario();
 
