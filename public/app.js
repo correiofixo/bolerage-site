@@ -60,9 +60,29 @@ const state = {
   trocaPinErro: '',
   mostrouDicaPin: false,
   pollHandle: null,
+  appVersion: null,
+  ranking: {},
+  homeExtras: null,
 };
 
 function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
+function nomeParaExibicao(id){
+  if(id && id.startsWith('conv:')){
+    return 'Convidado de '+jogadorNome(id.slice(5));
+  }
+  return jogadorNome(id);
+}
+function mediaDoJogador(jogadorId, papel){
+  const r = state.ranking && state.ranking[jogadorId];
+  return (r && r[papel]) ? r[papel].media : null;
+}
+function starsHtml(media, grande){
+  if(media==null) return '<span class="stars-empty small muted">sem avaliações</span>';
+  const arredondado = Math.round(media);
+  let s = '';
+  for(let i=1;i<=5;i++) s += '<span class="star '+(i<=arredondado?'on':'off')+'">★</span>';
+  return '<span class="stars'+(grande?' stars-lg':'')+'" title="'+media.toFixed(1)+' de 5">'+s+'<span class="stars-num">'+media.toFixed(1)+'</span></span>';
+}
 
 /* ============================================================
    CARREGAMENTO DE DADOS
@@ -70,6 +90,9 @@ function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? 
 async function refreshElenco(){
   try{ const data = await api('/api/elenco'); state.elenco = data.jogadores; }catch(e){}
 }
+async function refreshVersion(){ try{ const data = await api('/api/version'); state.appVersion = data.version; }catch(e){} }
+async function refreshRanking(){ try{ const data = await api('/api/ranking'); state.ranking = data.ranking; }catch(e){} }
+async function refreshHomeExtras(){ try{ state.homeExtras = await api('/api/home-extras'); }catch(e){} }
 async function refreshRodadaAtual(){
   try{
     const data = await api('/api/rodadas/atual');
@@ -103,6 +126,7 @@ function renderTopbar(){
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
+  document.getElementById('version-slot').textContent = state.appVersion ? ('v'+state.appVersion) : '';
   document.getElementById('who-slot').innerHTML =
     escapeHtml(state.currentPlayer.nome)+
     '<button data-action="abrir-troca-pin">trocar PIN</button>'+
@@ -138,12 +162,11 @@ function renderLogin(){
   document.getElementById('content').innerHTML =
     '<div id="login-screen">'+
       '<img src="/assets/logo.jpg" alt="Bolerage F.D." class="login-logo">'+
-      '<h1>Bolerage F.D.</h1>'+
       '<div class="sub">Digite seu PIN de 4 dígitos</div>'+
       '<div class="pin-dots">'+dots+'</div>'+
       '<div class="keypad">'+keypad+'</div>'+
       '<div class="login-error">'+escapeHtml(state.loginError)+'</div>'+
-      '<div class="login-hint">Não sabe seu PIN? Peça para o administrador do grupo. (PIN administrativo é separado e fica na aba Admin.)</div>'+
+      '<div class="login-hint">Não sabe seu PIN? Peça para o administrador do grupo.</div>'+
     '</div>';
 }
 
@@ -208,6 +231,62 @@ function handleCancelarTrocaPin(){ state.trocaPinErro=''; state.tab='inicio'; re
 /* ============================================================
    RENDER: TAB INÍCIO
    ============================================================ */
+function calcProgressoConfirmacao(linhaN, golN){
+  // dois caminhos possíveis pra viabilizar: (10 linha + 2 goleiro) ou (12 linha no total)
+  const progressoA = Math.min(linhaN/10, 1, golN/2, 1);
+  const progressoB = Math.min(linhaN/12, 1);
+  const progresso = Math.max(progressoA, progressoB);
+  const hue = Math.round(progresso*120); // 0=vermelho, 60=amarelo, 120=verde
+  return {
+    progresso,
+    corTexto: 'hsl('+hue+', 75%, 60%)',
+    corFundo: 'hsl('+hue+', 65%, 45%)',
+    viavel: progresso>=1,
+  };
+}
+function renderMedidorConfirmacao(linhaN, golN){
+  const total = linhaN+golN;
+  const p = calcProgressoConfirmacao(linhaN, golN);
+  return '<div class="confirm-meter">'+
+    '<div class="confirm-meter-num" style="color:'+p.corTexto+'">'+total+'</div>'+
+    '<div class="confirm-meter-info">'+
+      '<div class="confirm-meter-track"><div class="confirm-meter-fill" style="width:'+Math.round(p.progresso*100)+'%;background:'+p.corFundo+'"></div></div>'+
+      '<div class="confirm-meter-label small muted">'+linhaN+' de linha \u2022 '+golN+' goleiro(s)'+(p.viavel?' \u2014 jogo viabilizado':'')+'</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function renderExtrasIniciais(){
+  const ex = state.homeExtras;
+  if(!ex) return '';
+  let html = '';
+  if(ex.noticia && ex.noticia.descricao){
+    html += '<div class="card accent-gold"><h3>Notícia</h3><p class="small">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+  }
+  if(ex.eventos && ex.eventos.length){
+    html += '<div class="card"><h3>Próximos eventos</h3>';
+    ex.eventos.forEach(e=>{
+      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
+    });
+    html += '</div>';
+  }
+  if(ex.aluguel){
+    html += '<div class="card"><h3>Aluguel da quadra</h3>'+
+      '<div class="list-row"><span>Responsável</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
+      '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
+      '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
+      '</div>';
+  }
+  return html;
+}
+
+function linhaListaPresenca(j, ehConvidado){
+  const media = mediaDoJogador(j.id, j.posicaoPadrao);
+  return '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
+    '<span class="row-right">'+starsHtml(media)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>'+
+    (ehConvidado ? '<div class="list-row convidado-row"><span>↳ Convidado de '+escapeHtml(j.nome)+'</span></div>' : '');
+}
+
 function renderInicio(){
   const rodada = state.rodadaAtual;
   const c = document.getElementById('content');
@@ -216,16 +295,22 @@ function renderInicio(){
     dica = '<div class="info-box">Dica: você pode trocar seu PIN quando quiser clicando em "trocar PIN" no topo da tela.</div>';
     state.mostrouDicaPin = true;
   }
+  const extrasHtml = renderExtrasIniciais();
   if(!rodada){
-    c.innerHTML = dica+'<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>';
+    c.innerHTML = dica+'<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>'+extrasHtml;
     return;
   }
   const fase = rodada.fase;
-  const confirmadosIds = rodada.confirmados || [];
-  const confirmados = confirmadosIds.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
-  const jaConfirmado = confirmadosIds.includes(state.currentPlayer.id);
-  const linhaN = confirmados.filter(j=>j.posicaoPadrao==='linha').length;
-  const golN = confirmados.filter(j=>j.posicaoPadrao==='goleiro').length;
+  const presentesIds = rodada.confirmados || [];
+  const ausentesIds = rodada.ausentes || [];
+  const convidadosDeIds = new Set(rodada.convidados || []);
+  const presentes = presentesIds.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  const ausentes = ausentesIds.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  const meuStatus = presentesIds.includes(state.currentPlayer.id) ? 'presente'
+    : ausentesIds.includes(state.currentPlayer.id) ? 'ausente' : null;
+  const euTrouxeConvidado = convidadosDeIds.has(state.currentPlayer.id);
+  const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha').length + convidadosDeIds.size;
+  const golN = presentes.filter(j=>j.posicaoPadrao==='goleiro').length;
 
   let html = '<div class="card"><h2>Rodada de '+formatDataBR(rodada.data)+'</h2>';
 
@@ -233,39 +318,47 @@ function renderInicio(){
     html += '<p class="muted small">A confirmação de presença ainda não abriu. Ela abre no sábado às 8h e fecha no domingo às 8h.</p>';
   }
   if(fase.chave==='confirmacao_aberta'){
-    html += '<p class="small">'+linhaN+' de linha e '+golN+' goleiro(s) confirmados até agora.</p>';
-    html += '<div class="btn-row">';
-    html += jaConfirmado
-      ? '<button class="btn danger" data-action="desconfirmar">Cancelar minha presença</button>'
-      : '<button class="btn" data-action="confirmar">Confirmar presença</button>';
-    html += '</div>';
+    html += renderMedidorConfirmacao(linhaN, golN);
+    html += renderTogglePresenca(meuStatus);
+    if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
   }
   if(fase.chave==='aguardando_sorteio'){
-    html += '<p class="small">Confirmação encerrada: '+linhaN+' de linha e '+golN+' goleiro(s).</p>';
-    html += '<p class="muted small">Aguardando o administrador realizar o sorteio.</p>';
+    html += renderMedidorConfirmacao(linhaN, golN);
+    html += '<p class="muted small">Aguardando o administrador realizar o sorteio (automático às 8h05, ou manual pelo admin).</p>';
   }
   if(fase.chave==='nao_viabilizado'){
-    html += '<p class="small">Apenas '+linhaN+' jogador(es) de linha e '+golN+' goleiro(s) confirmaram. Mínimo necessário: 10 de linha + 2 goleiros, ou 12 de linha no total.</p>';
+    html += '<p class="small">Apenas '+linhaN+' jogador(es) de linha (incluindo convidados) e '+golN+' goleiro(s) confirmaram presença. Mínimo necessário: 10 de linha + 2 goleiros, ou 12 de linha no total.</p>';
   }
 
   if(['aguardando_sorteio','nao_viabilizado'].includes(fase.chave) || (fase.chave==='confirmacao_aberta')){
-    if(confirmados.length){
-      html += '<div class="divider"></div><h3>Confirmados até agora</h3>';
-      confirmados.forEach(j=>{
-        html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</div>';
-      });
+    html += '<div class="divider"></div>';
+    html += '<h3>Presentes ('+(presentes.length+convidadosDeIds.size)+')</h3>';
+    if(presentes.length){
+      presentes.forEach(j=> html += linhaListaPresenca(j, convidadosDeIds.has(j.id)));
+    }else{
+      html += '<p class="small muted">Ninguém confirmou presença ainda.</p>';
+    }
+    html += '<h3 style="margin-top:14px;">Ausentes ('+ausentes.length+')</h3>';
+    if(ausentes.length){
+      ausentes.forEach(j=> html += linhaListaPresenca(j, false));
+    }else{
+      html += '<p class="small muted">Ninguém marcou ausência ainda.</p>';
     }
   }
 
   if(rodada.status==='sorteado'){
     const meuTime = rodada.times.times.find(t=>t.jogadores.some(j=>j.jogadorId===state.currentPlayer.id));
+    const souReserva = rodada.times.reservas.includes(state.currentPlayer.id);
     html += meuTime
       ? '<p class="small">Você está no time <strong>'+meuTime.nome+'</strong>. Veja a formação completa na aba Sorteio.</p>'
-      : '<p class="small muted">Você não está escalado nesta rodada (fora do sorteio ou reserva). Veja detalhes na aba Sorteio.</p>';
-    if(fase.chave==='votacao_aberta'){
+      : souReserva
+        ? '<p class="small">Você ficou como <strong>reserva</strong> nesta rodada, mas pode votar e receber votos normalmente.</p>'
+        : '<p class="small muted">Você não participou desta rodada.</p>';
+    if(fase.chave==='votacao_aberta' && (meuTime || souReserva)){
       const jaVotouEm = new Set(rodada.votos.filter(v=>v.avaliadorId===state.currentPlayer.id).map(v=>v.avaliadoId));
-      const alvos = rodada.times.times.flatMap(t=>t.jogadores).filter(j=>j.jogadorId!==state.currentPlayer.id);
-      const faltam = alvos.filter(a=>!jaVotouEm.has(a.jogadorId)).length;
+      const alvos = [...rodada.times.times.flatMap(t=>t.jogadores.map(j=>j.jogadorId)), ...rodada.times.reservas]
+        .filter(id=>id!==state.currentPlayer.id && !id.startsWith('conv:'));
+      const faltam = alvos.filter(a=>!jaVotouEm.has(a)).length;
       html += '<p class="small">Votação aberta até as 18h. Faltam avaliar '+faltam+' colega(s). <a href="#" data-action="tab" data-tab="votacao">Ir para votação →</a></p>';
     }
     if(fase.chave==='encerrada'){
@@ -273,16 +366,48 @@ function renderInicio(){
     }
   }
   html += '</div>';
-  c.innerHTML = dica + html;
+  c.innerHTML = dica + html + extrasHtml;
 }
 
-async function handleConfirmar(){
-  try{ await api('/api/rodadas/'+state.rodadaAtual.id+'/confirmar', {method:'POST', auth:true}); await refreshRodadaAtual(); render(); }
-  catch(e){ alert(e.message); }
+function renderTogglePresenca(meuStatus){
+  const ligado = meuStatus==='presente';
+  const desligado = meuStatus==='ausente';
+  const classe = ligado ? 'is-on' : (desligado ? 'is-off' : 'is-pending');
+  const label = ligado
+    ? '<strong style="color:var(--green)">Presente</strong> — vou jogar'
+    : desligado
+      ? '<strong style="color:var(--red)">Ausente</strong> — não vou jogar'
+      : '<span class="muted">Toque para dizer se você vai jogar</span>';
+  return '<div class="presence-toggle-wrap">'+
+    '<button class="presence-toggle '+classe+'" data-action="toggle-presenca" data-atual="'+(meuStatus||'')+'"><span class="presence-toggle-knob"></span></button>'+
+    '<div class="presence-toggle-label">'+label+'</div>'+
+  '</div>';
 }
-async function handleDesconfirmar(){
-  try{ await api('/api/rodadas/'+state.rodadaAtual.id+'/desconfirmar', {method:'POST', auth:true}); await refreshRodadaAtual(); render(); }
-  catch(e){ alert(e.message); }
+
+function renderToggleConvidado(euTrouxeConvidado){
+  return '<div class="presence-toggle-wrap" style="margin-top:10px;">'+
+    '<button class="presence-toggle '+(euTrouxeConvidado?'is-on':'is-off')+'" data-action="toggle-convidado" data-atual="'+(euTrouxeConvidado?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+    '<div class="presence-toggle-label">'+(euTrouxeConvidado
+      ? '<strong style="color:var(--green)">Convidado: sim</strong> — vou levar alguém'
+      : '<span class="muted">Convidado: não</span> — vou sozinho')+'</div>'+
+  '</div>';
+}
+async function handleToggleConvidado(atual){
+  const novo = atual!=='sim';
+  try{
+    await api('/api/rodadas/'+state.rodadaAtual.id+'/convidado', {method:'POST', auth:true, body:{trouxeConvidado:novo}});
+    await refreshRodadaAtual();
+    render();
+  }catch(e){ alert(e.message); }
+}
+
+async function handleTogglePresenca(atual){
+  const novo = atual==='presente' ? 'ausente' : 'presente';
+  try{
+    await api('/api/rodadas/'+state.rodadaAtual.id+'/presenca', {method:'POST', auth:true, body:{status:novo}});
+    await refreshRodadaAtual();
+    render();
+  }catch(e){ alert(e.message); }
 }
 
 /* ============================================================
@@ -306,13 +431,13 @@ function renderSorteio(){
   rod.times.times.forEach(t=>{
     html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+t.nome+'</h2>';
     t.jogadores.forEach(j=>{
-      html += '<div class="list-row"><span>'+escapeHtml(jogadorNome(j.jogadorId))+'</span>'+(j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</div>';
+      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+(j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</div>';
     });
     html += '</div>';
   });
   if(rod.times.reservas && rod.times.reservas.length){
     html += '<div class="card"><h3>Reservas desta rodada</h3>';
-    rod.times.reservas.forEach(id=> html += '<div class="list-row"><span>'+escapeHtml(jogadorNome(id))+'</span></div>');
+    rod.times.reservas.forEach(id=> html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+'</span></div>');
     html += '</div>';
   }
   c.innerHTML = html;
@@ -334,20 +459,27 @@ function renderVotacao(){
       : 'A janela de votação (domingo, 10h às 18h) está fechada.';
     c.innerHTML = '<div class="empty">'+msg+'</div>'; return;
   }
-  const alvos = rod.times.times.flatMap(t=>t.jogadores.map(j2=>({...j2, time:t.nome})))
-    .filter(j2=>j2.jogadorId!==state.currentPlayer.id);
+  const meuId = state.currentPlayer.id;
+  const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId);
+  if(!participei){
+    c.innerHTML = '<div class="empty">Você não participou desta rodada (nem escalado, nem reserva) e por isso não pode votar.</div>'; return;
+  }
+  const alvosTimes = rod.times.times.flatMap(t=>t.jogadores.map(j2=>({jogadorId:j2.jogadorId, time:t.nome})));
+  const alvosReservas = rod.times.reservas.map(id=>({jogadorId:id, time:'Reserva'}));
+  const alvos = [...alvosTimes, ...alvosReservas].filter(a=>a.jogadorId!==meuId && !a.jogadorId.startsWith('conv:'));
   const meusVotos = {};
-  rod.votos.filter(v=>v.avaliadorId===state.currentPlayer.id).forEach(v=>meusVotos[v.avaliadoId]=v.nota);
+  rod.votos.filter(v=>v.avaliadorId===meuId).forEach(v=>meusVotos[v.avaliadoId]=v.nota);
 
-  let html = '<div class="card"><p class="small">Avalie a performance de quem jogou hoje, de 0 a 5. Você pode alterar sua nota até as 18h.</p></div>';
+  let html = '<div class="card"><p class="small">Avalie a performance de quem jogou hoje, de 1 a 5 estrelas. O voto é definitivo assim que salvo.</p></div>';
   alvos.forEach(a=>{
     const notaAtual = meusVotos[a.jogadorId];
-    html += '<div class="card"><div class="list-row" style="border:none;padding:0 0 4px 0;"><span>'+escapeHtml(jogadorNome(a.jogadorId))+' <span class="badge">'+a.time+'</span></span></div>';
+    const travado = notaAtual!=null;
+    html += '<div class="card"><div class="list-row" style="border:none;padding:0 0 4px 0;"><span>'+escapeHtml(nomeParaExibicao(a.jogadorId))+' <span class="badge">'+a.time+'</span></span></div>';
     html += '<div class="vote-scale">';
-    for(let n=0;n<=5;n++){
-      html += '<button class="vote-btn '+(notaAtual===n?'selected':'')+'" data-action="votar" data-avaliado="'+a.jogadorId+'" data-nota="'+n+'">'+n+'</button>';
+    for(let n=1;n<=5;n++){
+      html += '<button class="vote-btn star-vote-btn '+(travado && n<=notaAtual?'selected':'')+'" '+(travado?'disabled':'')+' data-action="votar" data-avaliado="'+a.jogadorId+'" data-nota="'+n+'">★</button>';
     }
-    html += '</div></div>';
+    html += '</div>'+(travado?'<p class="small muted" style="margin-top:6px;">Voto salvo: '+notaAtual+' estrela(s) — não pode ser alterado.</p>':'')+'</div>';
   });
   c.innerHTML = html;
 }
@@ -362,8 +494,8 @@ async function handleVotar(avaliadoId, nota){
 async function renderRanking(){
   const c = document.getElementById('content');
   c.innerHTML = '<div class="empty">Calculando ranking…</div>';
-  let ranking = {};
-  try{ const data = await api('/api/ranking'); ranking = data.ranking; }catch(e){}
+  await refreshRanking();
+  const ranking = state.ranking;
   const papel = state.rankingFiltro;
   const linhas = state.elenco.filter(j=>j.ativo && j.posicaoPadrao===papel).map(j=>{
     const r = ranking[j.id];
@@ -379,7 +511,7 @@ async function renderRanking(){
   '</div><div class="card">';
   comNota.forEach((l,i)=>{
     html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
-      '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+l.media.toFixed(1)+'</div></div>';
+      '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
   });
   if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes nesta categoria.</p>';
   html += '</div>';
@@ -440,6 +572,10 @@ async function renderAdmin(){
   try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); }
   catch(e){ if(e.status===401) return render(); c.innerHTML='<div class="empty">Erro ao carregar painel administrativo.</div>'; return; }
   try{ const ev = await api('/api/admin/eventos', {adminAuth:true}); eventos = ev.eventos; }catch(e){}
+  let agenda=[], noticia={descricao:'',ativo:false}, aluguel={nome:'',chavePix:'',valorMensalidade:'',ativo:false};
+  try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){}
+  try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){}
+  try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){}
   state.elencoAdmin = elencoAdmin;
 
   const rodada = state.rodadaAtual;
@@ -487,6 +623,29 @@ async function renderAdmin(){
     '<div class="field"><label>Posição padrão</label><select id="novo-pos"><option value="linha">Linha</option><option value="goleiro">Goleiro</option></select></div>'+
     '<button class="btn secondary" data-action="adicionar-jogador">Adicionar</button></div>';
 
+  html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
+  agenda.forEach(e=>{
+    html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
+      '<span><button class="btn secondary small" data-action="toggle-evento-ativo" data-id="'+e.id+'" data-ativo="'+(e.ativo?'1':'0')+'">'+(e.ativo?'desativar':'ativar')+'</button> '+
+      '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
+  });
+  html += '<div class="divider"></div>'+
+    '<div class="field"><label>Nome do evento</label><input id="novo-evento-nome"></div>'+
+    '<div class="field"><label>Data</label><input type="date" id="novo-evento-data"></div>'+
+    '<button class="btn secondary" data-action="adicionar-evento">Adicionar evento</button></div>';
+
+  html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
+    '<div class="field"><label>Descrição</label><textarea id="noticia-descricao" rows="3" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;">'+escapeHtml(noticia.descricao)+'</textarea></div>'+
+    '<label class="small"><input type="checkbox" id="noticia-ativo" '+(noticia.ativo?'checked':'')+'> exibir na tela inicial</label>'+
+    '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-noticia">Salvar notícia</button></div>';
+
+  html += '<div class="card"><h3>Aluguel da quadra (tela inicial)</h3>'+
+    '<div class="field"><label>Responsável</label><input id="aluguel-nome" value="'+escapeHtml(aluguel.nome)+'"></div>'+
+    '<div class="field"><label>Chave PIX</label><input id="aluguel-pix" value="'+escapeHtml(aluguel.chavePix)+'"></div>'+
+    '<div class="field"><label>Valor da mensalidade</label><input id="aluguel-valor" value="'+escapeHtml(aluguel.valorMensalidade)+'"></div>'+
+    '<label class="small"><input type="checkbox" id="aluguel-ativo" '+(aluguel.ativo?'checked':'')+'> exibir na tela inicial</label>'+
+    '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-aluguel">Salvar aluguel</button></div>';
+
   html += '<div class="card"><h3>PIN administrativo</h3>'+
     '<div class="field"><input id="novo-admin-pin" maxlength="4" placeholder="novo PIN"></div>'+
     '<button class="btn secondary" data-action="salvar-admin-pin">Alterar PIN</button></div>';
@@ -505,9 +664,9 @@ async function renderAdmin(){
   });
   html += '</details></div>';
 
-  html += '<div class="card"><h3>Zerar dados de teste</h3>'+
-    '<p class="small muted">Apaga todas as rodadas, confirmações, sorteios e votos para começar do zero. O elenco e os PINs são mantidos.</p>'+
-    '<button class="btn danger" data-action="resetar-dados">Apagar rodadas e votos</button></div>';
+  html += '<div class="card"><h3>Zerar rodada de teste</h3>'+
+    '<p class="small muted">Apaga confirmações, sorteio e votos de rodadas que AINDA NÃO ENCERRARAM (em teste ou em andamento). Rodadas já encerradas ficam intocadas — o histórico real nunca é apagado por aqui. O elenco e os PINs também são mantidos.</p>'+
+    '<button class="btn danger" data-action="resetar-dados">Apagar rodada em teste</button></div>';
 
   c.innerHTML = html;
 }
@@ -570,6 +729,36 @@ async function handleSalvarAdminPin(){
   try{ await api('/api/admin/admin-pin', {method:'PUT', adminAuth:true, body:{pin}}); alert('PIN administrativo atualizado.'); await render(); }
   catch(e){ alert(e.message); }
 }
+async function handleAdicionarEvento(){
+  const nome = document.getElementById('novo-evento-nome').value.trim();
+  const data = document.getElementById('novo-evento-data').value;
+  if(!nome || !data){ alert('Informe nome e data.'); return; }
+  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data}}); await refreshHomeExtras(); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleToggleEventoAtivo(id, ativoAtual){
+  try{ await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{ativo: ativoAtual!=='1'}}); await refreshHomeExtras(); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleRemoverEvento(id){
+  if(!confirm('Remover este evento?')) return;
+  try{ await api('/api/admin/agenda/'+id, {method:'DELETE', adminAuth:true}); await refreshHomeExtras(); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleSalvarNoticia(){
+  const descricao = document.getElementById('noticia-descricao').value;
+  const ativo = document.getElementById('noticia-ativo').checked;
+  try{ await api('/api/admin/noticia', {method:'PUT', adminAuth:true, body:{descricao,ativo}}); await refreshHomeExtras(); alert('Notícia salva.'); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleSalvarAluguel(){
+  const nome = document.getElementById('aluguel-nome').value;
+  const chavePix = document.getElementById('aluguel-pix').value;
+  const valorMensalidade = document.getElementById('aluguel-valor').value;
+  const ativo = document.getElementById('aluguel-ativo').checked;
+  try{ await api('/api/admin/aluguel', {method:'PUT', adminAuth:true, body:{nome,chavePix,valorMensalidade,ativo}}); await refreshHomeExtras(); alert('Aluguel da quadra salvo.'); await render(); }
+  catch(e){ alert(e.message); }
+}
 async function handleAplicarSimTime(){
   const val = document.getElementById('sim-time').value;
   if(!val) return;
@@ -581,7 +770,7 @@ async function handleResetarSimTime(){
   catch(e){ alert(e.message); }
 }
 async function handleResetarDados(){
-  if(!confirm('Isso apaga TODAS as rodadas, confirmações, sorteios e votos (o elenco e os PINs são mantidos). Confirmar?')) return;
+  if(!confirm('Isso apaga confirmações, sorteio e votos de rodadas AINDA NÃO ENCERRADAS (elenco, PINs e histórico de rodadas já encerradas são mantidos). Confirmar?')) return;
   try{
     await api('/api/admin/reset', {method:'POST', adminAuth:true});
     state.rodadaVisualizadaId = null; state.rodadaVisualizada = null;
@@ -601,6 +790,7 @@ function startPolling(){
     if(['inicio','votacao','sorteio'].includes(state.tab)){
       await refreshRodadaAtual();
       await refreshRodadasLista();
+      if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
       if(state.tab==='sorteio' && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
@@ -636,8 +826,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-meu-pin') return handleSalvarMeuPin();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){ state.tab = el.dataset.tab; state.editingJogadorId=null; return render(); }
-  if(action==='confirmar') return handleConfirmar();
-  if(action==='desconfirmar') return handleDesconfirmar();
+  if(action==='toggle-presenca') return handleTogglePresenca(el.dataset.atual);
+  if(action==='toggle-convidado') return handleToggleConvidado(el.dataset.atual);
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
@@ -649,6 +839,11 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-jogador') return handleSalvarJogador(el.dataset.id);
   if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
+  if(action==='adicionar-evento') return handleAdicionarEvento();
+  if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
+  if(action==='remover-evento') return handleRemoverEvento(el.dataset.id);
+  if(action==='salvar-noticia') return handleSalvarNoticia();
+  if(action==='salvar-aluguel') return handleSalvarAluguel();
   if(action==='aplicar-sim-time') return handleAplicarSimTime();
   if(action==='resetar-sim-time') return handleResetarSimTime();
   if(action==='resetar-dados') return handleResetarDados();
@@ -658,7 +853,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
 });
 
 document.getElementById('shell').addEventListener('change', async (e)=>{
-  if(e.target.id==='mudar-rodada-visualizada'){
+  if(e.target.dataset.action==='mudar-rodada-visualizada'){
     await carregarRodadaVisualizada(e.target.value);
     render();
   }
@@ -669,9 +864,12 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
    ============================================================ */
 async function boot(){
   document.getElementById('content').innerHTML = '<div class="empty">Carregando…</div>';
+  await refreshVersion();
   await refreshElenco();
   await refreshRodadaAtual();
   await refreshRodadasLista();
+  await refreshRanking();
+  await refreshHomeExtras();
   if(state.currentPlayer && state.token) startPolling();
   await render();
 }

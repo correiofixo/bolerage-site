@@ -4,6 +4,10 @@
    ============================================================ */
 'use strict';
 
+// Fonte única de verdade da versão do app. Atualize aqui a cada release
+// (aparece na tela do jogador e ajuda a confirmar que um deploy realmente aplicou).
+const APP_VERSION = '1.0.1';
+
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -94,7 +98,41 @@ CREATE TABLE IF NOT EXISTS eventos_log (
   ts TEXT NOT NULL,
   mensagem TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS eventos (
+  id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL,
+  data TEXT NOT NULL,
+  ativo INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS noticia (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  descricao TEXT NOT NULL DEFAULT '',
+  ativo INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS aluguel_quadra (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  nome TEXT NOT NULL DEFAULT '',
+  chave_pix TEXT NOT NULL DEFAULT '',
+  valor_mensalidade TEXT NOT NULL DEFAULT '',
+  ativo INTEGER NOT NULL DEFAULT 0
+);
 `);
+
+// migração: coluna 'status' (presente/ausente) na tabela confirmacoes.
+// usa try/catch porque ALTER TABLE falha se a coluna já existir (idempotente entre reinícios).
+try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN status TEXT"); }catch(e){}
+try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN trouxe_convidado INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+
+function seedExtrasSeNecessario(){
+  const n = db.prepare('SELECT * FROM noticia WHERE id=1').get();
+  if(!n) db.prepare('INSERT INTO noticia (id,descricao,ativo) VALUES (1,\'\',0)').run();
+  const a = db.prepare('SELECT * FROM aluguel_quadra WHERE id=1').get();
+  if(!a) db.prepare('INSERT INTO aluguel_quadra (id,nome,chave_pix,valor_mensalidade,ativo) VALUES (1,\'\',\'\',\'\',0)').run();
+}
+seedExtrasSeNecessario();
 
 /* ============================================================
    SEED INICIAL
@@ -211,17 +249,19 @@ function getRodadaAtual(){
   }
   return rows[rows.length-1]; // todas finalizadas: mostra a mais recente
 }
-function getConfirmadosAtivos(rodadaId){
-  const rows = db.prepare(`
+function getPorStatus(rodadaId, status){
+  return db.prepare(`
     SELECT j.* FROM confirmacoes c
     JOIN jogadores j ON j.id = c.jogador_id
-    WHERE c.rodada_id = ? AND c.desconfirmado_em IS NULL
-  `).all(rodadaId);
-  return rows;
+    WHERE c.rodada_id = ? AND c.status = ?
+  `).all(rodadaId, status);
+}
+function contarConvidados(rodadaId){
+  return db.prepare("SELECT COUNT(*) c FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").get(rodadaId).c;
 }
 function calcViabilidade(rodadaId){
-  const confirmados = getConfirmadosAtivos(rodadaId);
-  const linha = confirmados.filter(j=>j.posicao_padrao==='linha').length;
+  const confirmados = getPorStatus(rodadaId, 'presente');
+  const linha = confirmados.filter(j=>j.posicao_padrao==='linha').length + contarConvidados(rodadaId);
   const goleiro = confirmados.filter(j=>j.posicao_padrao==='goleiro').length;
   const viaPadrao = linha>=10 && goleiro>=2;
   const viaConversao = linha>=12;
@@ -249,9 +289,12 @@ function atualizarStatusSeNecessario(rodada){
    ============================================================ */
 function calcularRanking(){
   const rows = db.prepare(`
-    SELECT v.jogador_avaliado_id as jogadorId, t.papel_na_partida as papel, v.nota as nota
+    SELECT v.jogador_avaliado_id as jogadorId,
+           COALESCE(t.papel_na_partida, j.posicao_padrao) as papel,
+           v.nota as nota
     FROM votos v
-    JOIN times_sorteados t ON t.rodada_id = v.rodada_id AND t.jogador_id = v.jogador_avaliado_id
+    JOIN jogadores j ON j.id = v.jogador_avaliado_id
+    LEFT JOIN times_sorteados t ON t.rodada_id = v.rodada_id AND t.jogador_id = v.jogador_avaliado_id
   `).all();
   const acc = {};
   rows.forEach(r=>{
@@ -336,9 +379,12 @@ function realizarSorteio(rodadaId){
   const v = calcViabilidade(rodadaId);
   if(!v.viavel) return {ok:false, erro:'Jogo não viabilizado: confirmações insuficientes.'};
 
-  const confirmados = getConfirmadosAtivos(rodadaId);
-  const linhaPool = confirmados.filter(x=>x.posicao_padrao==='linha');
+  const confirmados = getPorStatus(rodadaId, 'presente');
+  const linhaPoolReal = confirmados.filter(x=>x.posicao_padrao==='linha');
   const goleiroPool = confirmados.filter(x=>x.posicao_padrao==='goleiro');
+  const guestRows = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodadaId);
+  const guestPool = guestRows.map(g=>({id:'conv:'+g.jogador_id, posicao_padrao:'linha', isGuest:true, hostId:g.jogador_id}));
+  const linhaPool = [...linhaPoolReal, ...guestPool];
 
   let n = 0;
   for(let cand=5; cand>=1; cand--){
@@ -364,10 +410,17 @@ function realizarSorteio(rodadaId){
     linhaOrdenada = shuffle(linhaPool);
     golOrdenado = shuffle(golDesignados);
   }
+  // convidados sempre priorizados como reserva: reordena mantendo jogadores cadastrados
+  // primeiro (na ordem já calculada) e convidados sempre por último.
+  linhaOrdenada = [...linhaOrdenada.filter(x=>!x.isGuest), ...linhaOrdenada.filter(x=>x.isGuest)];
 
   const linhaEmCampo = linhaOrdenada.slice(0, n*5);
-  const convertidos = linhaOrdenada.slice(n*5, n*5+conversoesNecessarias);
-  const linhaReserva = linhaOrdenada.slice(n*5+conversoesNecessarias);
+  const remainder = linhaOrdenada.slice(n*5);
+  const remainderNaoGuest = remainder.filter(x=>!x.isGuest);
+  const remainderGuest = remainder.filter(x=>x.isGuest);
+  // convidado nunca é convertido em goleiro (sempre joga de linha ou fica de reserva)
+  const convertidos = remainderNaoGuest.slice(0, conversoesNecessarias);
+  const linhaReserva = [...remainderNaoGuest.slice(conversoesNecessarias), ...remainderGuest];
 
   const linhaBuckets = usarFase2
     ? snakeDraft(linhaEmCampo, n)
@@ -433,8 +486,11 @@ function requireAdmin(req,res,next){
    ============================================================ */
 seedSeNecessario();
 const app = express();
+app.disable('x-powered-by');
 app.use(express.json());
 app.set('trust proxy', 1);
+app.disable('etag');
+app.use('/api', (req,res,next)=>{ res.set('Cache-Control', 'no-store'); next(); });
 
 const loginLimiter = rateLimit({
   windowMs: 5*60*1000, max: 20,
@@ -443,6 +499,7 @@ const loginLimiter = rateLimit({
 });
 
 app.get('/api/health', (req,res)=> res.json({ok:true}));
+app.get('/api/version', (req,res)=> res.json({version: APP_VERSION}));
 
 /* ---- autenticação ---- */
 app.post('/api/login', loginLimiter, (req,res)=>{
@@ -538,7 +595,9 @@ app.put('/api/admin/simulado', requireAdmin, (req,res)=>{
 function serializarRodada(rodada){
   rodada = atualizarStatusSeNecessario(rodada);
   const fase = computeFase(rodada);
-  const confirmados = getConfirmadosAtivos(rodada.id).map(j=>j.id);
+  const confirmados = getPorStatus(rodada.id, 'presente').map(j=>j.id);
+  const ausentes = getPorStatus(rodada.id, 'ausente').map(j=>j.id);
+  const convidados = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodada.id).map(r=>r.jogador_id);
   let times = null;
   if(rodada.status==='sorteado'){
     const linhas = db.prepare('SELECT nome_time, jogador_id, papel_na_partida FROM times_sorteados WHERE rodada_id=?').all(rodada.id);
@@ -557,7 +616,7 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, times, votos};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, times, votos};
 }
 
 app.get('/api/rodadas', (req,res)=>{
@@ -583,28 +642,35 @@ app.post('/api/admin/rodadas', requireAdmin, (req,res)=>{
   res.json({ok:true, id});
 });
 
-app.post('/api/rodadas/:id/confirmar', requireAuth, (req,res)=>{
+app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
+  const status = String(req.body.status||'');
+  if(!['presente','ausente'].includes(status)) return res.status(400).json({erro:"Status inválido (use 'presente' ou 'ausente')."});
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const j = janelas(rodada.data);
   const n = nowSP();
   if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  const convidadoFlag = status==='ausente' ? 0 : (existente ? existente.trouxe_convidado : 0);
   if(existente){
-    db.prepare('UPDATE confirmacoes SET confirmado_em=?, desconfirmado_em=NULL WHERE id=?').run(nowISO(), existente.id);
+    db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=? WHERE id=?').run(status, nowISO(), convidadoFlag, existente.id);
   }else{
-    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,desconfirmado_em) VALUES (?,?,?,?,NULL)')
-      .run(idGen('c'), rodada.id, req.jogadorId, nowISO());
+    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado) VALUES (?,?,?,?,?,?)')
+      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), status, convidadoFlag);
   }
   res.json({ok:true});
 });
-app.post('/api/rodadas/:id/desconfirmar', requireAuth, (req,res)=>{
+
+app.post('/api/rodadas/:id/convidado', requireAuth, (req,res)=>{
+  const trouxeConvidado = !!req.body.trouxeConvidado;
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const j = janelas(rodada.data);
   const n = nowSP();
   if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
-  db.prepare('UPDATE confirmacoes SET desconfirmado_em=? WHERE rodada_id=? AND jogador_id=?').run(nowISO(), rodada.id, req.jogadorId);
+  const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de indicar se vai levar convidado.'});
+  db.prepare('UPDATE confirmacoes SET trouxe_convidado=? WHERE id=?').run(trouxeConvidado?1:0, existente.id);
   res.json({ok:true});
 });
 
@@ -614,6 +680,13 @@ app.post('/api/admin/rodadas/:id/sortear', requireAdmin, (req,res)=>{
   res.json({ok:true});
 });
 
+function participouDaRodada(rodadaId, jogadorId){
+  const emTime = db.prepare('SELECT 1 FROM times_sorteados WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
+  if(emTime) return true;
+  const emReserva = db.prepare('SELECT 1 FROM reservas WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
+  return !!emReserva;
+}
+
 app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada || rodada.status!=='sorteado') return res.status(400).json({erro:'Esta rodada não está com times sorteados.'});
@@ -622,18 +695,16 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   if(n < j.voteOpen || n >= j.voteClose) return res.status(403).json({erro:'A janela de votação está fechada.'});
   const avaliadoId = String(req.body.avaliadoId||'');
   const nota = parseInt(req.body.nota,10);
-  if(Number.isNaN(nota) || nota<0 || nota>5) return res.status(400).json({erro:'Nota inválida (use 0 a 5).'});
+  if(Number.isNaN(nota) || nota<1 || nota>5) return res.status(400).json({erro:'Nota inválida (use de 1 a 5 estrelas).'});
   if(avaliadoId === req.jogadorId) return res.status(400).json({erro:'Não é permitido avaliar a si mesmo.'});
-  const jogouNaRodada = db.prepare('SELECT 1 FROM times_sorteados WHERE rodada_id=? AND jogador_id=?').get(rodada.id, avaliadoId);
-  if(!jogouNaRodada) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
+  if(avaliadoId.startsWith('conv:')) return res.status(400).json({erro:'Convidados não podem ser avaliados.'});
+  if(!participouDaRodada(rodada.id, req.jogadorId)) return res.status(403).json({erro:'Você só pode votar se esteve presente nesta rodada (escalado ou reserva).'});
+  if(!participouDaRodada(rodada.id, avaliadoId)) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
   const existente = db.prepare('SELECT * FROM votos WHERE rodada_id=? AND jogador_avaliado_id=? AND jogador_avaliador_id=?')
     .get(rodada.id, avaliadoId, req.jogadorId);
-  if(existente){
-    db.prepare('UPDATE votos SET nota=?, criado_em=? WHERE id=?').run(nota, nowISO(), existente.id);
-  }else{
-    db.prepare('INSERT INTO votos (id,rodada_id,jogador_avaliado_id,jogador_avaliador_id,nota,criado_em) VALUES (?,?,?,?,?,?)')
-      .run(idGen('v'), rodada.id, avaliadoId, req.jogadorId, nota, nowISO());
-  }
+  if(existente) return res.status(409).json({erro:'Voto já registrado — não é possível alterar depois de salvo.'});
+  db.prepare('INSERT INTO votos (id,rodada_id,jogador_avaliado_id,jogador_avaliador_id,nota,criado_em) VALUES (?,?,?,?,?,?)')
+    .run(idGen('v'), rodada.id, avaliadoId, req.jogadorId, nota, nowISO());
   res.json({ok:true});
 });
 
@@ -647,13 +718,93 @@ app.get('/api/admin/eventos', requireAdmin, (req,res)=>{
 });
 
 app.post('/api/admin/reset', requireAdmin, (req,res)=>{
+  // Segurança: só apaga rodadas que AINDA NÃO terminaram (aguardando confirmação, ou
+  // sorteadas mas dentro da janela de votação). Rodadas 'encerradas' ou 'não viabilizadas'
+  // são histórico real e nunca são tocadas por este botão.
+  const todasRodadas = db.prepare('SELECT * FROM rodadas').all();
+  const idsParaApagar = todasRodadas
+    .filter(r => computeFase(r).chave !== 'encerrada' && r.status !== 'nao_viabilizado')
+    .map(r => r.id);
   const tx = db.transaction(()=>{
-    db.exec('DELETE FROM votos; DELETE FROM times_sorteados; DELETE FROM reservas; DELETE FROM rodada_meta; DELETE FROM confirmacoes; DELETE FROM rodadas; DELETE FROM eventos_log;');
+    idsParaApagar.forEach(id=>{
+      db.prepare('DELETE FROM votos WHERE rodada_id=?').run(id);
+      db.prepare('DELETE FROM times_sorteados WHERE rodada_id=?').run(id);
+      db.prepare('DELETE FROM reservas WHERE rodada_id=?').run(id);
+      db.prepare('DELETE FROM rodada_meta WHERE rodada_id=?').run(id);
+      db.prepare('DELETE FROM confirmacoes WHERE rodada_id=?').run(id);
+      db.prepare('DELETE FROM rodadas WHERE id=?').run(id);
+    });
+    const restantes = db.prepare('SELECT * FROM rodadas').all();
+    const temPendente = restantes.some(r => computeFase(r).chave !== 'encerrada' && r.status !== 'nao_viabilizado');
     const data = nextSundayFrom(todaySPDateStr());
-    db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(idGen('r'), data, 'aguardando_confirmacao');
+    const dataJaExiste = restantes.some(r => r.data === data);
+    if(!temPendente && !dataJaExiste){
+      db.prepare('INSERT INTO rodadas (id,data,status) VALUES (?,?,?)').run(idGen('r'), data, 'aguardando_confirmacao');
+    }
   });
   tx();
-  logEvento('Dados de rodadas e votos zerados pelo administrador.');
+  logEvento('Rodadas de teste (ainda não encerradas) zeradas pelo administrador. Histórico de rodadas encerradas preservado.');
+  res.json({ok:true});
+});
+
+/* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
+app.get('/api/home-extras', (req,res)=>{
+  const eventos = db.prepare('SELECT id,nome,data FROM eventos WHERE ativo=1 ORDER BY data ASC').all();
+  const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
+  const aluguelRow = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
+  res.json({
+    eventos,
+    noticia: (noticiaRow && noticiaRow.ativo) ? {descricao: noticiaRow.descricao} : null,
+    aluguel: (aluguelRow && aluguelRow.ativo) ? {nome:aluguelRow.nome, chavePix:aluguelRow.chave_pix, valorMensalidade:aluguelRow.valor_mensalidade} : null,
+  });
+});
+
+app.get('/api/admin/agenda', requireAdmin, (req,res)=>{
+  res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo}))});
+});
+app.post('/api/admin/agenda', requireAdmin, (req,res)=>{
+  const nome = String(req.body.nome||'').trim();
+  const data = String(req.body.data||'').trim();
+  if(!nome || !data) return res.status(400).json({erro:'Informe nome e data do evento.'});
+  const id = idGen('ev');
+  db.prepare('INSERT INTO eventos (id,nome,data,ativo) VALUES (?,?,?,1)').run(id, nome, data);
+  res.json({ok:true, id});
+});
+app.put('/api/admin/agenda/:id', requireAdmin, (req,res)=>{
+  const ev = db.prepare('SELECT * FROM eventos WHERE id=?').get(req.params.id);
+  if(!ev) return res.status(404).json({erro:'Evento não encontrado.'});
+  const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
+  const data = req.body.data!=null ? String(req.body.data) : ev.data;
+  const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : ev.ativo;
+  db.prepare('UPDATE eventos SET nome=?,data=?,ativo=? WHERE id=?').run(nome,data,ativo,ev.id);
+  res.json({ok:true});
+});
+app.delete('/api/admin/agenda/:id', requireAdmin, (req,res)=>{
+  db.prepare('DELETE FROM eventos WHERE id=?').run(req.params.id);
+  res.json({ok:true});
+});
+
+app.get('/api/admin/noticia', requireAdmin, (req,res)=>{
+  const n = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
+  res.json({descricao:n.descricao, ativo:!!n.ativo});
+});
+app.put('/api/admin/noticia', requireAdmin, (req,res)=>{
+  const descricao = String(req.body.descricao||'');
+  const ativo = req.body.ativo?1:0;
+  db.prepare('UPDATE noticia SET descricao=?,ativo=? WHERE id=1').run(descricao, ativo);
+  res.json({ok:true});
+});
+
+app.get('/api/admin/aluguel', requireAdmin, (req,res)=>{
+  const a = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
+  res.json({nome:a.nome, chavePix:a.chave_pix, valorMensalidade:a.valor_mensalidade, ativo:!!a.ativo});
+});
+app.put('/api/admin/aluguel', requireAdmin, (req,res)=>{
+  const nome = String(req.body.nome||'');
+  const chavePix = String(req.body.chavePix||'');
+  const valorMensalidade = String(req.body.valorMensalidade||'');
+  const ativo = req.body.ativo?1:0;
+  db.prepare('UPDATE aluguel_quadra SET nome=?,chave_pix=?,valor_mensalidade=?,ativo=? WHERE id=1').run(nome,chavePix,valorMensalidade,ativo);
   res.json({ok:true});
 });
 
@@ -663,6 +814,24 @@ app.get('*', (req,res)=>{
   if(req.path.startsWith('/api/')) return res.status(404).json({erro:'Rota não encontrada.'});
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+/* ---- sorteio automático (todo domingo às 8h05) ---- */
+function checarSorteioAutomatico(){
+  try{
+    const pendentes = db.prepare("SELECT * FROM rodadas WHERE status='aguardando_confirmacao'").all();
+    pendentes.forEach(r=>{
+      const gatilho = r.data+'T08:05:00';
+      if(nowSP() < gatilho) return;
+      const atualizada = atualizarStatusSeNecessario(r);
+      if(atualizada.status==='aguardando_confirmacao'){
+        const resultado = realizarSorteio(atualizada.id);
+        if(resultado.ok) logEvento('Sorteio automático disparado às 8h05 para a rodada de '+atualizada.data+'.');
+      }
+    });
+  }catch(e){ console.error('Erro no sorteio automático:', e); }
+}
+setInterval(checarSorteioAutomatico, 60*1000);
+checarSorteioAutomatico();
 
 app.listen(PORT, ()=>{
   console.log('Bolerage F.D. rodando na porta ' + PORT);
