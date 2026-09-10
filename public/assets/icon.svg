@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Bolerage F.D.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11213A"/>
+      <stop offset="1" stop-color="#0A1626"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="212" fill="#0A1626" stroke="#C9A227" stroke-width="16"/>
+  <circle cx="256" cy="256" r="188" fill="none" stroke="#8C7A2E" stroke-width="4"/>
+  <text x="256" y="300" text-anchor="middle"
+        font-family="'Arial Black','Helvetica Neue',Arial,sans-serif" font-weight="900"
+        font-size="240" fill="#C9A227">B</text>
+  <text x="256" y="392" text-anchor="middle"
+        font-family="Arial,Helvetica,sans-serif" font-weight="700"
+        font-size="34" letter-spacing="6" fill="#8FA5C2">F.D. · 1997</text>
+</svg>

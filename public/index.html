@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Bolerage F.D. — Racha do Domingo</title>
 <link rel="icon" href="/assets/favicon.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0A1626">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bolerage F.D.">
+<link rel="apple-touch-icon" href="/assets/logo.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -26,5 +33,17 @@
   <div id="bottomnav" style="display:none;"></div>
 </div>
 <script src="/app.js"></script>
+<script>
+(function(){
+  if(!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js').catch(function(){});
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if(reloaded) return; reloaded = true; location.reload();
+    });
+  });
+})();
+</script>
 </body>
 </html>
