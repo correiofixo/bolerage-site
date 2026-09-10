@@ -152,7 +152,7 @@ function renderTopbar(){
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
-  document.getElementById('version-slot').textContent = '';
+  document.getElementById('version-slot').textContent = state.appVersion ? ('Versão '+state.appVersion) : '';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
     ? '<div class="who-mens-line">Craque, sua mensalidade está <span class="who-mens '+m.cls+'">'+m.emoji+' '+m.lbl+'</span></div>'
@@ -169,8 +169,7 @@ function renderTopbar(){
     mensLine;
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
-    '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>'+
-    '<span class="app-version phase-version">'+(state.appVersion ? ('Versão '+state.appVersion) : '')+'</span>';
+    '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>';
 
   const tabs = [
     {key:'inicio', label:'Início', icon:'<path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/>'},
@@ -552,6 +551,10 @@ function renderResenha(){
 function timeClass(nome){
   return 't-'+nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 }
+function timeFlag(nome){
+  const k = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  return {brasil:'\ud83c\udde7\ud83c\uddf7', argentina:'\ud83c\udde6\ud83c\uddf7', alemanha:'\ud83c\udde9\ud83c\uddea', italia:'\ud83c\uddee\ud83c\uddf9', holanda:'\ud83c\uddf3\ud83c\uddf1'}[k] || '';
+}
 function renderSorteio(){
   const c = document.getElementById('content');
   const opcoes = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
@@ -565,15 +568,26 @@ function renderSorteio(){
   }
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
   rod.times.times.forEach(t=>{
-    html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+t.nome+'</h2>';
+    const fl = timeFlag(t.nome);
+    html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?fl+' ':'')+t.nome+'</h2>';
     t.jogadores.forEach(j=>{
-      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+(j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</div>';
+      const isConv = String(j.jogadorId).indexOf('conv:')===0;
+      const media = isConv ? null : mediaDoJogador(j.jogadorId, j.papel);
+      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+
+        '<span class="row-right">'+(isConv?'':starsHtml(media, true))+
+        (j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>';
     });
     html += '</div>';
   });
   if(rod.times.reservas && rod.times.reservas.length){
     html += '<div class="card"><h3>Reservas desta rodada</h3>';
-    rod.times.reservas.forEach(id=> html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+'</span></div>');
+    rod.times.reservas.forEach(id=>{
+      const isConv = String(id).indexOf('conv:')===0;
+      const jr = state.elenco.find(x=>x.id===id);
+      const media = (isConv || !jr) ? null : mediaDoJogador(id, jr.posicaoPadrao);
+      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+'</span>'+
+        ((isConv||!jr)?'':'<span class="row-right">'+starsHtml(media, true)+'</span>')+'</div>';
+    });
     html += '</div>';
   }
   c.innerHTML = html;
