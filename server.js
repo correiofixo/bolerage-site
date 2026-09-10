@@ -6,7 +6,7 @@
 
 // Contador de release: some 1 a cada deploy. A virada de "major" é automática —
 // no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 13;
+const APP_BUILD = 14;
 function computeVersion(b){
   let major, minor;
   if(b <= 20){ major = 1; minor = b; }
@@ -144,6 +144,7 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin INTEGER NOT NULL DEFAULT 0"
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN super_admin INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN admin_perms TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN mensalidade TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN telefone TEXT NOT NULL DEFAULT ''"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -640,7 +641,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     id:j.id, nome:j.nome, pin:j.pin, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo,
     admin:!!j.admin, superAdmin:!!j.super_admin,
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
-    mensalidade:j.mensalidade||'',
+    mensalidade:j.mensalidade||'', telefone:j.telefone||'',
   }));
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
@@ -692,8 +693,10 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   if(req.body.mensalidade!=null && MENSALIDADE_VALORES.includes(String(req.body.mensalidade))){
     mensalidade = String(req.body.mensalidade);
   }
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,j.id);
+  let telefone = j.telefone || '';
+  if(req.body.telefone!=null) telefone = String(req.body.telefone).slice(0,30);
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,j.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
@@ -948,11 +951,12 @@ app.get('/api/home-extras', (req,res)=>{
   const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
   const aluguelRow = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
   const gestaoRow = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
+  const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
   res.json({
     eventos,
     noticia: (noticiaRow && noticiaRow.ativo) ? {descricao: noticiaRow.descricao} : null,
     aluguel: (aluguelRow && aluguelRow.ativo) ? {nome:aluguelRow.nome, chavePix:aluguelRow.chave_pix, valorMensalidade:aluguelRow.valor_mensalidade} : null,
-    gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente} : null,
+    gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente, presidenteTel:telDoNome(gestaoRow.presidente), viceTel:telDoNome(gestaoRow.vice_presidente)} : null,
   });
 });
 

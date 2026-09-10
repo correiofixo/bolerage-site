@@ -50,6 +50,13 @@ function saudacao(){
   const h = new Date().getHours();
   return h < 12 ? 'Bom Dia' : h < 18 ? 'Boa Tarde' : 'Boa Noite';
 }
+// link wa.me a partir de um telefone digitado livremente (assume Brasil se sem código de país)
+function waLink(tel){
+  const d = String(tel||'').replace(/\D/g,'');
+  if(d.length < 10) return '';
+  return 'https://wa.me/' + (d.length <= 11 ? '55'+d : d);
+}
+const WA_ICON = '<svg class="wa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.09c-.24.68-1.42 1.31-1.96 1.36-.5.05-.99.24-3.37-.7-2.85-1.12-4.66-4.03-4.8-4.22-.14-.19-1.15-1.53-1.15-2.92s.73-2.07.99-2.35c.26-.28.57-.35.76-.35h.55c.18 0 .42-.07.65.5.24.58.81 2 .88 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.17.28.74 1.22 1.59 1.98 1.1.98 2.02 1.28 2.3 1.42.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.38-.24.64-.14.26.09 1.66.78 1.94.93.28.14.47.21.54.32.07.12.07.68-.17 1.36z"/></svg>';
 
 /* ============================================================
    ESTADO
@@ -314,9 +321,15 @@ function renderExtrasIniciais(){
       '</div>';
   }
   if(ex.gestao){
+    const linhaG = (cargo, nome, tel) => {
+      const link = waLink(tel);
+      return '<div class="list-row"><span>'+cargo+'</span><span class="row-right">'+escapeHtml(nome||'—')+
+        (link ? '<a class="wa-link" href="'+link+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+
+      '</span></div>';
+    };
     html += '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
-      '<div class="list-row"><span>Presidente</span><span>'+escapeHtml(ex.gestao.presidente)+'</span></div>'+
-      '<div class="list-row"><span>Vice-Presidente</span><span>'+escapeHtml(ex.gestao.vicePresidente)+'</span></div>'+
+      linhaG('Presidente', ex.gestao.presidente, ex.gestao.presidenteTel)+
+      linhaG('Vice-Presidente', ex.gestao.vicePresidente, ex.gestao.viceTel)+
       '</div>';
   }
   return html;
@@ -789,6 +802,7 @@ async function renderAdmin(){
       html += '<div class="list-row" style="flex-direction:column;align-items:stretch;gap:6px;">'+
         '<input id="edit-nome-'+j.id+'" value="'+escapeHtml(j.nome)+'">'+
         '<input id="edit-pin-'+j.id+'" value="'+j.pin+'" maxlength="4">'+
+        '<input id="edit-tel-'+j.id+'" value="'+escapeHtml(j.telefone||'')+'" placeholder="Telefone / WhatsApp (com DDD)" inputmode="tel">'+
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
         (j.superAdmin
@@ -839,9 +853,12 @@ async function renderAdmin(){
     '<label class="small"><input type="checkbox" id="aluguel-ativo" '+(aluguel.ativo?'checked':'')+'> exibir na tela inicial</label>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-aluguel">Salvar aluguel</button></div>';
 
+  const gestaoOpc = sel => '<option value="">—</option>'+
+    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nome)+'" '+(j.nome===sel?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
   html += '<div class="card"><h3>Gestão (tela inicial)</h3>'+
-    '<div class="field"><label>Presidente</label><input id="gestao-presidente" value="'+escapeHtml(gestao.presidente)+'"></div>'+
-    '<div class="field"><label>Vice-Presidente</label><input id="gestao-vice" value="'+escapeHtml(gestao.vicePresidente)+'"></div>'+
+    '<p class="small muted">O telefone do WhatsApp vem do cadastro do jogador (aba Elenco).</p>'+
+    '<div class="field"><label>Presidente</label><select id="gestao-presidente">'+gestaoOpc(gestao.presidente)+'</select></div>'+
+    '<div class="field"><label>Vice-Presidente</label><select id="gestao-vice">'+gestaoOpc(gestao.vicePresidente)+'</select></div>'+
     '<label class="small"><input type="checkbox" id="gestao-ativo" '+(gestao.ativo?'checked':'')+'> exibir na tela inicial</label>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-gestao">Salvar gestão</button></div>';
   } /* fim can(conteudo) */
@@ -942,6 +959,8 @@ async function handleSalvarJogador(id){
   }
   const mensEl = document.getElementById('edit-mens-'+id);
   if(mensEl) body.mensalidade = mensEl.value;
+  const telEl = document.getElementById('edit-tel-'+id);
+  if(telEl) body.telefone = telEl.value.trim();
   try{
     await api('/api/admin/jogadores/'+id, {method:'PUT', adminAuth:true, body});
     state.editingJogadorId = null;

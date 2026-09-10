@@ -269,6 +269,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .info-box{background:var(--bg-elevated-2);border:1px dashed var(--line);border-radius:var(--radius);padding:12px;font-size:13px;color:var(--text-muted);margin-bottom:12px;}
 details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8px;}
 .row-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.wa-link{display:inline-flex;align-items:center;}
+.wa-icon{width:20px;height:20px;fill:#25D366;}
 .stars{display:inline-flex;align-items:center;gap:4px;font-size:13px;}
 .stars-track{position:relative;display:inline-block;line-height:1;white-space:nowrap;}
 .stars-bg{color:var(--line);letter-spacing:1px;}
