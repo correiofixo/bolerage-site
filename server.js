@@ -6,7 +6,7 @@
 
 // Contador de release: some 1 a cada deploy. A virada de "major" é automática —
 // no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 21;
+const APP_BUILD = 22;
 function computeVersion(b){
   let major, minor;
   if(b <= 20){ major = 1; minor = b; }
@@ -264,7 +264,7 @@ function computeFase(rodada){
     if(now < j.voteClose) return {chave:'votacao_aberta', label:'Votação aberta até as 18h', cor:'green'};
     return {chave:'encerrada', label:'Rodada encerrada', cor:'muted'};
   }
-  if(now < j.confirmOpen) return {chave:'pre_confirmacao', label:'Confirmação abre sábado às 8h', cor:'muted'};
+  if(now < j.confirmOpen) return {chave:'pre_confirmacao', label:'Confirmação abre sábado às 8hrs', cor:'muted'};
   if(now < j.confirmClose) return {chave:'confirmacao_aberta', label:'Confirmação aberta até domingo às 8h', cor:'green'};
   return {chave:'aguardando_sorteio', label:'Confirmação encerrada — aguardando sorteio', cor:'gold'};
 }

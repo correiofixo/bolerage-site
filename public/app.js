@@ -164,7 +164,7 @@ function renderTopbar(){
   document.getElementById('version-slot').textContent = state.appVersion ? ('Versão '+state.appVersion) : '';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
-    ? '<div class="who-mens-line">Craque, sua mensalidade está <span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
+    ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
     : '';
   document.getElementById('who-slot').innerHTML =
     '<div class="who-row1">'+
@@ -514,32 +514,30 @@ function renderResenha(){
   const euNaResenha = idsResenha.includes(meuId);
   const souPresente = (rod.confirmados||[]).includes(meuId);
   const janelaLivre = !!rod.resenhaEdicaoLivre;
+  const emConfirmacao = !!rod.resenhaEdicaoConfirmacao;
   const rachaAconteceu = rod.status==='sorteado';
   const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
 
-  let aviso;
-  if(janelaLivre){
-    aviso = souPresente
-      ? 'Você pode ajustar sua presença na resenha com churras agora, até as 11h.'
-      : (rachaAconteceu
-          ? 'A resenha com churras está aberta para entrada de última hora, até as 11h.'
-          : 'Entrada de última hora só vale para rodada que teve jogo.');
-  }else{
-    aviso = 'O flag da resenha fica em modo leitura durante todo o período da confirmação de sábado 8hrs até domingo 8hrs, quando você ativa pela tela de início. Das 10hrs às 11hrs do domingo o status fica liberado para movimentação por esta tela.';
-  }
-
   let html = '<div class="card"><h2>Resenha com Churras — '+formatDataBR(rod.data)+'</h2>'+
-    '<p class="small muted">'+aviso+'</p></div>';
+    '<p class="small muted">Se tivermos mais de 6 confirmados na resenha com churras, podemos comprar os ingredientes antecipadamente e levar no domingo !!!</p></div>';
 
-  html += '<div class="card"><h3>Sua resenha</h3>'+
-    '<div class="presence-toggle-wrap">'+
-      '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" '+(podeEditar?'':'disabled')+' data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
-      '<div class="presence-toggle-label">'+(euNaResenha
-        ? '<strong style="color:var(--green)">Você está na resenha</strong>'
-        : '<span class="muted">Você não está na resenha</span>')+'</div>'+
-    '</div>'+
-    (podeEditar ? '' : '<p class="small muted" style="margin-top:6px;">Somente leitura no momento.</p>')+
-  '</div>';
+  // "Sua resenha" só aparece no check-in de última hora (domingo, 10h às 11h).
+  // Durante a confirmação (sábado 8h a domingo 8h) o flag é ativado pela tela de Início.
+  if(janelaLivre){
+    html += '<div class="card"><h3>Sua resenha</h3>'+
+      '<div class="presence-toggle-wrap">'+
+        '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" '+(podeEditar?'':'disabled')+' data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+        '<div class="presence-toggle-label">'+(euNaResenha
+          ? '<strong style="color:var(--green)">Você está na resenha</strong>'
+          : '<span class="muted">Você não está na resenha</span>')+'</div>'+
+      '</div>'+
+      '<p class="small muted" style="margin-top:6px;">'+(podeEditar
+        ? 'Check-in de última hora aberto até as 11h.'
+        : 'Somente leitura no momento.')+'</p>'+
+    '</div>';
+  }else if(emConfirmacao){
+    html += '<p class="small muted" style="padding:0 2px;">Ative sua presença na resenha pela tela de Início enquanto a confirmação estiver aberta.</p>';
+  }
 
   // Bola Cheia / Bola Murcha — só com os votos DESTA rodada (ignora o ranking geral)
   const aggRod = {};
@@ -566,7 +564,7 @@ function renderResenha(){
 
   html += '<div class="card"><h3>Confirmados na resenha com churras ('+gente.length+')</h3>';
   if(gente.length){
-    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge" style="color:var(--green);border-color:#2c6b3c;">ON</span></div>');
+    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge ok-destaque">OK</span></div>');
   }else{
     html += '<p class="small muted">Ninguém na resenha ainda.</p>';
   }
