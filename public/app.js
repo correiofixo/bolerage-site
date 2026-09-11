@@ -1178,6 +1178,16 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
   }
 });
 
+/* eventos da tela inicial: recolhe sozinho depois de 20s se o usuário não fechar */
+document.getElementById('shell').addEventListener('toggle', (e)=>{
+  const d = e.target;
+  if(!d || !d.classList || !d.classList.contains('evento-item')) return;
+  if(d._autoCloseTimer){ clearTimeout(d._autoCloseTimer); d._autoCloseTimer = null; }
+  if(d.open){
+    d._autoCloseTimer = setTimeout(()=>{ d.open = false; }, 20000);
+  }
+}, true);
+
 /* ============================================================
    BOOT
    ============================================================ */

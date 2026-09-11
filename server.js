@@ -6,7 +6,7 @@
 
 // Contador de release: some 1 a cada deploy. A virada de "major" é automática —
 // no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 20;
+const APP_BUILD = 21;
 function computeVersion(b){
   let major, minor;
   if(b <= 20){ major = 1; minor = b; }
