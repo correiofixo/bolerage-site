@@ -615,7 +615,8 @@ function renderResenha(){
   }
   html += '</div>';
 
-  html += '<div class="card"><h3>Confirmados na Resenha com Churrasco (<span class="contagem-destaque">'+gente.length+'</span>)</h3>';
+  const contagemCls = 'contagem-destaque'+(gente.length>6?' contagem-verde':'');
+  html += '<div class="card"><h3 class="titulo-centralizado">Confirmados na Resenha com Churrasco <span class="'+contagemCls+'">'+gente.length+'</span></h3>';
   if(gente.length){
     gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge ok-destaque">OK</span></div>');
   }else{
