@@ -644,7 +644,12 @@ function renderSorteio(){
 
   const rod = state.rodadaVisualizada;
   if(!rod || !rod.times){
-    html += '<div class="empty">Os times aparecem aqui assim que o sorteio for realizado.</div>';
+    html += '<div class="empty">'+
+      '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
+      '<p>Os times aparecerão aqui assim que o sorteio for realizado.</p>'+
+      '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">📅 Quando acontece?</p>'+
+      '<p style="margin-bottom:0;">O sorteio ocorre automaticamente aos domingos, às 08:05.</p>'+
+    '</div>';
     c.innerHTML = html; return;
   }
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
