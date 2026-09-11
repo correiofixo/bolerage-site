@@ -230,6 +230,9 @@ async function handleLoginDigit(d){
     state.currentPlayer = data.jogador;
     localStorage.setItem('bolerage_token', data.token);
     localStorage.setItem('bolerage_player', JSON.stringify(data.jogador));
+    // descarta qualquer token de admin de uma sessão anterior (de outro jogador) neste navegador
+    state.adminToken=null; state.isAdmin=false;
+    localStorage.removeItem('bolerage_admin_token');
     state.tab='inicio';
     await refreshRodadaAtual();
     startPolling();
@@ -244,6 +247,9 @@ async function handleLogout(){
   try{ await api('/api/logout', {method:'POST', auth:true}); }catch(e){}
   state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false;
   localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player');
+  // encerra também a sessão de admin: ela não pode sobreviver à troca de jogador neste navegador
+  state.adminToken=null; state.isAdmin=false;
+  localStorage.removeItem('bolerage_admin_token');
   if(state.pollHandle){ clearInterval(state.pollHandle); state.pollHandle=null; }
   render();
 }
