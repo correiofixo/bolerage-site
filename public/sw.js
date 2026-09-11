@@ -4,7 +4,7 @@
    - troca de versão do CACHE limpa o cache antigo
    Se algum dia isso causar problema, publicar um sw.js que só faz
    self.registration.unregister() + caches.keys().then(k=>k.forEach(caches.delete)). */
-const CACHE = 'bolerage-shell-23';
+const CACHE = 'bolerage-shell-24';
 const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json', '/assets/logo.jpg'];
 
 self.addEventListener('install', (e) => {

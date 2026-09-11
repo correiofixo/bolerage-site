@@ -296,6 +296,9 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .star-vote-btn:disabled{opacity:.5;}
 .stars.stars-lg{font-size:22px;gap:6px;}
 .stars.stars-lg .stars-num{font-size:15px;font-family:var(--font-display);color:var(--gold);}
+.meu-score-wrap{display:flex;justify-content:center;padding:8px 0 4px;}
+.stars.stars-xl{font-size:38px;gap:12px;}
+.stars.stars-xl .stars-num{font-size:24px;font-family:var(--font-display);color:var(--gold);}
 
 /* ---- responsivo ---- */
 @media (min-width:520px){

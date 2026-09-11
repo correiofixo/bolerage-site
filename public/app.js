@@ -87,6 +87,9 @@ const state = {
   appVersion: null,
   ranking: {},
   homeExtras: null,
+  eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
+  eventoAbertoExp: 0,    // timestamp (Date.now()) até quando ele deve continuar aberto
+  inatividadeTimer: null,
 };
 
 function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
@@ -100,10 +103,10 @@ function mediaDoJogador(jogadorId, papel){
   const r = state.ranking && state.ranking[jogadorId];
   return (r && r[papel]) ? r[papel].media : null;
 }
-function starsHtml(media, grande){
+function starsHtml(media, grande, extraClass){
   if(media==null) return '<span class="stars-empty small muted">sem avaliações</span>';
   const pct = Math.max(0, Math.min(100, media/5*100));
-  return '<span class="stars'+(grande?' stars-lg':'')+'" title="'+media.toFixed(1)+' de 5">'+
+  return '<span class="stars'+(grande?' stars-lg':'')+(extraClass?' '+extraClass:'')+'" title="'+media.toFixed(1)+' de 5">'+
     '<span class="stars-track">'+
       '<span class="stars-bg">★★★★★</span>'+
       '<span class="stars-fg" style="width:'+pct.toFixed(1)+'%">★★★★★</span>'+
@@ -236,6 +239,7 @@ async function handleLoginDigit(d){
     state.tab='inicio';
     await refreshRodadaAtual();
     startPolling();
+    resetInatividade();
     await render();
   }catch(e){
     state.loginError = e.message || 'PIN não encontrado. Tente novamente.';
@@ -251,6 +255,7 @@ async function handleLogout(){
   state.adminToken=null; state.isAdmin=false;
   localStorage.removeItem('bolerage_admin_token');
   if(state.pollHandle){ clearInterval(state.pollHandle); state.pollHandle=null; }
+  pararInatividade();
   render();
 }
 
@@ -323,7 +328,8 @@ function renderExtrasIniciais(){
       const resp = (e.responsavel||'').trim();
       if(desc || resp){
         const wa = waLink(e.responsavelTel);
-        html += '<details class="evento-item">'+
+        const aberto = state.eventoAbertoId===String(e.id) && Date.now() < state.eventoAbertoExp;
+        html += '<details class="evento-item" data-evento-id="'+e.id+'"'+(aberto?' open':'')+'>'+
           '<summary><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></summary>'+
           (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
           (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(resp)+
@@ -352,6 +358,12 @@ function renderExtrasIniciais(){
     html += '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
       linhaG('Presidente', ex.gestao.presidente, ex.gestao.presidenteTel)+
       linhaG('Vice-Presidente', ex.gestao.vicePresidente, ex.gestao.viceTel)+
+      '</div>';
+  }
+  if(state.currentPlayer){
+    const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
+    html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
+      '<div class="meu-score-wrap">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
       '</div>';
   }
   return html;
@@ -389,7 +401,7 @@ function renderInicio(){
   const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha').length + convidadosDeIds.size;
   const golN = presentes.filter(j=>j.posicaoPadrao==='goleiro').length;
 
-  let html = '<div class="card accent-blue"><h2>Rodada do Domingão - '+formatDataBR(rodada.data)+'</h2>';
+  let html = '<div class="card accent-blue"><h2>Rodada do Próximo Domingão - '+formatDataBR(rodada.data)+'</h2>';
 
   if(fase.chave==='pre_confirmacao'){
     html += '<p class="muted small">A confirmação de presença ainda não foi aberta. Ela abre no sábado às 8hrs e fecha no domingo às 8hrs.</p>';
@@ -524,7 +536,7 @@ function renderResenha(){
   const rachaAconteceu = rod.status==='sorteado';
   const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
 
-  let html = '<div class="card"><h2>Resenha com Churras — '+formatDataBR(rod.data)+'</h2>'+
+  let html = '<div class="card"><h2>Resenha com Churras do Próximo Domingão - '+formatDataBR(rod.data)+'</h2>'+
     '<p class="small muted">Se tivermos mais de 6 confirmados na resenha com churras, podemos comprar os ingredientes antecipadamente e levar no domingo !!!</p></div>';
 
   // "Sua resenha" só aparece no check-in de última hora (domingo, 10h às 11h).
@@ -556,7 +568,7 @@ function renderResenha(){
     .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
-  html += '<div class="card"><h3>Bola Cheia e Bola Murcha da Rodada</h3>';
+  html += '<div class="card"><h3>Bola Cheia ⚽ e Bola Murcha \u{1F3C8} da Rodada - '+formatDataBR(rod.data)+'</h3>';
   if(rankRod.length){
     const cheia = rankRod[0];
     const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;
@@ -651,18 +663,24 @@ function renderVotacao(){
   const alvosReservas = rod.times.reservas.map(id=>({jogadorId:id, time:'Reserva'}));
   const alvos = [...alvosTimes, ...alvosReservas].filter(a=>a.jogadorId!==meuId && !a.jogadorId.startsWith('conv:'));
   const meusVotos = {};
-  rod.votos.filter(v=>v.avaliadorId===meuId).forEach(v=>meusVotos[v.avaliadoId]=v.nota);
+  rod.votos.filter(v=>v.avaliadorId===meuId).forEach(v=>meusVotos[v.avaliadoId]={nota:v.nota, edicoes:v.edicoes||0});
 
-  let html = '<div class="card"><p class="small">Avalie a performance de quem jogou hoje, de 1 a 5 estrelas. O voto é definitivo assim que salvo.</p></div>';
+  let html = '<div class="card"><p class="small">Avalie a performance de quem jogou hoje, de 1 a 5 estrelas. Você pode mudar de ideia uma vez — depois disso o voto fica definitivo.</p></div>';
   alvos.forEach(a=>{
-    const notaAtual = meusVotos[a.jogadorId];
-    const travado = notaAtual!=null;
+    const meuVoto = meusVotos[a.jogadorId];
+    const notaAtual = meuVoto ? meuVoto.nota : null;
+    const jaAlterou = meuVoto ? meuVoto.edicoes>=1 : false;
+    const travado = notaAtual!=null && jaAlterou;
     html += '<div class="card"><div class="list-row" style="border:none;padding:0 0 4px 0;"><span>'+escapeHtml(nomeParaExibicao(a.jogadorId))+' <span class="badge">'+a.time+'</span></span></div>';
     html += '<div class="vote-scale">';
     for(let n=1;n<=5;n++){
-      html += '<button class="vote-btn star-vote-btn '+(travado && n<=notaAtual?'selected':'')+'" '+(travado?'disabled':'')+' data-action="votar" data-avaliado="'+a.jogadorId+'" data-nota="'+n+'">★</button>';
+      html += '<button class="vote-btn star-vote-btn '+(notaAtual!=null && n<=notaAtual?'selected':'')+'" '+(travado?'disabled':'')+' data-action="votar" data-avaliado="'+a.jogadorId+'" data-nota="'+n+'">★</button>';
     }
-    html += '</div>'+(travado?'<p class="small muted" style="margin-top:6px;">Voto salvo: '+notaAtual+' estrela(s) — não pode ser alterado.</p>':'')+'</div>';
+    html += '</div>'+(travado
+      ? '<p class="small muted" style="margin-top:6px;">Voto salvo: '+notaAtual+' estrela(s) — não pode ser alterado.</p>'
+      : notaAtual!=null
+        ? '<p class="small" style="margin-top:6px;color:var(--gold);">Voto salvo: '+notaAtual+' estrela(s). Você ainda tem mais 1 possibilidade de alterar o voto.</p>'
+        : '')+'</div>';
   });
   c.innerHTML = html;
 }
@@ -1182,15 +1200,42 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
   }
 });
 
-/* eventos da tela inicial: recolhe sozinho depois de 20s se o usuário não fechar */
+/* eventos da tela inicial: fica aberto por até 30s mesmo com o polling redesenhando a tela,
+   e recolhe sozinho se o usuário não fechar antes disso. */
 document.getElementById('shell').addEventListener('toggle', (e)=>{
   const d = e.target;
   if(!d || !d.classList || !d.classList.contains('evento-item')) return;
+  const id = d.dataset.eventoId || '';
   if(d._autoCloseTimer){ clearTimeout(d._autoCloseTimer); d._autoCloseTimer = null; }
   if(d.open){
-    d._autoCloseTimer = setTimeout(()=>{ d.open = false; }, 20000);
+    state.eventoAbertoId = id;
+    state.eventoAbertoExp = Date.now() + 30000;
+    d._autoCloseTimer = setTimeout(()=>{
+      d.open = false;
+      if(state.eventoAbertoId===id){ state.eventoAbertoId=null; state.eventoAbertoExp=0; }
+    }, 30000);
+  }else if(state.eventoAbertoId===id){
+    state.eventoAbertoId = null; state.eventoAbertoExp = 0;
   }
 }, true);
+
+/* ============================================================
+   LOGOUT POR INATIVIDADE (10 minutos sem interação)
+   ============================================================ */
+const INATIVIDADE_MS = 10*60*1000;
+function pararInatividade(){
+  if(state.inatividadeTimer){ clearTimeout(state.inatividadeTimer); state.inatividadeTimer = null; }
+}
+function resetInatividade(){
+  if(!state.currentPlayer) return;
+  pararInatividade();
+  state.inatividadeTimer = setTimeout(()=>{
+    if(state.currentPlayer) handleLogout();
+  }, INATIVIDADE_MS);
+}
+['click','touchstart','keydown','scroll'].forEach(evt=>{
+  window.addEventListener(evt, resetInatividade, {passive:true});
+});
 
 /* ============================================================
    BOOT
@@ -1204,7 +1249,7 @@ async function boot(){
   await refreshRodadasLista();
   await refreshRanking();
   await refreshHomeExtras();
-  if(state.currentPlayer && state.token) startPolling();
+  if(state.currentPlayer && state.token){ startPolling(); resetInatividade(); }
   await render();
 }
 boot();

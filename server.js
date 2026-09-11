@@ -6,7 +6,7 @@
 
 // Contador de release: some 1 a cada deploy. A virada de "major" é automática —
 // no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 23;
+const APP_BUILD = 24;
 function computeVersion(b){
   let major, minor;
   if(b <= 20){ major = 1; minor = b; }
@@ -147,6 +147,7 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN mensalidade TEXT NOT NULL DEFAULT
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN telefone TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN descricao TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN responsavel TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE votos ADD COLUMN edicoes INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -756,7 +757,7 @@ function serializarRodada(rodada){
       modo: meta ? meta.modo_sorteio : 'fase1'
     };
   }
-  const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota FROM votos WHERE rodada_id=?').all(rodada.id);
+  const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota, edicoes FROM votos WHERE rodada_id=?').all(rodada.id);
   return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, times, votos};
 }
 
@@ -906,10 +907,16 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   if(!participouDaRodada(rodada.id, avaliadoId)) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
   const existente = db.prepare('SELECT * FROM votos WHERE rodada_id=? AND jogador_avaliado_id=? AND jogador_avaliador_id=?')
     .get(rodada.id, avaliadoId, req.jogadorId);
-  if(existente) return res.status(409).json({erro:'Voto já registrado — não é possível alterar depois de salvo.'});
-  db.prepare('INSERT INTO votos (id,rodada_id,jogador_avaliado_id,jogador_avaliador_id,nota,criado_em) VALUES (?,?,?,?,?,?)')
+  // cada jogador pode votar e, uma única vez, mudar de ideia — a 2ª alteração já não é permitida.
+  if(existente){
+    if(nota === existente.nota) return res.json({ok:true, edicoesRestantes: existente.edicoes>=1?0:1});
+    if(existente.edicoes >= 1) return res.status(409).json({erro:'Esse voto já foi alterado uma vez — não é possível alterar de novo.'});
+    db.prepare('UPDATE votos SET nota=?, edicoes=edicoes+1, criado_em=? WHERE id=?').run(nota, nowISO(), existente.id);
+    return res.json({ok:true, edicoesRestantes:0});
+  }
+  db.prepare('INSERT INTO votos (id,rodada_id,jogador_avaliado_id,jogador_avaliador_id,nota,edicoes,criado_em) VALUES (?,?,?,?,?,0,?)')
     .run(idGen('v'), rodada.id, avaliadoId, req.jogadorId, nota, nowISO());
-  res.json({ok:true});
+  res.json({ok:true, edicoesRestantes:1});
 });
 
 app.get('/api/ranking', (req,res)=>{
