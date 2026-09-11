@@ -190,11 +190,10 @@ function renderTopbar(){
     {key:'ranking', label:'Ranking', icon:'<line x1="5" y1="20" x2="5" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="19" y1="20" x2="19" y2="4"/>'},
     {key:'resenha', label:'Resenha', icon:'<path d="M20 4H8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="10" y1="9" x2="16" y2="9"/>'},
   ];
-  bottomnav.innerHTML = '<div class="bottomnav-tabs">'+tabs.map(t=>
+  bottomnav.innerHTML = tabs.map(t=>
     '<button data-action="tab" data-tab="'+t.key+'" class="'+(state.tab===t.key?'active':'')+'">'+
     '<svg viewBox="0 0 24 24">'+t.icon+'</svg><span>'+t.label+'</span></button>'
-  ).join('')+'</div>'+
-  '<div class="app-footer">© 2026 Bolerage. Todos os direitos reservados.</div>';
+  ).join('');
 }
 
 /* ============================================================
@@ -537,7 +536,7 @@ function renderResenha(){
   const rachaAconteceu = rod.status==='sorteado';
   const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
 
-  let html = '<div class="card"><h2>Resenha com Churras do Próximo Domingão - '+formatDataBR(rod.data)+'</h2>'+
+  let html = '<div class="card"><h2>Resenha com Churrasco do Próximo Domingão - '+formatDataBR(rod.data)+'</h2>'+
     '<p class="small muted">Se tivermos mais de 6 confirmados na resenha com churras, podemos comprar os ingredientes antecipadamente e levar no domingo !!!</p></div>';
 
   // "Sua resenha" só aparece no check-in de última hora (domingo, 10h às 11h).

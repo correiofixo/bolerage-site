@@ -211,25 +211,21 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 #bottomnav{
   position:fixed;bottom:0;left:50%;transform:translateX(-50%);
   width:100%;max-width:480px;
-  display:flex;flex-direction:column;
+  display:flex;
   background:var(--bg-elevated);
   border-top:1px solid var(--line);
   box-shadow:0 -2px 14px rgba(0,0,0,.28);
+  padding:6px calc(4px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left));
   z-index:5;
-}
-.bottomnav-tabs{
-  display:flex;
-  padding:6px calc(4px + env(safe-area-inset-right)) 4px calc(4px + env(safe-area-inset-left));
 }
 #bottomnav button{
   flex:1;background:none;border:none;color:var(--text-muted);
-  display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding:6px 0;font-size:10.5px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:8px 4px;margin:0 2px;font-size:11.5px;font-weight:600;border-radius:12px;
 }
-#bottomnav button.active{color:var(--gold);}
+#bottomnav button.active{color:var(--gold);background:rgba(201,162,39,.14);}
 #bottomnav button:active{transform:none;opacity:.7;}
-#bottomnav svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
-.app-footer{text-align:center;font-size:10px;color:var(--text-muted);padding:0 8px calc(6px + env(safe-area-inset-bottom));}
+#bottomnav svg{width:25px;height:25px;stroke:currentColor;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;}
 
 /* ---- login (pin keypad) ---- */
 #login-screen{
