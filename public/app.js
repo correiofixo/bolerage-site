@@ -536,8 +536,11 @@ function renderResenha(){
   const rachaAconteceu = rod.status==='sorteado';
   const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
 
-  let html = '<div class="card"><h2>Resenha com Churrasco do Próximo Domingão - '+formatDataBR(rod.data)+'</h2>'+
-    '<p class="small muted">Se tivermos mais de 6 confirmados na resenha com churras, podemos comprar os ingredientes antecipadamente e levar no domingo !!!</p></div>';
+  let html = '<div class="card">'+
+    '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
+    '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>'+
+    '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
+  '</div>';
 
   // "Sua resenha" só aparece no check-in de última hora (domingo, 10h às 11h).
   // Durante a confirmação (sábado 8h a domingo 8h) o flag é ativado pela tela de Início.
@@ -568,7 +571,9 @@ function renderResenha(){
     .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
-  html += '<div class="card"><h3>Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8} da Rodada - '+formatDataBR(rod.data)+'</h3>';
+  html += '<div class="card">'+
+    '<h3 class="titulo-centralizado">Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8} da Rodada</h3>'+
+    '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
   if(rankRod.length){
     const cheia = rankRod[0];
     const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;

@@ -134,6 +134,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   box-shadow:var(--shadow-card);
 }
 .card>h3{font-size:16.5px;font-weight:700;color:var(--text);letter-spacing:.3px;margin-bottom:10px;}
+.titulo-centralizado{text-align:center;}
+.rodada-sub{text-align:center;color:var(--text-muted);font-size:13px;font-weight:600;margin:-4px 0 10px;}
 .card.accent-gold{border-left:3px solid var(--gold);}
 .card.accent-red{border-left:3px solid var(--red);}
 .card.accent-green{border-left:3px solid var(--green);}
