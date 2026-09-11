@@ -36,6 +36,34 @@ function formatDataBR(dateStr){
   return d+'/'+m+'/'+y;
 }
 
+let toastTimer = null;
+function showToast(msg){
+  const el = document.getElementById('toast');
+  if(!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> el.classList.remove('show'), 2200);
+}
+async function handleCopiarPix(pix){
+  if(!pix) return;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(pix);
+    }else{
+      // fallback para navegadores/contextos sem Clipboard API (ex.: http sem TLS)
+      const ta = document.createElement('textarea');
+      ta.value = pix; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast('Código copiado para pagamento');
+  }catch(e){
+    showToast('Não foi possível copiar. Copie manualmente.');
+  }
+}
+
 // estados de mensalidade (valor no banco -> rótulo / emoji / classe de cor)
 const MENS_INFO = {
   em_dia:    {lbl:'Em Dia',    emoji:'✅', cls:'ok'},
@@ -344,7 +372,10 @@ function renderExtrasIniciais(){
   if(ex.aluguel){
     html += '<div class="card accent-orange"><h3>Dados para Pagamento - (Aluguel da Quadra):</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
-      '<div class="list-row"><span>Chave PIX</span><span>'+escapeHtml(ex.aluguel.chavePix)+'</span></div>'+
+      '<div class="pix-row"><span>Chave PIX</span>'+
+        '<div class="pix-value-line"><span class="pix-code">'+escapeHtml(ex.aluguel.chavePix)+'</span>'+
+        (ex.aluguel.chavePix ? '<button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(ex.aluguel.chavePix)+'">Copiar</button>' : '')+
+        '</div></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
       '</div>';
   }
@@ -1166,6 +1197,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-convidado') return handleToggleConvidado(el.dataset.atual);
   if(action==='toggle-resenha') return handleToggleResenha(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
+  if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
