@@ -190,10 +190,11 @@ function renderTopbar(){
     {key:'ranking', label:'Ranking', icon:'<line x1="5" y1="20" x2="5" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="19" y1="20" x2="19" y2="4"/>'},
     {key:'resenha', label:'Resenha', icon:'<path d="M20 4H8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="10" y1="9" x2="16" y2="9"/>'},
   ];
-  bottomnav.innerHTML = tabs.map(t=>
+  bottomnav.innerHTML = '<div class="bottomnav-tabs">'+tabs.map(t=>
     '<button data-action="tab" data-tab="'+t.key+'" class="'+(state.tab===t.key?'active':'')+'">'+
     '<svg viewBox="0 0 24 24">'+t.icon+'</svg><span>'+t.label+'</span></button>'
-  ).join('');
+  ).join('')+'</div>'+
+  '<div class="app-footer">© 2026 Bolerage. Todos os direitos reservados.</div>';
 }
 
 /* ============================================================
@@ -319,10 +320,10 @@ function renderExtrasIniciais(){
   if(!ex) return '';
   let html = '';
   if(ex.noticia && ex.noticia.descricao){
-    html += '<div class="card accent-gold"><h3>\u{1F4E2} Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+    html += '<div class="card accent-gold"><h3>Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
   if(ex.eventos && ex.eventos.length){
-    html += '<div class="card accent-green"><h3>\u26BD Eventos:</h3>';
+    html += '<div class="card accent-green"><h3>Eventos:</h3>';
     ex.eventos.forEach(e=>{
       const desc = (e.descricao||'').trim();
       const resp = (e.responsavel||'').trim();
@@ -363,7 +364,7 @@ function renderExtrasIniciais(){
   if(state.currentPlayer){
     const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
     html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
-      '<div class="meu-score-wrap">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
+      '<div class="meu-score-box">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
       '</div>';
   }
   return html;
@@ -568,7 +569,7 @@ function renderResenha(){
     .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
-  html += '<div class="card"><h3>Bola Cheia ⚽ e Bola Murcha \u{1F3C8} da Rodada - '+formatDataBR(rod.data)+'</h3>';
+  html += '<div class="card"><h3>Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8} da Rodada - '+formatDataBR(rod.data)+'</h3>';
   if(rankRod.length){
     const cheia = rankRod[0];
     const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;

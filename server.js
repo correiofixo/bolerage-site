@@ -4,16 +4,16 @@
    ============================================================ */
 'use strict';
 
-// Contador de release: some 1 a cada deploy. A virada de "major" é automática —
-// no máximo 20 releases por major: ...1.20 -> 2.00 -> 2.01 ... 2.20 -> 3.00 ...
-const APP_BUILD = 24;
+// Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
+// no máximo 9 releases por major (0 a 9): 2.00 -> 2.01 ... 2.09 -> 3.00 -> 3.01 ...
+// (reiniciado nesta versão: build 0 = 2.00, ciclo de 10 a partir daqui.)
+const APP_BUILD = 0;
 function computeVersion(b){
-  let major, minor;
-  if(b <= 20){ major = 1; minor = b; }
-  else { const k = b - 21; major = 2 + Math.floor(k / 21); minor = k % 21; }
+  const minor = b % 10;
+  const major = 2 + Math.floor(b / 10);
   return major + '.' + String(minor).padStart(2, '0');
 }
-const APP_VERSION = computeVersion(APP_BUILD); // ex.: 12 -> "1.12"
+const APP_VERSION = computeVersion(APP_BUILD); // ex.: 0 -> "2.00", 9 -> "2.09", 10 -> "3.00"
 
 const path = require('path');
 const fs = require('fs');
