@@ -585,7 +585,7 @@ function renderResenha(){
   }
   html += '</div>';
 
-  html += '<div class="card"><h3>Confirmados na resenha com churras ('+gente.length+')</h3>';
+  html += '<div class="card"><h3>Confirmados na Resenha com Churrasco (<span class="contagem-destaque">'+gente.length+'</span>)</h3>';
   if(gente.length){
     gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge ok-destaque">OK</span></div>');
   }else{
