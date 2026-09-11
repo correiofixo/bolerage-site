@@ -646,11 +646,11 @@ function renderSorteio(){
   if(!rod || !rod.times){
     html += '<div class="empty">'+
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
-      '<p>Os times aparecerão aqui assim que o sorteio for realizado.</p>'+
+      '<p>Os times serão exibidos aqui assim que o sorteio for realizado.</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">📅 Quando acontece o sorteio ?</p>'+
       '<p>O sorteio ocorre aos domingos, às 08:05hrs.</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Qual o critério do sorteio ?</p>'+
-      '<p style="margin-bottom:0;">Após 4 rodadas o app irá considerar a média do ranking, afim de sortear times equilibrados. A previsão é que esse critério passe a valer em Outubro/2026.</p>'+
+      '<p style="margin-bottom:0;">Após (4) quatro rodadas, o app irá considerar a média do ranking a fim de sortear times equilibrados. A previsão é que esse critério passe a valer em Outubro de 2026.</p>'+
     '</div>';
     c.innerHTML = html; return;
   }
@@ -690,11 +690,11 @@ function renderVotacao(){
   if(!rod || rod.status!=='sorteado'){
     c.innerHTML = '<div class="empty">'+
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
-      '<p>A votação será exibida quando os times da semana forem sorteados.</p>'+
+      '<p>Os nomes dos craques serão exibidos aqui quando os times da semana forem sorteados.</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">📅 Quando posso votar ?</p>'+
-      '<p>A votação estará liberada somente às 10hrs, encerrando automaticamente às 18hrs do domingo da rodada.</p>'+
+      '<p>A votação estará liberada a partir das 10hrs e será encerrada automaticamente às 18hrs do domingo da rodada.</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Posso alterar meu voto ?</p>'+
-      '<p style="margin-bottom:0;">Sim. Depois de votar, você poderá alterar somente 1 vez seu voto.</p>'+
+      '<p style="margin-bottom:0;">Sim. Após votar, você poderá alterar seu voto apenas uma vez.</p>'+
     '</div>'; return;
   }
   const fase = rod.fase;
