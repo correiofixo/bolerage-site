@@ -372,10 +372,9 @@ function renderExtrasIniciais(){
   if(ex.aluguel){
     html += '<div class="card accent-orange"><h3>Dados para Pagamento - (Aluguel da Quadra):</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
-      '<div class="pix-row"><span>Chave PIX</span>'+
-        '<div class="pix-value-line"><span class="pix-code">'+escapeHtml(ex.aluguel.chavePix)+'</span>'+
+      '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(ex.aluguel.chavePix)+'</span>'+
         (ex.aluguel.chavePix ? '<button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(ex.aluguel.chavePix)+'">Copiar</button>' : '')+
-        '</div></div>'+
+        '</span></div>'+
       '<div class="list-row"><span>Mensalidade</span><span>'+escapeHtml(ex.aluguel.valorMensalidade)+'</span></div>'+
       '</div>';
   }
