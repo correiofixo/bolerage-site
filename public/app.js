@@ -572,7 +572,7 @@ function renderResenha(){
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
   html += '<div class="card">'+
-    '<h3 class="titulo-centralizado">Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8} da Rodada</h3>'+
+    '<h3 class="titulo-centralizado">Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8}</h3>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
   if(rankRod.length){
     const cheia = rankRod[0];
