@@ -681,7 +681,7 @@ function renderVotacao(){
   const c = document.getElementById('content');
   const rod = state.rodadaAtual;
   if(!rod || rod.status!=='sorteado'){
-    c.innerHTML = '<div class="empty">A votação abre quando os times da semana forem sorteados.</div>'; return;
+    c.innerHTML = '<div class="empty">A votação será exibida quando os times da semana forem sorteados. A votação estará liberada somente às 10hrs do domingo.</div>'; return;
   }
   const fase = rod.fase;
   if(fase.chave!=='votacao_aberta'){
