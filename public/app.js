@@ -212,7 +212,7 @@ function renderLogin(){
       '<div class="keypad">'+keypad+'</div>'+
       '<div class="login-error">'+escapeHtml(state.loginError)+'</div>'+
       '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo.'+
-        (waLink(state.adminWhats) ? ' <a class="wa-link" href="'+waLink(state.adminWhats)+'" target="_blank" rel="noopener" title="Falar com o administrador no WhatsApp">'+WA_ICON+'</a>' : '')+
+        ' <a class="wa-link" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
     '</div>';
 }
