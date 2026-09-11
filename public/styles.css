@@ -288,6 +288,8 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .row-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .wa-link{display:inline-flex;align-items:center;}
 .wa-icon{width:20px;height:20px;fill:#25D366;}
+.wa-link-destaque{width:32px;height:32px;justify-content:center;border-radius:50%;background:rgba(37,211,102,.18);box-shadow:0 0 0 2px rgba(37,211,102,.35);margin-left:6px;vertical-align:middle;}
+.wa-link-destaque .wa-icon{width:22px;height:22px;}
 .stars{display:inline-flex;align-items:center;gap:4px;font-size:13px;}
 .stars-track{position:relative;display:inline-block;line-height:1;white-space:nowrap;}
 .stars-bg{color:var(--line);letter-spacing:1px;}

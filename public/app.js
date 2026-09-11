@@ -214,8 +214,8 @@ function renderLogin(){
       '<div class="pin-dots">'+dots+'</div>'+
       '<div class="keypad">'+keypad+'</div>'+
       '<div class="login-error">'+escapeHtml(state.loginError)+'</div>'+
-      '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo.'+
-        ' <a class="wa-link" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
+      '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo Bolerage'+
+        ' <a class="wa-link wa-link-destaque" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
     '</div>';
 }
