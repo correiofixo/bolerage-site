@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 2;
+const APP_BUILD = 3;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -149,10 +149,12 @@ try{ db.exec("ALTER TABLE eventos ADD COLUMN descricao TEXT NOT NULL DEFAULT ''"
 try{ db.exec("ALTER TABLE eventos ADD COLUMN responsavel TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE votos ADD COLUMN edicoes INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN corneta INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN time_coracao TEXT NOT NULL DEFAULT ''"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
 const MENSALIDADE_VALORES = ['', 'em_dia', 'em_atraso', 'isenta'];
+const TIMES_CORACAO = ['', 'saopaulo', 'santos', 'corinthians', 'palmeiras'];
 
 function seedExtrasSeNecessario(){
   const n = db.prepare('SELECT * FROM noticia WHERE id=1').get();
@@ -636,6 +638,7 @@ function jogadorPublico(j){
     perms: (j.admin_perms||'').split(',').filter(Boolean),
     mensalidade: j.mensalidade || '',
     corneta: !!j.corneta,
+    timeCoracao: j.time_coracao || '',
   };
 }
 
@@ -682,7 +685,7 @@ app.post('/api/trocar-pin', requireAuth, (req,res)=>{
 
 /* ---- elenco ---- */
 app.get('/api/elenco', (req,res)=>{
-  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo}));
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, timeCoracao:j.time_coracao||''}));
   res.json({jogadores});
 });
 app.get('/api/admin/elenco', requireSuper, (req,res)=>{
@@ -691,7 +694,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     admin:!!j.admin, superAdmin:!!j.super_admin,
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
     mensalidade:j.mensalidade||'', telefone:j.telefone||'',
-    corneta:!!j.corneta,
+    corneta:!!j.corneta, timeCoracao:j.time_coracao||'',
   }));
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
@@ -746,8 +749,12 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   let telefone = j.telefone || '';
   if(req.body.telefone!=null) telefone = String(req.body.telefone).slice(0,30);
   const corneta = req.body.corneta!=null ? (req.body.corneta?1:0) : (j.corneta||0);
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,j.id);
+  let timeCoracao = j.time_coracao || '';
+  if(req.body.timeCoracao!=null && TIMES_CORACAO.includes(String(req.body.timeCoracao))){
+    timeCoracao = String(req.body.timeCoracao);
+  }
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=?,time_coracao=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,timeCoracao,j.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
@@ -786,6 +793,9 @@ function serializarRodada(rodada){
   const _jr = janelas(rodada.data), _nr = nowSP();
   const resenhaEdicaoConfirmacao = _nr >= _jr.confirmOpen && _nr < _jr.confirmClose;
   const resenhaEdicaoLivre = _nr >= _jr.resenhaLivreOpen && _nr < _jr.resenhaLivreClose;
+  // check-in da resenha: só fica disponível de sábado 8h até domingo 11h (janela única,
+  // cobre a confirmação inteira + a última hora de ajuste antes do jogo).
+  const resenhaCheckinAberto = _nr >= _jr.confirmOpen && _nr < _jr.resenhaLivreClose;
   let times = null;
   if(rodada.status==='sorteado'){
     const linhas = db.prepare('SELECT nome_time, jogador_id, papel_na_partida FROM times_sorteados WHERE rodada_id=?').all(rodada.id);
@@ -804,7 +814,7 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota, edicoes FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, times, votos};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos};
 }
 
 app.get('/api/rodadas', (req,res)=>{
@@ -890,12 +900,16 @@ app.post('/api/rodadas/:id/convidado', requireAuth, (req,res)=>{
   res.json({ok:true});
 });
 
-// Check-in da resenha: liberado a qualquer momento, para qualquer jogador (inclusive
-// Corneta, que não pode confirmar presença na partida — ver /presenca abaixo).
+// Check-in da resenha: disponível para qualquer jogador (inclusive Corneta, que não pode
+// confirmar presença na partida — ver /presenca abaixo), só que apenas dentro da janela
+// única de sábado 8h até domingo 11h.
 app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
   const vaiResenha = !!req.body.resenha;
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.confirmOpen || n >= j.resenhaLivreClose) return res.status(403).json({erro:'O check-in da resenha só fica disponível de sábado às 8h até domingo às 11h.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
   if(existente){
     db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
