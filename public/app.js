@@ -241,7 +241,7 @@ function renderTopbar(){
     : '';
   document.getElementById('who-slot').innerHTML =
     '<div class="who-row1">'+
-      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !</span>'+
+      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+'</span>'+
       '<span class="who-actions">'+
         '<button data-action="abrir-troca-pin">Trocar meu PIN</button>'+
         (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
