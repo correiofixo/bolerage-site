@@ -105,7 +105,6 @@ const state = {
   rodadasLista: [],
   rodadaVisualizadaId: null,
   rodadaVisualizada: null,
-  rankingFiltro: 'linha',
   editingJogadorId: null,
   editingEventoId: null,
   adminWhats: '',
@@ -438,9 +437,13 @@ function renderInicio(){
   }
   if(fase.chave==='confirmacao_aberta'){
     html += renderMedidorConfirmacao(linhaN, golN);
-    html += renderTogglePresenca(meuStatus);
-    if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
-    if(meuStatus==='presente') html += renderToggleResenha((rodada.resenha||[]).includes(state.currentPlayer.id));
+    if(state.currentPlayer.corneta){
+      html += '<p class="small muted" style="padding:8px 2px;">🎺 Você está marcado como <strong style="color:var(--text)">Corneta</strong> — não participa da lista de presença da partida. Faça seu check-in na aba <strong style="color:var(--text)">Resenha</strong> quando quiser.</p>';
+    }else{
+      html += renderTogglePresenca(meuStatus);
+      if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
+      if(meuStatus==='presente') html += renderToggleResenha((rodada.resenha||[]).includes(state.currentPlayer.id));
+    }
   }
   if(fase.chave==='aguardando_sorteio'){
     html += renderMedidorConfirmacao(linhaN, golN);
@@ -469,7 +472,10 @@ function renderInicio(){
   if(rodada.status==='sorteado'){
     const meuTime = rodada.times.times.find(t=>t.jogadores.some(j=>j.jogadorId===state.currentPlayer.id));
     const souReserva = rodada.times.reservas.includes(state.currentPlayer.id);
-    html += meuTime
+    const souAlternante = meuTime && meuTime.nome==='Alternantes';
+    html += souAlternante
+      ? '<p class="small">Você ficou como <strong>Alternar Jogador</strong> nesta rodada — reveza com os times completos. Veja na aba Sorteio.</p>'
+      : meuTime
       ? '<p class="small">Você está no time <strong>'+meuTime.nome+'</strong>. Veja a formação completa na aba Sorteio.</p>'
       : souReserva
         ? '<p class="small">Você ficou como <strong>reserva</strong> nesta rodada, mas pode votar e receber votos normalmente.</p>'
@@ -560,11 +566,6 @@ function renderResenha(){
   const idsResenha = rod.resenha || [];
   const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
   const euNaResenha = idsResenha.includes(meuId);
-  const souPresente = (rod.confirmados||[]).includes(meuId);
-  const janelaLivre = !!rod.resenhaEdicaoLivre;
-  const emConfirmacao = !!rod.resenhaEdicaoConfirmacao;
-  const rachaAconteceu = rod.status==='sorteado';
-  const podeEditar = janelaLivre && (souPresente || rachaAconteceu);
 
   let html = '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
@@ -572,23 +573,16 @@ function renderResenha(){
     '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
   '</div>';
 
-  // "Sua resenha" só aparece no check-in de última hora (domingo, 10h às 11h).
-  // Durante a confirmação (sábado 8h a domingo 8h) o flag é ativado pela tela de Início.
-  if(janelaLivre){
-    html += '<div class="card"><h3>Sua resenha</h3>'+
-      '<div class="presence-toggle-wrap">'+
-        '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" '+(podeEditar?'':'disabled')+' data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
-        '<div class="presence-toggle-label">'+(euNaResenha
-          ? '<strong style="color:var(--green)">Você está na resenha</strong>'
-          : '<span class="muted">Você não está na resenha</span>')+'</div>'+
-      '</div>'+
-      '<p class="small muted" style="margin-top:6px;">'+(podeEditar
-        ? 'Check-in de última hora aberto até as 11h.'
-        : 'Somente leitura no momento.')+'</p>'+
-    '</div>';
-  }else if(emConfirmacao){
-    html += '<p class="small muted" style="padding:0 2px;">Ative sua presença na resenha pela tela de Início enquanto a confirmação estiver aberta.</p>';
-  }
+  // Check-in da resenha: liberado sempre, para qualquer jogador — sem restrição de
+  // horário nem de ter confirmado presença na partida.
+  html += '<div class="card"><h3>Sua resenha</h3>'+
+    '<div class="presence-toggle-wrap">'+
+      '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+      '<div class="presence-toggle-label">'+(euNaResenha
+        ? '<strong style="color:var(--green)">Você está na resenha</strong>'
+        : '<span class="muted">Você não está na resenha</span>')+'</div>'+
+    '</div>'+
+  '</div>';
 
   // Bola Cheia / Bola Murcha — só com os votos DESTA rodada (ignora o ranking geral)
   const aggRod = {};
@@ -660,10 +654,15 @@ function renderSorteio(){
     html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>';
     t.jogadores.forEach(j=>{
       const isConv = String(j.jogadorId).indexOf('conv:')===0;
-      const media = isConv ? null : mediaDoJogador(j.jogadorId, j.papel);
+      const isAlternar = j.papel==='alternar';
+      // "Alternar Jogador" não é um papel de verdade — usa a posição padrão do
+      // jogador só pra buscar a média certa no ranking (linha ou goleiro).
+      const jr = isAlternar && !isConv ? state.elenco.find(x=>x.id===j.jogadorId) : null;
+      const papelMedia = isAlternar ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
+      const media = isConv ? null : mediaDoJogador(j.jogadorId, papelMedia);
       html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+
         '<span class="row-right">'+(isConv?'':starsHtml(media, true))+
-        (j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>';
+        (isAlternar?'<span class="badge gk">Alternar Jogador</span>':j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>';
     });
     html += '</div>';
   });
@@ -747,24 +746,26 @@ async function renderRanking(){
   c.innerHTML = '<div class="empty">Calculando ranking…</div>';
   await refreshRanking();
   const ranking = state.ranking;
-  const papel = state.rankingFiltro;
-  const linhas = state.elenco.filter(j=>j.ativo && j.posicaoPadrao===papel).map(j=>{
+  // ranking único: todos os jogadores que já receberam votos, linha e goleiro juntos
+  // na mesma lista (a média combina os votos recebidos em qualquer papel).
+  const linhas = state.elenco.filter(j=>j.ativo).map(j=>{
     const r = ranking[j.id];
-    const dados = r ? r[papel] : {media:null,total:0};
-    return {nome:j.nome, media:dados.media, total:dados.total};
+    const totalLinha = r ? r.linha.total : 0;
+    const totalGol = r ? r.goleiro.total : 0;
+    const total = totalLinha + totalGol;
+    const somaPontos = (r && r.linha.media!=null ? r.linha.media*totalLinha : 0) + (r && r.goleiro.media!=null ? r.goleiro.media*totalGol : 0);
+    const media = total ? somaPontos/total : null;
+    return {nome:j.nome, media, total};
   });
   const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
   const semNota = linhas.filter(l=>l.media==null);
 
-  let html = '<div class="tabtoggle">'+
-    '<button data-action="ranking-filtro" data-filtro="linha" class="'+(papel==='linha'?'active':'')+'">Linha</button>'+
-    '<button data-action="ranking-filtro" data-filtro="goleiro" class="'+(papel==='goleiro'?'active':'')+'">Goleiro</button>'+
-  '</div><div class="card">';
+  let html = '<div class="card">';
   comNota.forEach((l,i)=>{
     html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
       '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
   });
-  if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes nesta categoria.</p>';
+  if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes.</p>';
   html += '</div>';
   if(semNota.length){
     html += '<div class="card"><h3>Ainda sem avaliações</h3>';
@@ -867,9 +868,12 @@ async function renderAdmin(){
     const confirmados = (rodada.confirmados||[]).map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
     const linhaN = confirmados.filter(j=>j.posicaoPadrao==='linha').length;
     const golN = confirmados.filter(j=>j.posicaoPadrao==='goleiro').length;
-    const podeSortear = rodada.status==='aguardando_confirmacao' && rodada.fase.chave==='aguardando_sorteio';
+    const podeSortear = (rodada.status==='aguardando_confirmacao' && rodada.fase.chave==='aguardando_sorteio') || rodada.status==='sorteio_desfeito';
     html += '<p class="small muted">'+linhaN+' de linha, '+golN+' goleiro(s) confirmados.</p>';
     html += '<button class="btn" data-action="disparar-sorteio" '+(podeSortear?'':'disabled')+'>Realizar sorteio</button>';
+    if(rodada.status==='sorteado'){
+      html += '<button class="btn danger small" style="margin-top:8px;" data-action="desfazer-sorteio" data-id="'+rodada.id+'">Desfazer sorteio</button>';
+    }
     const ehHistorico = rodada.fase.chave==='encerrada' || rodada.status==='nao_viabilizado';
     html += '<button class="btn danger" style="margin-top:8px;" data-action="remover-rodada" data-id="'+rodada.id+'" data-data="'+rodada.data+'" data-fase="'+escapeHtml(rodada.fase.label)+'" data-hist="'+(ehHistorico?'1':'0')+'">Remover esta rodada'+(ehHistorico?' (histórico)':'')+'</button>';
   }else{
@@ -893,6 +897,7 @@ async function renderAdmin(){
         '<input id="edit-tel-'+j.id+'" value="'+escapeHtml(j.telefone||'')+'" placeholder="Telefone / WhatsApp (com DDD)" inputmode="tel">'+
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
+        '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (só faz check-in na Resenha, não confirma presença na partida)</label>'+
         (j.superAdmin
           ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
           : '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
@@ -904,6 +909,7 @@ async function renderAdmin(){
     }else{
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
+        (j.corneta?' <span class="badge">🎺 corneta</span>':'')+
         (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
@@ -1010,6 +1016,15 @@ async function handleDispararSorteio(){
     await render();
   }catch(e){ alert(e.message); }
 }
+async function handleDesfazerSorteio(id){
+  if(!confirm('Desfazer o sorteio desta rodada?\n\nIsso apaga os times, reservas e TODOS os votos já registrados nela. As confirmações de presença são mantidas — depois é só clicar em "Realizar sorteio" de novo.')) return;
+  try{
+    await api('/api/admin/rodadas/'+id+'/desfazer-sorteio', {method:'POST', adminAuth:true});
+    state.rodadaVisualizadaId = null; state.rodadaVisualizada = null;
+    await refreshRodadaAtual();
+    await render();
+  }catch(e){ alert(e.message); }
+}
 async function handleCriarRodada(){
   const val = document.getElementById('nova-rodada-data').value;
   if(!val) return;
@@ -1052,7 +1067,8 @@ async function handleSalvarJogador(id){
   const pin = document.getElementById('edit-pin-'+id).value.trim();
   const posicaoPadrao = document.getElementById('edit-pos-'+id).value;
   const ativo = document.getElementById('edit-ativo-'+id).checked;
-  const body = {nome,pin,posicaoPadrao,ativo};
+  const corneta = document.getElementById('edit-corneta-'+id).checked;
+  const body = {nome,pin,posicaoPadrao,ativo,corneta};
   const adminEl = document.getElementById('edit-admin-'+id);
   if(adminEl){
     body.admin = adminEl.checked;
@@ -1213,8 +1229,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
-  if(action==='ranking-filtro'){ state.rankingFiltro = el.dataset.filtro; return render(); }
   if(action==='disparar-sorteio') return handleDispararSorteio();
+  if(action==='desfazer-sorteio') return handleDesfazerSorteio(el.dataset.id);
   if(action==='criar-rodada') return handleCriarRodada();
   if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();

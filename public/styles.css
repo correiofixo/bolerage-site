@@ -186,6 +186,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-card.t-alemanha{border-left-color:var(--alemanha);}
 .team-card.t-italia{border-left-color:var(--italia);}
 .team-card.t-holanda{border-left-color:var(--holanda);}
+.team-card.t-alternantes{border-left-color:var(--gold);}
 .team-card h2{font-size:22px;font-weight:700;letter-spacing:.6px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .team-flag{font-size:2em;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));}
 

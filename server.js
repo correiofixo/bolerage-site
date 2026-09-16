@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 0;
+const APP_BUILD = 1;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -148,6 +148,7 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN telefone TEXT NOT NULL DEFAULT ''
 try{ db.exec("ALTER TABLE eventos ADD COLUMN descricao TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN responsavel TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE votos ADD COLUMN edicoes INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN corneta INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -260,6 +261,7 @@ function computeFase(rodada){
   const now = nowSP();
   const j = janelas(rodada.data);
   if(rodada.status==='nao_viabilizado') return {chave:'nao_viabilizado', label:'Racha não viabilizado nesta semana', cor:'red'};
+  if(rodada.status==='sorteio_desfeito') return {chave:'sorteio_desfeito', label:'Sorteio desfeito — aguardando novo sorteio manual', cor:'gold'};
   if(rodada.status==='sorteado'){
     if(now < j.voteOpen) return {chave:'sorteado_aguardando_votacao', label:'Times sorteados — votação abre domingo às 10h', cor:'gold'};
     if(now < j.voteClose) return {chave:'votacao_aberta', label:'Votação aberta até as 18h', cor:'green'};
@@ -332,7 +334,7 @@ function atualizarStatusSeNecessario(rodada){
 function calcularRanking(){
   const rows = db.prepare(`
     SELECT v.jogador_avaliado_id as jogadorId,
-           COALESCE(t.papel_na_partida, j.posicao_padrao) as papel,
+           CASE WHEN t.papel_na_partida IS NULL OR t.papel_na_partida='alternar' THEN j.posicao_padrao ELSE t.papel_na_partida END as papel,
            v.nota as nota
     FROM votos v
     JOIN jogadores j ON j.id = v.jogador_avaliado_id
@@ -393,6 +395,10 @@ function fase2Atingida(ranking){
    SORTEIO
    ============================================================ */
 const NOMES_TIMES = ['Brasil','Argentina','Alemanha','Itália','Holanda'];
+// quando sobram exatamente 3 reservas, viram um time extra em vez de ficarem parados —
+// entram na lista já marcados como "Alternar Jogador" (revezam com os times completos).
+const NOME_TIME_ALTERNANTES = 'Alternantes';
+const PAPEL_ALTERNAR = 'alternar';
 
 function shuffle(arr){
   const a=[...arr];
@@ -416,7 +422,7 @@ function realizarSorteio(rodadaId){
   const rodada = getRodadaPorId(rodadaId);
   if(!rodada) return {ok:false, erro:'Rodada não encontrada.'};
   const j = janelas(rodada.data);
-  if(rodada.status !== 'aguardando_confirmacao') return {ok:false, erro:'Esta rodada já foi sorteada ou não está mais aguardando confirmação.'};
+  if(!['aguardando_confirmacao','sorteio_desfeito'].includes(rodada.status)) return {ok:false, erro:'Esta rodada já foi sorteada ou não está mais aguardando confirmação.'};
   if(nowSP() < j.confirmClose) return {ok:false, erro:'A janela de confirmação ainda está aberta.'};
   const v = calcViabilidade(rodadaId);
   if(!v.viavel) return {ok:false, erro:'Jogo não viabilizado: confirmações insuficientes.'};
@@ -480,17 +486,25 @@ function realizarSorteio(rodadaId){
 
   const insertTime = db.prepare('INSERT INTO times_sorteados (id,rodada_id,nome_time,jogador_id,papel_na_partida) VALUES (?,?,?,?,?)');
   const insertReserva = db.prepare('INSERT INTO reservas (id,rodada_id,jogador_id) VALUES (?,?,?)');
+  const reservasFinal = [...linhaReserva, ...golReserva];
+  // exatamente 3 sobrando: em vez de ficarem parados na lista de reservas, formam um
+  // time extra — aparecem já marcados como "Alternar Jogador" (revezam com os titulares).
+  const formarTimeAlternantes = reservasFinal.length === 3;
   const tx = db.transaction(()=>{
     for(let i=0;i<n;i++){
       linhaBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'linha'));
       golBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'goleiro'));
     }
-    [...linhaReserva, ...golReserva].forEach(jg=> insertReserva.run(idGen('rv'), rodadaId, jg.id));
+    if(formarTimeAlternantes){
+      reservasFinal.forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOME_TIME_ALTERNANTES, jg.id, PAPEL_ALTERNAR));
+    }else{
+      reservasFinal.forEach(jg=> insertReserva.run(idGen('rv'), rodadaId, jg.id));
+    }
     db.prepare('INSERT OR REPLACE INTO rodada_meta (rodada_id, modo_sorteio) VALUES (?,?)').run(rodadaId, usarFase2?'fase2':'fase1');
     db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('sorteado', rodadaId);
   });
   tx();
-  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'), '+n+' time(s).');
+  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'), '+n+' time(s)'+(formarTimeAlternantes?' + time de 3 alternantes':'')+'.');
   return {ok:true};
 }
 
@@ -594,6 +608,7 @@ function jogadorPublico(j){
     admin:!!j.admin, superAdmin:!!j.super_admin,
     perms: (j.admin_perms||'').split(',').filter(Boolean),
     mensalidade: j.mensalidade || '',
+    corneta: !!j.corneta,
   };
 }
 
@@ -649,6 +664,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     admin:!!j.admin, superAdmin:!!j.super_admin,
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
     mensalidade:j.mensalidade||'', telefone:j.telefone||'',
+    corneta:!!j.corneta,
   }));
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
@@ -702,8 +718,9 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   }
   let telefone = j.telefone || '';
   if(req.body.telefone!=null) telefone = String(req.body.telefone).slice(0,30);
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,j.id);
+  const corneta = req.body.corneta!=null ? (req.body.corneta?1:0) : (j.corneta||0);
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,j.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
@@ -734,7 +751,9 @@ function serializarRodada(rodada){
   rodada = atualizarStatusSeNecessario(rodada);
   const fase = computeFase(rodada);
   const confirmados = getPorStatus(rodada.id, 'presente').map(j=>j.id);
-  const ausentes = getPorStatus(rodada.id, 'ausente').map(j=>j.id);
+  // ausente é o padrão: todo jogador ativo que não confirmou presença conta como ausente,
+  // tenha ele marcado isso explicitamente ou simplesmente não mexido em nada.
+  const ausentes = getJogadores().filter(j=>j.ativo && !confirmados.includes(j.id)).map(j=>j.id);
   const convidados = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodada.id).map(r=>r.jogador_id);
   const resenha = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND resenha=1").all(rodada.id).map(r=>r.jogador_id);
   const _jr = janelas(rodada.data), _nr = nowSP();
@@ -811,6 +830,8 @@ app.delete('/api/admin/rodadas/:id', requireSuper, (req,res)=>{
 app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
   const status = String(req.body.status||'');
   if(!['presente','ausente'].includes(status)) return res.status(400).json({erro:"Status inválido (use 'presente' ou 'ausente')."});
+  const jogador = getJogadorPorId(req.jogadorId);
+  if(status==='presente' && jogador && jogador.corneta) return res.status(403).json({erro:'Cornetas não confirmam presença na partida — apenas check-in na Resenha.'});
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const j = janelas(rodada.data);
@@ -818,7 +839,8 @@ app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
   if(n < j.confirmOpen || n >= j.confirmClose) return res.status(403).json({erro:'A janela de confirmação está fechada.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
   const convidadoFlag = status==='ausente' ? 0 : (existente ? existente.trouxe_convidado : 0);
-  const resenhaFlag = status==='ausente' ? 0 : (existente ? existente.resenha : 0);
+  // resenha não depende mais da presença na partida — não é limpa ao marcar ausente.
+  const resenhaFlag = existente ? existente.resenha : 0;
   if(existente){
     db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=?, resenha=? WHERE id=?').run(status, nowISO(), convidadoFlag, resenhaFlag, existente.id);
   }else{
@@ -841,47 +863,43 @@ app.post('/api/rodadas/:id/convidado', requireAuth, (req,res)=>{
   res.json({ok:true});
 });
 
+// Check-in da resenha: liberado a qualquer momento, para qualquer jogador (inclusive
+// Corneta, que não pode confirmar presença na partida — ver /presenca abaixo).
 app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
   const vaiResenha = !!req.body.resenha;
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
-  const j = janelas(rodada.data);
-  const n = nowSP();
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
-  const emJanelaConfirmacao = n >= j.confirmOpen && n < j.confirmClose;
-  const emJanelaLivre = n >= j.resenhaLivreOpen && n < j.resenhaLivreClose;
-
-  // Janela normal (sáb 8h → dom 8h): só quem marcou presença, ajusta pela tela Início.
-  if(emJanelaConfirmacao){
-    if(!existente || existente.status!=='presente') return res.status(400).json({erro:'Marque presença antes de entrar na resenha.'});
+  if(existente){
     db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
-    return res.json({ok:true});
+  }else{
+    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
+      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), 'ausente', 0, vaiResenha?1:0);
   }
-
-  // Janela de última hora (dom 10h → 11h): editável pela tela Resenha.
-  if(emJanelaLivre){
-    if(existente && existente.status==='presente'){
-      // quem confirmou presença pode sair (ou voltar) da resenha
-      db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
-      return res.json({ok:true});
-    }
-    // quem NÃO confirmou presença só entra na resenha se o racha aconteceu
-    if(rodada.status !== 'sorteado') return res.status(400).json({erro:'A resenha só aceita entradas de última hora se o racha foi sorteado.'});
-    if(existente){
-      db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
-    }else{
-      db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
-        .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), 'ausente', 0, vaiResenha?1:0);
-    }
-    return res.json({ok:true});
-  }
-
-  return res.status(403).json({erro:'Fora da janela de ajuste da resenha (domingo, das 10h às 11h).'});
+  res.json({ok:true});
 });
 
 app.post('/api/admin/rodadas/:id/sortear', requireSuper, (req,res)=>{
   const resultado = realizarSorteio(req.params.id);
   if(!resultado.ok) return res.status(400).json({erro: resultado.erro});
+  res.json({ok:true});
+});
+
+// Desfaz um sorteio já feito: apaga times, reservas e votos dessa rodada e deixa a
+// rodada pronta para um novo sorteio manual (as confirmações de presença são mantidas).
+app.post('/api/admin/rodadas/:id/desfazer-sorteio', requireSuper, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  if(rodada.status !== 'sorteado') return res.status(400).json({erro:'Esta rodada não tem um sorteio ativo para desfazer.'});
+  const tx = db.transaction(()=>{
+    db.prepare('DELETE FROM votos WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM times_sorteados WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM reservas WHERE rodada_id=?').run(rodada.id);
+    db.prepare('DELETE FROM rodada_meta WHERE rodada_id=?').run(rodada.id);
+    db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('sorteio_desfeito', rodada.id);
+  });
+  tx();
+  logEvento('Sorteio da rodada de '+rodada.data+' desfeito pelo Super Admin (times, reservas e votos apagados). Aguardando novo sorteio manual.');
   res.json({ok:true});
 });
 
