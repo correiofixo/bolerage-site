@@ -75,21 +75,31 @@ function mensOptionsHtml(atual){
   return MENS_OPCOES.map(([v,l])=>'<option value="'+v+'" '+((atual||'')===v?'selected':'')+'>'+l+'</option>').join('');
 }
 
-// time do coração do jogador -> emoji exibido ao lado do nome. O Unicode não tem os
-// escudos oficiais, então usamos um símbolo que remete a cada clube (apelido/cores).
+// time do coração do jogador -> escudo exibido ao lado do nome (imagem pequena,
+// fundo recortado, em public/assets/times/).
 const TIME_CORACAO_INFO = {
-  saopaulo:   {lbl:'São Paulo',   emoji:'🔺'},
-  santos:     {lbl:'Santos',      emoji:'🐟'},
-  corinthians:{lbl:'Corinthians', emoji:'⚓'},
-  palmeiras:  {lbl:'Palmeiras',   emoji:'🟢'},
+  saopaulo:   {lbl:'São Paulo',   img:'/assets/times/saopaulo.png'},
+  santos:     {lbl:'Santos',      img:'/assets/times/santos.png'},
+  corinthians:{lbl:'Corinthians', img:'/assets/times/corinthians.png'},
+  palmeiras:  {lbl:'Palmeiras',   img:'/assets/times/palmeiras.png'},
 };
 const TIME_CORACAO_OPCOES = [['','— nenhum —'],['saopaulo','São Paulo'],['santos','Santos'],['corinthians','Corinthians'],['palmeiras','Palmeiras']];
 function timeCoracaoOptionsHtml(atual){
   return TIME_CORACAO_OPCOES.map(([v,l])=>'<option value="'+v+'" '+((atual||'')===v?'selected':'')+'>'+l+'</option>').join('');
 }
+// Retorna HTML (não escapado!) — sempre concatenar DEPOIS do escapeHtml(nome),
+// nunca por dentro, senão a tag <img> vira texto escapado na tela.
 function timeCoracaoSuffix(timeCoracao){
   const info = TIME_CORACAO_INFO[timeCoracao];
-  return info ? ' '+info.emoji : '';
+  return info ? ' <img class="time-coracao-badge" src="'+info.img+'" alt="'+info.lbl+'" title="'+info.lbl+'">' : '';
+}
+// idem, mas a partir do id do jogador (resolve o time do coração do próprio
+// jogador, ou do "dono" quando id é um convidado "conv:<hostId>").
+function timeCoracaoSuffixDoId(id){
+  if(!id) return '';
+  const realId = String(id).startsWith('conv:') ? id.slice(5) : id;
+  const j = state.elenco.find(x=>x.id===realId);
+  return j ? timeCoracaoSuffix(j.timeCoracao) : '';
 }
 function saudacao(){
   const h = new Date().getHours();
@@ -138,7 +148,7 @@ const state = {
   inatividadeTimer: null,
 };
 
-function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome+timeCoracaoSuffix(j.timeCoracao) : '?'; }
+function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
 function nomeParaExibicao(id){
   if(id && id.startsWith('conv:')){
     return 'Convidado de '+jogadorNome(id.slice(5));
@@ -639,15 +649,15 @@ function renderResenha(){
   const rankRod = Object.keys(aggRod)
     .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
-  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome+timeCoracaoSuffix(j.timeCoracao) : '?'; };
+  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
   html += '<div class="card">'+
     '<h3 class="titulo-centralizado">Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8}</h3>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
   if(rankRod.length){
     const cheia = rankRod[0];
     const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;
-    html += '<div class="list-row"><span>🏆 Bola Cheia — <strong>'+escapeHtml(nomeDe(cheia.id))+'</strong></span><span class="row-right">'+starsHtml(cheia.media)+'</span></div>';
-    if(murcha) html += '<div class="list-row"><span>📉 Bola Murcha — <strong>'+escapeHtml(nomeDe(murcha.id))+'</strong></span><span class="row-right">'+starsHtml(murcha.media)+'</span></div>';
+    html += '<div class="list-row"><span>🏆 Bola Cheia — <strong>'+escapeHtml(nomeDe(cheia.id))+timeCoracaoSuffixDoId(cheia.id)+'</strong></span><span class="row-right">'+starsHtml(cheia.media)+'</span></div>';
+    if(murcha) html += '<div class="list-row"><span>📉 Bola Murcha — <strong>'+escapeHtml(nomeDe(murcha.id))+timeCoracaoSuffixDoId(murcha.id)+'</strong></span><span class="row-right">'+starsHtml(murcha.media)+'</span></div>';
     html += '<p class="small muted" style="margin-top:6px;">Considera só os votos desta rodada.</p>';
   }else{
     html += '<p class="small muted">Ainda sem votos nesta rodada.</p>';
@@ -704,7 +714,7 @@ function renderSorteio(){
     const papelMedia = isAlternar ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
     const media = isConv ? null : mediaDoJogador(j.jogadorId, papelMedia);
     return '<div class="pitch-player'+(j.papel==='goleiro'?' pitch-player-gk':'')+'">'+
-      '<span class="pitch-player-name">'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+
+      '<span class="pitch-player-name">'+escapeHtml(nomeParaExibicao(j.jogadorId))+timeCoracaoSuffixDoId(j.jogadorId)+'</span>'+
       (isConv ? '<span class="small muted">convidado</span>' : starsHtml(media))+
     '</div>';
   };
@@ -735,7 +745,7 @@ function renderSorteio(){
       const isConv = String(id).indexOf('conv:')===0;
       const jr = state.elenco.find(x=>x.id===id);
       const media = (isConv || !jr) ? null : mediaDoJogador(id, jr.posicaoPadrao);
-      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+'</span>'+
+      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+timeCoracaoSuffixDoId(id)+'</span>'+
         ((isConv||!jr)?'':'<span class="row-right">'+starsHtml(media, true)+'</span>')+'</div>';
     });
     html += '</div>';
@@ -783,7 +793,7 @@ function renderVotacao(){
     const notaAtual = meuVoto ? meuVoto.nota : null;
     const jaAlterou = meuVoto ? meuVoto.edicoes>=1 : false;
     const travado = notaAtual!=null && jaAlterou;
-    html += '<div class="card"><div class="list-row" style="border:none;padding:0 0 4px 0;"><span>'+escapeHtml(nomeParaExibicao(a.jogadorId))+' <span class="badge">'+a.time+'</span></span></div>';
+    html += '<div class="card"><div class="list-row" style="border:none;padding:0 0 4px 0;"><span>'+escapeHtml(nomeParaExibicao(a.jogadorId))+timeCoracaoSuffixDoId(a.jogadorId)+' <span class="badge">'+a.time+'</span></span></div>';
     html += '<div class="vote-scale">';
     for(let n=1;n<=5;n++){
       html += '<button class="vote-btn star-vote-btn '+(notaAtual!=null && n<=notaAtual?'selected':'')+'" '+(travado?'disabled':'')+' data-action="votar" data-avaliado="'+a.jogadorId+'" data-nota="'+n+'">★</button>';
@@ -821,7 +831,7 @@ async function renderRanking(){
     return somaPontos/total;
   };
   const totalVotosDe = id => { const r = ranking[id]; return r ? (r.linha.total+r.goleiro.total) : 0; };
-  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome+timeCoracaoSuffix(j.timeCoracao) : '?'; };
+  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
 
   const aba = state.rankingAba || 'geral';
   let html = '<div class="tabtoggle">'+
@@ -831,19 +841,19 @@ async function renderRanking(){
   '</div>';
 
   if(aba==='geral'){
-    const linhas = state.elenco.filter(j=>j.ativo).map(j=>({nome:j.nome+timeCoracaoSuffix(j.timeCoracao), media:mediaGeral(j.id), total:totalVotosDe(j.id)}));
+    const linhas = state.elenco.filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, media:mediaGeral(j.id), total:totalVotosDe(j.id)}));
     const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
     const semNota = linhas.filter(l=>l.media==null);
     html += '<div class="card">';
     comNota.forEach((l,i)=>{
-      html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
+      html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
         '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
     });
     if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes.</p>';
     html += '</div>';
     if(semNota.length){
       html += '<div class="card"><h3>Ainda sem avaliações</h3>';
-      semNota.forEach(l=> html += '<div class="list-row"><span>'+escapeHtml(l.nome)+'</span></div>');
+      semNota.forEach(l=> html += '<div class="list-row"><span>'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+'</span></div>');
       html += '</div>';
     }
   }else{
@@ -852,12 +862,12 @@ async function renderRanking(){
     // Resenha), com a média geral do jogador em estrelas ao lado.
     const isMurcha = aba==='murcha';
     const obj = isMurcha ? (state.rankingBola.murcha||{}) : (state.rankingBola.cheia||{});
-    const lista = Object.keys(obj).map(id=>({nome:nomeDe(id), n:obj[id], media:mediaGeral(id)})).sort((a,b)=>b.n-a.n);
+    const lista = Object.keys(obj).map(id=>({id, nome:nomeDe(id), n:obj[id], media:mediaGeral(id)})).sort((a,b)=>b.n-a.n);
     const rotulo = isMurcha ? 'Bola Murcha' : 'Bola Cheia';
     html += '<div class="card">';
     if(lista.length){
       lista.forEach((l,i)=>{
-        html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
+        html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
           '<div class="rank-count rank-count-bola'+(isMurcha?' rank-count-murcha':' rank-count-cheia')+'">'+l.n+'&#215; '+rotulo+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
       });
     }else{
