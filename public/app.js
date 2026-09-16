@@ -858,7 +858,7 @@ async function renderRanking(){
     if(lista.length){
       lista.forEach((l,i)=>{
         html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
-          '<div class="rank-count">'+l.n+'&#215; '+rotulo+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
+          '<div class="rank-count rank-count-bola'+(isMurcha?' rank-count-murcha':' rank-count-cheia')+'">'+l.n+'&#215; '+rotulo+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
       });
     }else{
       html += '<p class="muted small">Ainda sem rodadas com votos suficientes.</p>';
@@ -1088,7 +1088,7 @@ async function renderAdmin(){
 
   html += '<div class="card"><details><summary>Registro de eventos ('+eventos.length+')</summary>';
   eventos.slice(0,20).forEach(e=>{
-    html += '<div class="small muted" style="padding:4px 0;border-bottom:1px solid var(--line);">'+new Date(e.ts).toLocaleString('pt-BR')+' — '+escapeHtml(e.mensagem)+'</div>';
+    html += '<div class="small muted" style="padding:4px 0;border-bottom:1px solid var(--line);">'+new Date(e.ts).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo'})+' — '+escapeHtml(e.mensagem)+'</div>';
   });
   html += '</details></div>';
 

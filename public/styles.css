@@ -244,6 +244,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .rank-avg.rank-avg-murcha .stars-fg{color:var(--red);}
 .rank-avg.rank-avg-murcha .stars-num{color:var(--red);}
 .rank-count{font-size:11.5px;color:var(--text-muted);}
+.rank-count-bola{font-size:13.5px;font-weight:800;letter-spacing:.2px;}
+.rank-count-bola.rank-count-cheia{color:var(--gold);}
+.rank-count-bola.rank-count-murcha{color:var(--red);}
 
 .vote-scale{display:flex;gap:6px;margin-top:8px;}
 .vote-btn{
