@@ -113,6 +113,7 @@ const state = {
   pollHandle: null,
   appVersion: null,
   ranking: {},
+  rankingBola: {cheia:{}, murcha:{}},
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
   eventoAbertoExp: 0,    // timestamp (Date.now()) até quando ele deve continuar aberto
@@ -157,6 +158,7 @@ async function refreshMe(){
   }catch(e){}
 }
 async function refreshRanking(){ try{ const data = await api('/api/ranking'); state.ranking = data.ranking; }catch(e){} }
+async function refreshRankingBola(){ try{ state.rankingBola = await api('/api/ranking-bola'); }catch(e){} }
 async function refreshHomeExtras(){ try{ state.homeExtras = await api('/api/home-extras'); }catch(e){} }
 async function refreshRodadaAtual(){
   try{
@@ -558,23 +560,23 @@ async function handleTogglePresenca(atual){
    ============================================================ */
 function renderResenha(){
   const c = document.getElementById('content');
-  const rod = state.rodadaAtual;
-  if(!rod){
+  const rodAtual = state.rodadaAtual;
+  if(!rodAtual){
     c.innerHTML = '<div class="empty">Nenhuma rodada agendada ainda.</div>'; return;
   }
   const meuId = state.currentPlayer.id;
-  const idsResenha = rod.resenha || [];
-  const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
-  const euNaResenha = idsResenha.includes(meuId);
+  const idsResenhaAtual = rodAtual.resenha || [];
+  const euNaResenha = idsResenhaAtual.includes(meuId);
 
   let html = '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
-    '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>'+
+    '<p class="rodada-sub">Rodada '+formatDataBR(rodAtual.data)+'</p>'+
     '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
   '</div>';
 
   // Check-in da resenha: liberado sempre, para qualquer jogador — sem restrição de
-  // horário nem de ter confirmado presença na partida.
+  // horário nem de ter confirmado presença na partida. Sempre vale pra rodada ATUAL,
+  // mesmo se o histórico abaixo estiver mostrando uma rodada passada.
   html += '<div class="card"><h3>Sua resenha</h3>'+
     '<div class="presence-toggle-wrap">'+
       '<button class="presence-toggle '+(euNaResenha?'is-on':'is-off')+'" data-action="toggle-resenha" data-atual="'+(euNaResenha?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
@@ -584,7 +586,16 @@ function renderResenha(){
     '</div>'+
   '</div>';
 
-  // Bola Cheia / Bola Murcha — só com os votos DESTA rodada (ignora o ranking geral)
+  // Histórico: mesmo seletor de rodada da aba Sorteio, pra rever a resenha de outros domingos.
+  const opcoes = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
+    .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
+  html += '<div class="field"><label>Histórico da resenha — escolha a rodada</label><select data-action="mudar-rodada-visualizada">'+opcoes+'</select></div>';
+
+  const rod = state.rodadaVisualizada || rodAtual;
+  const idsResenha = rod.resenha || [];
+  const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+
+  // Bola Cheia / Bola Murcha — só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
   const aggRod = {};
   (rod.votos || []).forEach(v=>{
     if(!v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
@@ -614,7 +625,7 @@ function renderResenha(){
   if(gente.length){
     gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span><span class="badge ok-destaque">OK</span></div>');
   }else{
-    html += '<p class="small muted">Ninguém na resenha ainda.</p>';
+    html += '<p class="small muted">Ninguém na resenha nessa rodada.</p>';
   }
   html += '</div>';
   c.innerHTML = html;
@@ -649,21 +660,39 @@ function renderSorteio(){
     c.innerHTML = html; return;
   }
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
+
+  const pitchChip = j => {
+    const isConv = String(j.jogadorId).indexOf('conv:')===0;
+    const isAlternar = j.papel==='alternar';
+    // "Alternar Jogador" não é um papel de verdade — usa a posição padrão do
+    // jogador só pra buscar a média certa no ranking (linha ou goleiro).
+    const jr = isAlternar && !isConv ? state.elenco.find(x=>x.id===j.jogadorId) : null;
+    const papelMedia = isAlternar ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
+    const media = isConv ? null : mediaDoJogador(j.jogadorId, papelMedia);
+    return '<div class="pitch-player'+(j.papel==='goleiro'?' pitch-player-gk':'')+'">'+
+      '<span class="pitch-player-name">'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+
+      (isConv ? '<span class="small muted">convidado</span>' : starsHtml(media))+
+    '</div>';
+  };
+
   rod.times.times.forEach(t=>{
     const fl = timeFlag(t.nome);
+    const golPlayers = t.jogadores.filter(j=>j.papel==='goleiro');
+    const linhaPlayers = t.jogadores.filter(j=>j.papel==='linha');
+    const alternarPlayers = t.jogadores.filter(j=>j.papel==='alternar');
+    const meio = Math.ceil(linhaPlayers.length/2);
+    const linhaFrente = linhaPlayers.slice(0, meio);   // fica mais perto do gol adversário (topo)
+    const linhaFundo = linhaPlayers.slice(meio);       // fica mais perto do próprio goleiro
+
     html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>';
-    t.jogadores.forEach(j=>{
-      const isConv = String(j.jogadorId).indexOf('conv:')===0;
-      const isAlternar = j.papel==='alternar';
-      // "Alternar Jogador" não é um papel de verdade — usa a posição padrão do
-      // jogador só pra buscar a média certa no ranking (linha ou goleiro).
-      const jr = isAlternar && !isConv ? state.elenco.find(x=>x.id===j.jogadorId) : null;
-      const papelMedia = isAlternar ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
-      const media = isConv ? null : mediaDoJogador(j.jogadorId, papelMedia);
-      html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(j.jogadorId))+'</span>'+
-        '<span class="row-right">'+(isConv?'':starsHtml(media, true))+
-        (isAlternar?'<span class="badge gk">Alternar Jogador</span>':j.papel==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>';
-    });
+    html += '<div class="pitch">';
+    if(linhaFrente.length) html += '<div class="pitch-row">'+linhaFrente.map(pitchChip).join('')+'</div>';
+    if(linhaFundo.length) html += '<div class="pitch-row">'+linhaFundo.map(pitchChip).join('')+'</div>';
+    if(golPlayers.length) html += '<div class="pitch-row pitch-row-gk">'+golPlayers.map(pitchChip).join('')+'</div>';
+    html += '</div>';
+    if(alternarPlayers.length){
+      html += '<div class="pitch-bench"><h4>🔄 Alternar Jogador (revezam durante a partida)</h4><div class="pitch-row">'+alternarPlayers.map(pitchChip).join('')+'</div></div>';
+    }
     html += '</div>';
   });
   if(rod.times.reservas && rod.times.reservas.length){
@@ -745,8 +774,9 @@ async function renderRanking(){
   const c = document.getElementById('content');
   c.innerHTML = '<div class="empty">Calculando ranking…</div>';
   await refreshRanking();
+  await refreshRankingBola();
   const ranking = state.ranking;
-  // ranking único: todos os jogadores que já receberam votos, linha e goleiro juntos
+  // Ranking Geral: todos os jogadores que já receberam votos, linha e goleiro juntos
   // na mesma lista (a média combina os votos recebidos em qualquer papel).
   const linhas = state.elenco.filter(j=>j.ativo).map(j=>{
     const r = ranking[j.id];
@@ -760,7 +790,7 @@ async function renderRanking(){
   const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
   const semNota = linhas.filter(l=>l.media==null);
 
-  let html = '<div class="card">';
+  let html = '<h3 class="titulo-centralizado" style="margin:2px 0 10px;">Ranking Geral</h3><div class="card">';
   comNota.forEach((l,i)=>{
     html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+
       '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
@@ -772,6 +802,30 @@ async function renderRanking(){
     semNota.forEach(l=> html += '<div class="list-row"><span>'+escapeHtml(l.nome)+'</span></div>');
     html += '</div>';
   }
+
+  // Ranking Bola Cheia / Ranking Bola Murcha: quantas vezes cada jogador já foi o
+  // Craque Bola Cheia / Craque Bola Murcha de uma rodada (histórico, ver aba Resenha).
+  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
+  const listaBola = obj => Object.keys(obj).map(id=>({nome:nomeDe(id), n:obj[id]})).sort((a,b)=>b.n-a.n);
+  const cheiaList = listaBola(state.rankingBola.cheia||{});
+  const murchaList = listaBola(state.rankingBola.murcha||{});
+
+  html += '<h3 class="titulo-centralizado" style="margin:20px 0 10px;">🏆 Ranking Bola Cheia</h3><div class="card">';
+  if(cheiaList.length){
+    cheiaList.forEach((l,i)=> html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+'</div><div class="rank-avg">'+l.n+'x</div></div>');
+  }else{
+    html += '<p class="muted small">Ainda sem rodadas com votos suficientes.</p>';
+  }
+  html += '</div>';
+
+  html += '<h3 class="titulo-centralizado" style="margin:20px 0 10px;">📉 Ranking Bola Murcha</h3><div class="card">';
+  if(murchaList.length){
+    murchaList.forEach((l,i)=> html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+'</div><div class="rank-avg rank-avg-murcha">'+l.n+'x</div></div>');
+  }else{
+    html += '<p class="muted small">Ainda sem rodadas com votos suficientes.</p>';
+  }
+  html += '</div>';
+
   c.innerHTML = html;
 }
 
@@ -1187,7 +1241,7 @@ function startPolling(){
       await refreshRodadaAtual();
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
-      if(state.tab==='sorteio' && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
+      if((state.tab==='sorteio' || state.tab==='resenha') && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
       render();

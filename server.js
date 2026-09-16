@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 1;
+const APP_BUILD = 2;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -354,6 +354,33 @@ function calcularRanking(){
     };
   });
   return result;
+}
+
+// Ranking Bola Cheia / Bola Murcha: pra cada rodada já sorteada, quem teve a MELHOR e a
+// PIOR média de votos naquele domingo ganha um ponto no respectivo ranking — a mesma
+// lógica de "Craque Bola Cheia x Craque Bola Murcha" da aba Resenha, só que somada
+// rodada a rodada (histórico completo, não é a média geral do jogador).
+function calcularRankingBola(){
+  const rodadas = db.prepare("SELECT id FROM rodadas WHERE status='sorteado'").all();
+  const cheia = {}, murcha = {};
+  rodadas.forEach(r=>{
+    const votos = db.prepare("SELECT jogador_avaliado_id as id, nota FROM votos WHERE rodada_id=?").all(r.id)
+      .filter(v=>v.id && v.id.indexOf('conv:')!==0);
+    if(!votos.length) return;
+    const agg = {};
+    votos.forEach(v=>{
+      const a = agg[v.id] || (agg[v.id] = {soma:0, n:0});
+      a.soma += v.nota; a.n += 1;
+    });
+    const entries = Object.keys(agg).map(id=>({id, media:agg[id].soma/agg[id].n, n:agg[id].n}))
+      .sort((a,b)=> (b.media-a.media) || (b.n-a.n));
+    cheia[entries[0].id] = (cheia[entries[0].id]||0) + 1;
+    if(entries.length >= 2){
+      const pior = entries[entries.length-1];
+      murcha[pior.id] = (murcha[pior.id]||0) + 1;
+    }
+  });
+  return {cheia, murcha};
 }
 
 function mediaGlobalDoPapel(ranking, papel){
@@ -939,6 +966,9 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
 
 app.get('/api/ranking', (req,res)=>{
   res.json({ranking: calcularRanking()});
+});
+app.get('/api/ranking-bola', (req,res)=>{
+  res.json(calcularRankingBola());
 });
 
 app.get('/api/admin/eventos', requireSuper, (req,res)=>{

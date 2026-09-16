@@ -190,12 +190,57 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-card h2{font-size:22px;font-weight:700;letter-spacing:.6px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .team-flag{font-size:2em;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));}
 
+/* ---- campo de futebol (times sorteados) ---- */
+.pitch{
+  position:relative;
+  background:
+    repeating-linear-gradient(180deg, #2e7d34 0 34px, #35873a 34px 68px);
+  border:3px solid rgba(255,255,255,.5);
+  border-radius:10px;
+  padding:16px 8px 12px;
+  display:flex;flex-direction:column;justify-content:space-between;gap:14px;
+  overflow:hidden;
+}
+.pitch::before{
+  content:'';
+  position:absolute; top:50%; left:50%; width:64px; height:64px;
+  border:2px solid rgba(255,255,255,.5); border-radius:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+.pitch::after{
+  content:'';
+  position:absolute; inset:6px;
+  border:2px solid rgba(255,255,255,.4); border-radius:6px;
+  pointer-events:none;
+}
+.pitch-row{display:flex;flex-wrap:wrap;justify-content:space-around;gap:8px;position:relative;z-index:1;}
+.pitch-row-gk{justify-content:center;}
+.pitch-player{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:rgba(10,22,38,.78);
+  border:1px solid rgba(255,255,255,.28);
+  border-radius:10px;
+  padding:6px 9px;
+  min-width:70px;
+  text-align:center;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.pitch-player.pitch-player-gk{border-color:var(--gold-dim);}
+.pitch-player-name{font-size:11.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;}
+.pitch-player .stars{font-size:11px;gap:2px;}
+.pitch-player .stars-num{font-size:10px;color:var(--gold);}
+.pitch-player .stars-empty{font-size:10px;}
+.pitch-bench{margin-top:10px;padding-top:2px;}
+.pitch-bench h4{font-size:12.5px;color:var(--text-muted);font-weight:600;margin:0 0 8px;}
+
 .num{font-family:var(--font-display);font-weight:600;}
 .rank-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);}
 .rank-row:last-child{border-bottom:none;}
 .rank-pos{font-family:var(--font-display);font-size:19px;color:var(--text-muted);width:26px;text-align:center;flex-shrink:0;}
 .rank-name{flex:1;min-width:0;overflow-wrap:anywhere;}
 .rank-avg{font-family:var(--font-display);font-size:20px;color:var(--gold);flex-shrink:0;}
+.rank-avg.rank-avg-murcha{color:var(--red);}
 .rank-count{font-size:11.5px;color:var(--text-muted);}
 
 .vote-scale{display:flex;gap:6px;margin-top:8px;}
