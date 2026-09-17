@@ -1406,6 +1406,14 @@ function setContent(html, key){
 async function render(){
   renderTopbar();
   if(!state.currentPlayer){ renderLogin(); return; }
+  // toda troca de aba força o #content a ser reescrito, mesmo que a próxima tela
+  // use setContent() e o HTML dela não tenha mudado — outras telas escrevem em
+  // #content por fora do cache, então "voltar" pra uma aba com cache podia deixar
+  // o conteúdo antigo (de outra aba) na tela sem reescrever nada.
+  if(state._lastRenderedTab !== state.tab){
+    state._lastContentKey = null;
+    state._lastRenderedTab = state.tab;
+  }
   if(state.tab==='inicio') renderInicio();
   else if(state.tab==='resenha') renderResenha();
   else if(state.tab==='sorteio') renderSorteio();
