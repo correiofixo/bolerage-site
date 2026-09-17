@@ -234,19 +234,18 @@ function renderTopbar(){
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
-  document.getElementById('version-slot').textContent = state.appVersion ? ('Versão '+state.appVersion) : '';
+  document.getElementById('row1-actions-slot').innerHTML =
+    '<button data-action="abrir-troca-pin">Trocar meu PIN</button>'+
+    (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
+    '<button data-action="logout">Sair</button>';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
     ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
     : '';
   document.getElementById('who-slot').innerHTML =
     '<div class="who-row1">'+
-      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+'</span>'+
-      '<span class="who-actions">'+
-        '<button data-action="abrir-troca-pin">Trocar meu PIN</button>'+
-        (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
-        '<button data-action="logout">Sair</button>'+
-      '</span>'+
+      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
+        (state.currentPlayer.deptoMedico ? ' 🚑' : '')+'</span>'+
     '</div>'+
     mensLine;
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
@@ -287,6 +286,7 @@ function renderLogin(){
       '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo Bolerage'+
         ' <a class="wa-link wa-link-destaque" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
+      (state.appVersion ? '<div class="app-version login-version">Versão '+escapeHtml(state.appVersion)+'</div>' : '')+
     '</div>';
 }
 
@@ -586,6 +586,14 @@ async function handleToggleResenha(atual){
     render();
   }catch(e){ alert(e.message); }
 }
+async function handleToggleVinho(atual){
+  const novo = atual!=='sim';
+  try{
+    await api('/api/rodadas/'+state.rodadaAtual.id+'/vinho', {method:'POST', auth:true, body:{vinho:novo}});
+    await refreshRodadaAtual();
+    render();
+  }catch(e){ alert(e.message); }
+}
 
 async function handleTogglePresenca(atual){
   const novo = atual==='presente' ? 'ausente' : 'presente';
@@ -608,6 +616,7 @@ function renderResenha(){
   const meuId = state.currentPlayer.id;
   const idsResenhaAtual = rodAtual.resenha || [];
   const euNaResenha = idsResenhaAtual.includes(meuId);
+  const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
   let html = '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
@@ -625,6 +634,12 @@ function renderResenha(){
           ? '<strong style="color:var(--green)">Você está na resenha</strong>'
           : '<span class="muted">Você não está na resenha</span>')+'</div>'+
       '</div>'+
+      (euNaResenha ? '<div class="presence-toggle-wrap" style="margin-top:10px;">'+
+        '<button class="presence-toggle '+(euNoVinho?'is-on':'is-off')+'" data-action="toggle-vinho" data-atual="'+(euNoVinho?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+        '<div class="presence-toggle-label">'+(euNoVinho
+          ? '<strong style="color:var(--green)">🍷 Vinho — Vou levar uma garrafa</strong>'
+          : '<span class="muted">🍷 Vinho — Vou levar uma garrafa</span>')+'</div>'+
+      '</div>' : '')+
     '</div>';
   }else{
     html += '<p class="small muted" style="padding:0 2px;">O check-in da resenha fica disponível de sábado às 8h até domingo às 11h.</p>';
@@ -637,6 +652,7 @@ function renderResenha(){
 
   const rod = state.rodadaVisualizada || rodAtual;
   const idsResenha = rod.resenha || [];
+  const idsVinho = new Set(rod.vinho || []);
   const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
 
   // Bola Cheia / Bola Murcha — só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
@@ -651,7 +667,7 @@ function renderResenha(){
     .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
   html += '<div class="card">'+
-    '<h3 class="titulo-centralizado">Craque Bola Cheia ⚽ x Craque Bola Murcha \u{1F3C8}</h3>'+
+    '<h3 class="titulo-centralizado">Bola Cheia ⚽ x Bola Murcha \u{1F3C8}</h3>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
   if(rankRod.length){
     const cheia = rankRod[0];
@@ -667,7 +683,7 @@ function renderResenha(){
   const contagemCls = 'contagem-destaque'+(gente.length>6?' contagem-verde':'');
   html += '<div class="card"><h3 class="titulo-centralizado">Confirmados na Resenha com Churrasco <span class="'+contagemCls+'">'+gente.length+'</span></h3>';
   if(gente.length){
-    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+'</span><span class="badge ok-destaque">OK</span></div>');
+    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+(idsVinho.has(j.id)?' 🍷':'')+'</span><span class="badge ok-destaque">OK</span></div>');
   }else{
     html += '<p class="small muted">Ninguém na resenha nessa rodada.</p>';
   }
@@ -684,6 +700,14 @@ function timeClass(nome){
 function timeFlag(nome){
   const k = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   return {brasil:'\ud83c\udde7\ud83c\uddf7', argentina:'\ud83c\udde6\ud83c\uddf7', alemanha:'\ud83c\udde9\ud83c\uddea', italia:'\ud83c\uddee\ud83c\uddf9', holanda:'\ud83c\uddf3\ud83c\uddf1'}[k] || '';
+}
+// t\u00e1tica do time sorteado (5 jogadores de linha): defesa-meio-ataque, "aleat\u00f3ria"
+// mas est\u00e1vel \u2014 sempre a mesma pra um mesmo time numa mesma rodada.
+const FORMACOES_TIME = [[2,1,2],[2,2,1],[1,2,2]];
+function hashStr(s){
+  let h = 0;
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 function renderSorteio(){
   const c = document.getElementById('content');
@@ -724,16 +748,42 @@ function renderSorteio(){
     const golPlayers = t.jogadores.filter(j=>j.papel==='goleiro');
     const linhaPlayers = t.jogadores.filter(j=>j.papel==='linha');
     const alternarPlayers = t.jogadores.filter(j=>j.papel==='alternar');
-    const meio = Math.ceil(linhaPlayers.length/2);
-    const linhaFrente = linhaPlayers.slice(0, meio);   // fica mais perto do gol adversário (topo)
-    const linhaFundo = linhaPlayers.slice(meio);       // fica mais perto do próprio goleiro
+
+    // tática do time: 2-1-2 / 2-2-1 / 1-2-2 (defesa-meio-ataque), sorteada — mas
+    // fixa por time/rodada (hash do id da rodada + nome do time), pra não mudar
+    // sozinha a cada atualização da tela.
+    let formLabel = '', linhaAtaque=[], linhaMeio=[], linhaDefesa=[];
+    if(linhaPlayers.length===5){
+      const formacao = FORMACOES_TIME[hashStr(rod.id+'|'+t.nome) % FORMACOES_TIME.length];
+      formLabel = formacao.join('-');
+      linhaDefesa = linhaPlayers.slice(0, formacao[0]);
+      linhaMeio = linhaPlayers.slice(formacao[0], formacao[0]+formacao[1]);
+      linhaAtaque = linhaPlayers.slice(formacao[0]+formacao[1]);
+    }else{
+      const meio2 = Math.ceil(linhaPlayers.length/2);
+      linhaAtaque = linhaPlayers.slice(0, meio2);
+      linhaDefesa = linhaPlayers.slice(meio2);
+    }
+
+    // score do time: média das notas do ranking de quem está escalado (ignora
+    // convidados e quem ainda não tem avaliação).
+    const mediasTime = t.jogadores.filter(j=>String(j.jogadorId).indexOf('conv:')!==0).map(j=>{
+      const isAlt = j.papel==='alternar';
+      const jr = isAlt ? state.elenco.find(x=>x.id===j.jogadorId) : null;
+      const papelMedia = isAlt ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
+      return mediaDoJogador(j.jogadorId, papelMedia);
+    }).filter(m=>m!=null);
+    const mediaTime = mediasTime.length ? mediasTime.reduce((a,b)=>a+b,0)/mediasTime.length : null;
 
     html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>';
+    html += '<div class="team-score">'+starsHtml(mediaTime, true)+'</div>';
     html += '<div class="pitch">';
-    if(linhaFrente.length) html += '<div class="pitch-row">'+linhaFrente.map(pitchChip).join('')+'</div>';
-    if(linhaFundo.length) html += '<div class="pitch-row">'+linhaFundo.map(pitchChip).join('')+'</div>';
+    if(linhaAtaque.length) html += '<div class="pitch-row">'+linhaAtaque.map(pitchChip).join('')+'</div>';
+    if(linhaMeio.length) html += '<div class="pitch-row">'+linhaMeio.map(pitchChip).join('')+'</div>';
+    if(linhaDefesa.length) html += '<div class="pitch-row">'+linhaDefesa.map(pitchChip).join('')+'</div>';
     if(golPlayers.length) html += '<div class="pitch-row pitch-row-gk">'+golPlayers.map(pitchChip).join('')+'</div>';
     html += '</div>';
+    if(formLabel) html += '<p class="small muted" style="text-align:center;margin-top:6px;">Tática: '+formLabel+'</p>';
     if(alternarPlayers.length){
       html += '<div class="pitch-bench"><h4>🔄 Alternar Jogador (revezam durante a partida)</h4><div class="pitch-row">'+alternarPlayers.map(pitchChip).join('')+'</div></div>';
     }
@@ -1001,6 +1051,7 @@ async function renderAdmin(){
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
         '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (só faz check-in na Resenha, não confirma presença na partida)</label>'+
+        '<label class="small"><input type="checkbox" id="edit-depto-medico-'+j.id+'" '+(j.deptoMedico?'checked':'')+'> Depto. Médico (mostra 🚑 ao lado do nome na tela inicial)</label>'+
         (j.superAdmin
           ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
           : '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
@@ -1014,6 +1065,7 @@ async function renderAdmin(){
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
         (j.corneta?' <span class="badge">🎺 corneta</span>':'')+
+        (j.deptoMedico?' <span class="badge">🚑 depto. médico</span>':'')+
         (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
@@ -1172,7 +1224,8 @@ async function handleSalvarJogador(id){
   const posicaoPadrao = document.getElementById('edit-pos-'+id).value;
   const ativo = document.getElementById('edit-ativo-'+id).checked;
   const corneta = document.getElementById('edit-corneta-'+id).checked;
-  const body = {nome,pin,posicaoPadrao,ativo,corneta};
+  const deptoMedico = document.getElementById('edit-depto-medico-'+id).checked;
+  const body = {nome,pin,posicaoPadrao,ativo,corneta,deptoMedico};
   const adminEl = document.getElementById('edit-admin-'+id);
   if(adminEl){
     body.admin = adminEl.checked;
@@ -1336,6 +1389,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-presenca') return handleTogglePresenca(el.dataset.atual);
   if(action==='toggle-convidado') return handleToggleConvidado(el.dataset.atual);
   if(action==='toggle-resenha') return handleToggleResenha(el.dataset.atual);
+  if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
   if(action==='ranking-aba'){ state.rankingAba = el.dataset.aba; return render(); }

@@ -84,7 +84,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   box-shadow:0 1px 8px rgba(0,0,0,.18);
   z-index:5;
 }
-#topbar .row1{display:flex;align-items:center;justify-content:space-between;}
+#topbar .row1{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;row-gap:8px;}
 #topbar .brand{display:flex;align-items:center;gap:12px;min-width:0;}
 .brand-logo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);box-shadow:0 0 0 3px rgba(201,162,39,.18),0 4px 14px rgba(0,0,0,.45);flex-shrink:0;}
 .brand-text{display:flex;flex-direction:column;min-width:0;}
@@ -107,8 +107,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .badge.mens-ok{color:var(--green);border-color:#2c6b3c;}
 .badge.mens-atrasada{color:var(--red);border-color:#6b3630;}
 .badge.mens-isenta{color:var(--gold);border-color:var(--gold-dim);}
-#topbar .who button{background:var(--bg-elevated-2);border:1px solid var(--line);color:var(--gold);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;}
-#topbar .who button:active{background:var(--line);}
+#topbar .who button,#topbar #row1-actions-slot button{background:var(--bg-elevated-2);border:1px solid var(--line);color:var(--gold);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;}
+#topbar .who button:active,#topbar #row1-actions-slot button:active{background:var(--line);}
+#row1-actions-slot{flex-shrink:0;}
 .chip{
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 10px;border-radius:999px;
@@ -191,6 +192,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-card.t-alternantes{border-left-color:var(--gold);}
 .team-card h2{font-size:22px;font-weight:700;letter-spacing:.6px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
 .team-flag{font-size:2em;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));}
+.team-score{display:flex;justify-content:center;margin-bottom:10px;}
+.team-score .stars{font-size:20px;gap:6px;}
+.team-score .stars-num{font-size:16px;font-weight:700;font-family:var(--font-display);color:var(--gold);}
 
 /* ---- campo de futebol (times sorteados) ---- */
 .pitch{
@@ -291,6 +295,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   padding:calc(24px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));text-align:center;
 }
 .login-logo{width:210px;height:210px;border-radius:50%;object-fit:cover;margin-bottom:24px;border:4px solid var(--gold-dim);box-shadow:var(--shadow-raised);}
+.login-version{margin-top:28px;font-size:11px;color:var(--text-muted);}
 #login-screen h1{font-size:32px;margin-bottom:2px;}
 #login-screen .sub{color:var(--text-muted);margin-bottom:26px;}
 .pin-dots{display:flex;gap:14px;margin-bottom:28px;}

@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 7;
+const APP_BUILD = 8;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -150,6 +150,8 @@ try{ db.exec("ALTER TABLE eventos ADD COLUMN responsavel TEXT NOT NULL DEFAULT '
 try{ db.exec("ALTER TABLE votos ADD COLUMN edicoes INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN corneta INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN time_coracao TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN depto_medico INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN vinho INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -639,6 +641,7 @@ function jogadorPublico(j){
     mensalidade: j.mensalidade || '',
     corneta: !!j.corneta,
     timeCoracao: j.time_coracao || '',
+    deptoMedico: !!j.depto_medico,
   };
 }
 
@@ -695,6 +698,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
     mensalidade:j.mensalidade||'', telefone:j.telefone||'',
     corneta:!!j.corneta, timeCoracao:j.time_coracao||'',
+    deptoMedico:!!j.depto_medico,
   }));
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
@@ -753,8 +757,9 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   if(req.body.timeCoracao!=null && TIMES_CORACAO.includes(String(req.body.timeCoracao))){
     timeCoracao = String(req.body.timeCoracao);
   }
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=?,time_coracao=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,timeCoracao,j.id);
+  const deptoMedico = req.body.deptoMedico!=null ? (req.body.deptoMedico?1:0) : (j.depto_medico||0);
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=?,time_coracao=?,depto_medico=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,timeCoracao,deptoMedico,j.id);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
@@ -790,6 +795,7 @@ function serializarRodada(rodada){
   const ausentes = getJogadores().filter(j=>j.ativo && !confirmados.includes(j.id)).map(j=>j.id);
   const convidados = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodada.id).map(r=>r.jogador_id);
   const resenha = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND resenha=1").all(rodada.id).map(r=>r.jogador_id);
+  const vinho = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND resenha=1 AND vinho=1").all(rodada.id).map(r=>r.jogador_id);
   const _jr = janelas(rodada.data), _nr = nowSP();
   const resenhaEdicaoConfirmacao = _nr >= _jr.confirmOpen && _nr < _jr.confirmClose;
   const resenhaEdicaoLivre = _nr >= _jr.resenhaLivreOpen && _nr < _jr.resenhaLivreClose;
@@ -814,7 +820,7 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota, edicoes FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, vinho, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos};
 }
 
 app.get('/api/rodadas', (req,res)=>{
@@ -911,12 +917,29 @@ app.post('/api/rodadas/:id/resenha', requireAuth, (req,res)=>{
   const n = nowSP();
   if(n < j.confirmOpen || n >= j.resenhaLivreClose) return res.status(403).json({erro:'O check-in da resenha só fica disponível de sábado às 8h até domingo às 11h.'});
   const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  // sair da resenha também derruba o "vou levar vinho" — não faz sentido manter.
+  const vinhoFlag = vaiResenha ? (existente ? existente.vinho : 0) : 0;
   if(existente){
-    db.prepare('UPDATE confirmacoes SET resenha=? WHERE id=?').run(vaiResenha?1:0, existente.id);
+    db.prepare('UPDATE confirmacoes SET resenha=?, vinho=? WHERE id=?').run(vaiResenha?1:0, vinhoFlag, existente.id);
   }else{
-    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
-      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), 'ausente', 0, vaiResenha?1:0);
+    db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha,vinho) VALUES (?,?,?,?,?,?,?,?)')
+      .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), 'ausente', 0, vaiResenha?1:0, 0);
   }
+  res.json({ok:true});
+});
+
+// "Vou levar uma garrafa de vinho" — só quem já está na resenha pode marcar, e só
+// dentro da mesma janela de check-in da resenha.
+app.post('/api/rodadas/:id/vinho', requireAuth, (req,res)=>{
+  const vaiVinho = !!req.body.vinho;
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const j = janelas(rodada.data);
+  const n = nowSP();
+  if(n < j.confirmOpen || n >= j.resenhaLivreClose) return res.status(403).json({erro:'O check-in da resenha só fica disponível de sábado às 8h até domingo às 11h.'});
+  const existente = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, req.jogadorId);
+  if(!existente || !existente.resenha) return res.status(400).json({erro:'Ative a resenha antes de indicar se vai levar vinho.'});
+  db.prepare('UPDATE confirmacoes SET vinho=? WHERE id=?').run(vaiVinho?1:0, existente.id);
   res.json({ok:true});
 });
 
