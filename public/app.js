@@ -683,7 +683,7 @@ function renderResenha(){
   const contagemCls = 'contagem-destaque'+(gente.length>6?' contagem-verde':'');
   html += '<div class="card"><h3 class="titulo-centralizado">Confirmados na Resenha com Churrasco <span class="'+contagemCls+'">'+gente.length+'</span></h3>';
   if(gente.length){
-    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+(idsVinho.has(j.id)?' 🍷':'')+'</span><span class="badge ok-destaque">OK</span></div>');
+    gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+'</span><span class="row-right"><span class="badge ok-destaque">OK</span>'+(idsVinho.has(j.id)?'<span class="badge badge-vinho">🍷</span>':'')+'</span></div>');
   }else{
     html += '<p class="small muted">Ninguém na resenha nessa rodada.</p>';
   }
@@ -775,15 +775,18 @@ function renderSorteio(){
     }).filter(m=>m!=null);
     const mediaTime = mediasTime.length ? mediasTime.reduce((a,b)=>a+b,0)/mediasTime.length : null;
 
-    html += '<div class="team-card '+timeClass(t.nome)+'"><h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>';
-    html += '<div class="team-score">'+starsHtml(mediaTime, true)+'</div>';
+    html += '<div class="team-card '+timeClass(t.nome)+'">'+
+      '<div class="team-header">'+
+        '<h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>'+
+        '<div class="team-score">'+starsHtml(mediaTime, true)+'</div>'+
+      '</div>';
     html += '<div class="pitch">';
     if(linhaAtaque.length) html += '<div class="pitch-row">'+linhaAtaque.map(pitchChip).join('')+'</div>';
     if(linhaMeio.length) html += '<div class="pitch-row">'+linhaMeio.map(pitchChip).join('')+'</div>';
     if(linhaDefesa.length) html += '<div class="pitch-row">'+linhaDefesa.map(pitchChip).join('')+'</div>';
     if(golPlayers.length) html += '<div class="pitch-row pitch-row-gk">'+golPlayers.map(pitchChip).join('')+'</div>';
     html += '</div>';
-    if(formLabel) html += '<p class="small muted" style="text-align:center;margin-top:6px;">Tática: '+formLabel+'</p>';
+    if(formLabel) html += '<p class="small" style="text-align:center;margin-top:6px;color:var(--text-muted);">Plano Tático: <strong class="plano-tatico-destaque">'+formLabel+'</strong></p>';
     if(alternarPlayers.length){
       html += '<div class="pitch-bench"><h4>🔄 Alternar Jogador (revezam durante a partida)</h4><div class="pitch-row">'+alternarPlayers.map(pitchChip).join('')+'</div></div>';
     }
@@ -1064,7 +1067,7 @@ async function renderAdmin(){
     }else{
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
-        (j.corneta?' <span class="badge">🎺 corneta</span>':'')+
+        (j.corneta?' <span class="badge">🎺🥜 corneta</span>':'')+
         (j.deptoMedico?' <span class="badge">🚑 depto. médico</span>':'')+
         (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
