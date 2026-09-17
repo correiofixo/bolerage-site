@@ -625,10 +625,9 @@ async function handleTogglePresenca(atual){
    RENDER: TAB RESENHA
    ============================================================ */
 function renderResenha(){
-  const c = document.getElementById('content');
   const rodAtual = state.rodadaAtual;
   if(!rodAtual){
-    c.innerHTML = '<div class="empty">Nenhuma rodada agendada ainda.</div>'; return;
+    setContent('<div class="empty">Nenhuma rodada agendada ainda.</div>', 'resenha'); return;
   }
   const meuId = state.currentPlayer.id;
   const idsResenhaAtual = rodAtual.resenha || [];
@@ -705,7 +704,7 @@ function renderResenha(){
     html += '<p class="small muted">Ninguém na resenha nessa rodada.</p>';
   }
   html += '</div>';
-  c.innerHTML = html;
+  setContent(html, 'resenha');
 }
 
 /* ============================================================
@@ -727,7 +726,6 @@ function hashStr(s){
   return Math.abs(h);
 }
 function renderSorteio(){
-  const c = document.getElementById('content');
   const opcoes = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
     .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
   let html = '<div class="field"><label>Rodada</label><select data-action="mudar-rodada-visualizada">'+opcoes+'</select></div>';
@@ -742,7 +740,7 @@ function renderSorteio(){
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Qual o critério do sorteio ?</p>'+
       '<p style="margin-bottom:0;">Após (4) quatro rodadas, o app irá considerar a média do ranking a fim de sortear times equilibrados. A previsão é que esse critério passe a valer em Outubro de 2026.</p>'+
     '</div>';
-    c.innerHTML = html; return;
+    setContent(html, 'sorteio'); return;
   }
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
 
@@ -817,8 +815,8 @@ function renderSorteio(){
     html += '</div>';
     if(formLabel || craqueDestaque){
       html += '<div class="team-footer">'+
-        (formLabel ? '<p class="plano-tatico-destaque">Plano Tático = '+formLabel+'</p>' : '')+
-        (craqueDestaque ? '<p class="craque-destaque-destaque">Craque Destaque = '+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+' '+starsHtml(craqueDestaque.media, true)+'</p>' : '')+
+        (formLabel ? '<p class="team-footer-line"><span class="team-footer-label">Plano Tático = </span><strong class="team-footer-valor">'+formLabel+'</strong></p>' : '')+
+        (craqueDestaque ? '<p class="team-footer-line"><span class="team-footer-label">Destaque = </span><strong class="team-footer-valor">'+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+'</strong> '+starsHtml(craqueDestaque.media, true)+'</p>' : '')+
       '</div>';
     }
     if(alternarPlayers.length){
@@ -837,7 +835,7 @@ function renderSorteio(){
     });
     html += '</div>';
   }
-  c.innerHTML = html;
+  setContent(html, 'sorteio');
 }
 
 /* ============================================================
@@ -1389,6 +1387,17 @@ function startPolling(){
       render();
     }
   }, 8000);
+}
+
+// Escreve em #content só se o HTML realmente mudou desde a última vez que ESSA
+// tela (key) foi quem escreveu lá — evita recriar <img> (escudos) sem necessidade
+// a cada re-render (clique ou polling) e é o que fazia elas "piscarem" no Sorteio
+// e na Resenha. Troca de aba sempre escreve (key diferente do que está lá).
+function setContent(html, key){
+  if(state._lastContentKey === key && state._lastContentHtml === html) return;
+  document.getElementById('content').innerHTML = html;
+  state._lastContentKey = key;
+  state._lastContentHtml = html;
 }
 
 /* ============================================================

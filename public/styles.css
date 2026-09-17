@@ -138,7 +138,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   margin-bottom:12px;
   box-shadow:var(--shadow-card);
 }
-.card>h3{font-size:16.5px;font-weight:700;color:var(--text);letter-spacing:.3px;margin-bottom:10px;}
+.card>h3{font-size:16.5px;font-weight:700;color:var(--text);letter-spacing:.3px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,.08);}
 .contagem-destaque{color:var(--gold);font-size:1.2em;font-weight:800;}
 .contagem-destaque.contagem-verde{color:var(--green);}
 .titulo-centralizado{text-align:center;}
@@ -202,13 +202,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-score .stars{font-size:28px;gap:8px;}
 .team-score .stars-num{font-size:22px;font-weight:800;font-family:var(--font-display);color:var(--gold);}
 .team-footer{margin-top:10px;text-align:left;}
-.plano-tatico-destaque,.craque-destaque-destaque{
-  margin:0 0 4px;font-size:14px;font-weight:800;color:var(--gold);letter-spacing:.2px;
+.team-footer-line{
+  margin:0 0 4px;font-size:14px;font-weight:800;letter-spacing:.2px;
   display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left;
 }
-.craque-destaque-destaque{margin-bottom:0;}
-.craque-destaque-destaque .stars{font-size:15px;}
-.craque-destaque-destaque .stars-num{color:var(--gold);}
+.team-footer-line:last-child{margin-bottom:0;}
+.team-footer-label{color:var(--text);}
+.team-footer-valor{color:var(--gold);}
+.team-footer-line .stars{font-size:15px;}
+.team-footer-line .stars-num{color:var(--gold);}
 .badge-vinho{background:#5b1030;color:#fff;border-color:#7a1a42;font-size:13px;padding:3px 8px;}
 
 /* ---- campo de futebol (times sorteados) ---- */
