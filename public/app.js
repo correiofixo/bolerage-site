@@ -246,12 +246,17 @@ function renderTopbar(){
   const mensLine = m
     ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
     : '';
-  document.getElementById('who-slot').innerHTML =
-    '<div class="who-row1">'+
+  const whoHtml = '<div class="who-row1">'+
       '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
         (state.currentPlayer.deptoMedico ? ' 🚑' : '')+'</span>'+
     '</div>'+
     mensLine;
+  // só escreve no DOM se o conteúdo realmente mudou — render() roda a cada clique
+  // no app inteiro, e recriar a <img> do escudo toda hora fazia ela "piscar".
+  if(state._lastWhoHtml !== whoHtml){
+    document.getElementById('who-slot').innerHTML = whoHtml;
+    state._lastWhoHtml = whoHtml;
+  }
   const fase = state.rodadaAtual ? state.rodadaAtual.fase : {label:'Nenhuma rodada agendada', cor:'muted'};
   document.getElementById('phase-chip-slot').innerHTML =
     '<span class="chip '+fase.cor+'"><span class="dot"></span>'+escapeHtml(fase.label)+'</span>';
@@ -803,16 +808,17 @@ function renderSorteio(){
         '<h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>'+
         '<div class="team-score">'+starsHtml(mediaTime, true)+'</div>'+
       '</div>';
-    html += '<div class="pitch">';
+    html += '<div class="pitch">'+
+      '<div class="pitch-halfway"></div><div class="pitch-box pitch-box-top"></div><div class="pitch-box pitch-box-bottom"></div>';
     if(linhaAtaque.length) html += '<div class="pitch-row">'+linhaAtaque.map(pitchChip).join('')+'</div>';
     if(linhaMeio.length) html += '<div class="pitch-row">'+linhaMeio.map(pitchChip).join('')+'</div>';
     if(linhaDefesa.length) html += '<div class="pitch-row">'+linhaDefesa.map(pitchChip).join('')+'</div>';
     if(golPlayers.length) html += '<div class="pitch-row pitch-row-gk">'+golPlayers.map(pitchChip).join('')+'</div>';
     html += '</div>';
     if(formLabel || craqueDestaque){
-      html += '<div class="team-footer-row">'+
-        (formLabel ? '<span class="plano-tatico-linha small muted">Plano Tático = <strong class="plano-tatico-destaque">'+formLabel+'</strong></span>' : '')+
-        (craqueDestaque ? '<span class="craque-destaque-linha small muted">Craque Destaque = <strong>'+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+'</strong> '+starsHtml(craqueDestaque.media, true)+'</span>' : '')+
+      html += '<div class="team-footer">'+
+        (formLabel ? '<p class="plano-tatico-destaque">Plano Tático = '+formLabel+'</p>' : '')+
+        (craqueDestaque ? '<p class="craque-destaque-destaque">Craque Destaque = '+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+' '+starsHtml(craqueDestaque.media, true)+'</p>' : '')+
       '</div>';
     }
     if(alternarPlayers.length){

@@ -81,10 +81,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 /* ---- header ---- */
 #topbar{
   padding:calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 12px calc(16px + env(safe-area-inset-left));
-  border-bottom:1px solid var(--line);
+  border-bottom:1px solid rgba(201,162,39,.22);
   position:sticky;top:0;
-  background:var(--bg);
-  box-shadow:0 1px 8px rgba(0,0,0,.18);
+  background:linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg) 100%);
+  box-shadow:0 2px 14px rgba(0,0,0,.28);
   z-index:5;
 }
 #topbar .row1{display:flex;}
@@ -131,8 +131,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 /* padding-bottom só precisa cobrir a altura da barra fixa (#bottomnav) + uma folga pequena */
 #content{padding:16px calc(16px + env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));}
 .card{
-  background:var(--bg-elevated);
-  border:1px solid var(--line);
+  background:linear-gradient(165deg, var(--bg-elevated) 0%, var(--bg-elevated) 55%, var(--bg-elevated-2) 220%);
+  border:1px solid rgba(255,255,255,.07);
   border-radius:var(--radius);
   padding:14px;
   margin-bottom:12px;
@@ -188,7 +188,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .badge.gk{color:var(--gold);border-color:var(--gold-dim);}
 .badge.ok-destaque{background:var(--green);color:#fff;border-color:var(--green);font-size:12.5px;font-weight:800;letter-spacing:.4px;padding:3px 11px;}
 
-.team-card{border-radius:var(--radius);border:1px solid var(--line);background:var(--bg-elevated);padding:12px 14px;margin-bottom:10px;border-left:4px solid var(--blue);box-shadow:var(--shadow-card);}
+.team-card{border-radius:var(--radius);border:1px solid rgba(255,255,255,.07);background:linear-gradient(165deg, var(--bg-elevated) 0%, var(--bg-elevated) 55%, var(--bg-elevated-2) 220%);padding:12px 14px;margin-bottom:10px;border-left:4px solid var(--blue);box-shadow:var(--shadow-card);}
 .team-card.t-brasil{border-left-color:var(--brasil);}
 .team-card.t-argentina{border-left-color:var(--argentina);}
 .team-card.t-alemanha{border-left-color:var(--alemanha);}
@@ -201,10 +201,14 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-score{display:flex;justify-content:flex-end;flex-shrink:0;}
 .team-score .stars{font-size:28px;gap:8px;}
 .team-score .stars-num{font-size:22px;font-weight:800;font-family:var(--font-display);color:var(--gold);}
-.team-footer-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px;}
-.craque-destaque-linha{margin-left:auto;text-align:right;}
-.craque-destaque-linha .stars{font-size:14px;}
-.plano-tatico-destaque{color:var(--gold);font-size:1.3em;font-weight:800;letter-spacing:.3px;}
+.team-footer{margin-top:10px;text-align:left;}
+.plano-tatico-destaque,.craque-destaque-destaque{
+  margin:0 0 4px;font-size:14px;font-weight:800;color:var(--gold);letter-spacing:.2px;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;text-align:left;
+}
+.craque-destaque-destaque{margin-bottom:0;}
+.craque-destaque-destaque .stars{font-size:15px;}
+.craque-destaque-destaque .stars-num{color:var(--gold);}
 .badge-vinho{background:#5b1030;color:#fff;border-color:#7a1a42;font-size:13px;padding:3px 8px;}
 
 /* ---- campo de futebol (times sorteados) ---- */
@@ -231,6 +235,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   border:2px solid rgba(255,255,255,.4); border-radius:6px;
   pointer-events:none;
 }
+.pitch-halfway{position:absolute;top:50%;left:6%;right:6%;height:2px;background:rgba(255,255,255,.45);pointer-events:none;}
+.pitch-box{position:absolute;left:50%;transform:translateX(-50%);width:60%;height:22%;border:2px solid rgba(255,255,255,.4);pointer-events:none;}
+.pitch-box-top{top:0;border-top:none;border-radius:0 0 5px 5px;}
+.pitch-box-bottom{bottom:0;border-bottom:none;border-radius:5px 5px 0 0;}
 .pitch-row{display:flex;flex-wrap:wrap;justify-content:space-around;gap:8px;position:relative;z-index:1;}
 .pitch-row-gk{justify-content:center;}
 .pitch-player{
