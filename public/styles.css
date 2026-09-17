@@ -6,12 +6,13 @@
   --text:#F1F5F9;
   --text-muted:#8FA5C2;
   --gold:#C9A227;
+  --gold-bright:#E4C158;
   --gold-dim:#8C7A2E;
   --blue:#0F5FA6;
   --blue-bright:#2E86D6;
   --green:#3FAE58;
   --red:#E2574C;
-  --radius:8px;
+  --radius:11px;
   --font-display:'Oswald',sans-serif;
   --font-body:'Inter',sans-serif;
   --brasil:#F5C518;
@@ -19,8 +20,8 @@
   --alemanha:#E7E7E7;
   --italia:#2D7DD2;
   --holanda:#F08A24;
-  --shadow-card:0 1px 2px rgba(0,0,0,.28);
-  --shadow-raised:0 6px 20px rgba(0,0,0,.30);
+  --shadow-card:0 3px 12px rgba(0,0,0,.34);
+  --shadow-raised:0 12px 32px rgba(0,0,0,.42);
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -47,7 +48,9 @@ img{max-width:100%;height:auto;}
   display:flex;
   flex-direction:column;
   position:relative;
-  background:var(--bg);
+  background:
+    radial-gradient(900px 560px at 50% -8%, rgba(15,95,166,.20), transparent 65%),
+    var(--bg);
 }
 h1,h2,h3{
   font-family:var(--font-display);
@@ -84,13 +87,14 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   box-shadow:0 1px 8px rgba(0,0,0,.18);
   z-index:5;
 }
-#topbar .row1{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;row-gap:8px;}
-#topbar .brand{display:flex;align-items:center;gap:12px;min-width:0;}
+#topbar .row1{display:flex;}
+#topbar .brand{display:flex;align-items:center;gap:12px;min-width:0;flex:1;}
 .brand-logo{width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);box-shadow:0 0 0 3px rgba(201,162,39,.18),0 4px 14px rgba(0,0,0,.45);flex-shrink:0;}
-.brand-text{display:flex;flex-direction:column;min-width:0;}
+.brand-text{display:flex;flex-direction:column;min-width:0;flex:1;gap:5px;}
+.brand-line1,.brand-line2{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .brand-name{font-family:var(--font-display);font-size:clamp(22px,7vw,27px);font-weight:700;letter-spacing:.3px;line-height:1.2;}
 .brand-name .accent{color:var(--gold);}
-.brand-text small{font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;margin-top:3px;line-height:1;}
+.brand-text small{font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;line-height:1;}
 #topbar .row2{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
 .app-version{font-family:var(--font-body);font-size:10.5px;font-weight:500;color:var(--text-muted);}
 #phase-chip-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -107,9 +111,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .badge.mens-ok{color:var(--green);border-color:#2c6b3c;}
 .badge.mens-atrasada{color:var(--red);border-color:#6b3630;}
 .badge.mens-isenta{color:var(--gold);border-color:var(--gold-dim);}
-#topbar .who button,#topbar #row1-actions-slot button{background:var(--bg-elevated-2);border:1px solid var(--line);color:var(--gold);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;}
-#topbar .who button:active,#topbar #row1-actions-slot button:active{background:var(--line);}
-#row1-actions-slot{flex-shrink:0;margin-left:auto;}
+#topbar .who button,#topbar .who-actions button{background:var(--bg-elevated-2);border:1px solid var(--line);color:var(--gold);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;}
+#topbar .who button:active,#topbar .who-actions button:active{background:var(--line);}
+.brand-line1 .who-actions,.brand-line2 .who-actions{flex-shrink:0;}
 .chip{
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 10px;border-radius:999px;
@@ -150,10 +154,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  background:var(--gold);color:#221A00;
+  background:linear-gradient(180deg, var(--gold-bright), var(--gold));color:#221A00;
   border:none;border-radius:var(--radius);
   padding:11px 16px;font-size:14.5px;font-weight:600;
   width:100%;
+  box-shadow:0 2px 8px rgba(201,162,39,.28);
 }
 .btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line);}
 .btn.danger{background:transparent;color:var(--red);border:1px solid #6b3630;}
@@ -178,7 +183,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .list-row>:first-child{min-width:0;overflow-wrap:anywhere;}
 .pix-code{font-size:14px;color:var(--text);min-width:0;overflow-wrap:anywhere;}
 .badge{font-size:11px;padding:2px 7px;border-radius:5px;background:var(--bg-elevated-2);color:var(--text-muted);border:1px solid var(--line);white-space:nowrap;flex-shrink:0;}
-.time-coracao-badge{width:22px;height:22px;vertical-align:-6px;object-fit:contain;filter:drop-shadow(0 1px 3px rgba(0,0,0,.55));}
+.time-coracao-badge{width:22px;height:22px;vertical-align:-6px;object-fit:contain;}
 .who-name .time-coracao-badge{width:26px;height:26px;vertical-align:-7px;}
 .badge.gk{color:var(--gold);border-color:var(--gold-dim);}
 .badge.ok-destaque{background:var(--green);color:#fff;border-color:var(--green);font-size:12.5px;font-weight:800;letter-spacing:.4px;padding:3px 11px;}
@@ -196,7 +201,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .team-score{display:flex;justify-content:flex-end;flex-shrink:0;}
 .team-score .stars{font-size:28px;gap:8px;}
 .team-score .stars-num{font-size:22px;font-weight:800;font-family:var(--font-display);color:var(--gold);}
-.plano-tatico-destaque{color:var(--gold);font-size:1.2em;font-weight:800;letter-spacing:.3px;}
+.team-footer-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px;}
+.craque-destaque-linha{margin-left:auto;text-align:right;}
+.craque-destaque-linha .stars{font-size:14px;}
+.plano-tatico-destaque{color:var(--gold);font-size:1.3em;font-weight:800;letter-spacing:.3px;}
 .badge-vinho{background:#5b1030;color:#fff;border-color:#7a1a42;font-size:13px;padding:3px 8px;}
 
 /* ---- campo de futebol (times sorteados) ---- */

@@ -91,7 +91,10 @@ function timeCoracaoOptionsHtml(atual){
 // nunca por dentro, senão a tag <img> vira texto escapado na tela.
 function timeCoracaoSuffix(timeCoracao){
   const info = TIME_CORACAO_INFO[timeCoracao];
-  return info ? ' <img class="time-coracao-badge" src="'+info.img+'" alt="'+info.lbl+'" title="'+info.lbl+'">' : '';
+  // width/height fixos + decoding="async": evita que o navegador fique
+  // recalculando layout/decodificando a imagem de novo a cada re-render
+  // (era isso que fazia os escudos "piscarem" ao rolar a tela).
+  return info ? ' <img class="time-coracao-badge" src="'+info.img+'" width="22" height="22" decoding="async" alt="'+info.lbl+'" title="'+info.lbl+'">' : '';
 }
 // idem, mas a partir do id do jogador (resolve o time do coração do próprio
 // jogador, ou do "dono" quando id é um convidado "conv:<hostId>").
@@ -234,8 +237,9 @@ function renderTopbar(){
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
-  document.getElementById('row1-actions-slot').innerHTML =
-    '<button data-action="abrir-troca-pin">Trocar meu PIN</button>'+
+  document.getElementById('pin-action-slot').innerHTML =
+    '<button data-action="abrir-troca-pin">Trocar meu PIN</button>';
+  document.getElementById('admin-action-slot').innerHTML =
     (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">Sair</button>';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
@@ -270,6 +274,14 @@ function renderTopbar(){
    ============================================================ */
 function renderLogin(){
   const dots = [0,1,2,3].map(i=>'<div class="pin-dot '+(i<state.pinBuffer.length?'filled':'')+'"></div>').join('');
+  // a tela já está montada (só trocando dígito) — atualiza só os pontos e o erro,
+  // sem recriar a <img> do logo (recriá-la a cada tecla fazia o logo "piscar").
+  const existing = document.getElementById('login-screen');
+  if(existing){
+    existing.querySelector('.pin-dots').innerHTML = dots;
+    existing.querySelector('.login-error').textContent = state.loginError;
+    return;
+  }
   const keys = ['1','2','3','4','5','6','7','8','9','','0','back'];
   const keypad = keys.map(k=>{
     if(k==='') return '<button class="ghost"></button>';
@@ -775,6 +787,17 @@ function renderSorteio(){
     }).filter(m=>m!=null);
     const mediaTime = mediasTime.length ? mediasTime.reduce((a,b)=>a+b,0)/mediasTime.length : null;
 
+    // craque destaque do time: quem tem a maior média no Ranking Geral entre os
+    // escalados (ignora convidados).
+    let craqueDestaque = null;
+    t.jogadores.filter(j=>String(j.jogadorId).indexOf('conv:')!==0).forEach(j=>{
+      const isAlt = j.papel==='alternar';
+      const jr = isAlt ? state.elenco.find(x=>x.id===j.jogadorId) : null;
+      const papelMedia = isAlt ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
+      const media = mediaDoJogador(j.jogadorId, papelMedia);
+      if(media!=null && (!craqueDestaque || media>craqueDestaque.media)) craqueDestaque = {jogadorId:j.jogadorId, media};
+    });
+
     html += '<div class="team-card '+timeClass(t.nome)+'">'+
       '<div class="team-header">'+
         '<h2>'+(fl?'<span class="team-flag">'+fl+'</span>':'')+t.nome+'</h2>'+
@@ -786,7 +809,12 @@ function renderSorteio(){
     if(linhaDefesa.length) html += '<div class="pitch-row">'+linhaDefesa.map(pitchChip).join('')+'</div>';
     if(golPlayers.length) html += '<div class="pitch-row pitch-row-gk">'+golPlayers.map(pitchChip).join('')+'</div>';
     html += '</div>';
-    if(formLabel) html += '<p class="small" style="text-align:center;margin-top:6px;color:var(--text-muted);">Plano Tático: <strong class="plano-tatico-destaque">'+formLabel+'</strong></p>';
+    if(formLabel || craqueDestaque){
+      html += '<div class="team-footer-row">'+
+        (formLabel ? '<span class="plano-tatico-linha small muted">Plano Tático = <strong class="plano-tatico-destaque">'+formLabel+'</strong></span>' : '')+
+        (craqueDestaque ? '<span class="craque-destaque-linha small muted">Craque Destaque = <strong>'+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+'</strong> '+starsHtml(craqueDestaque.media, true)+'</span>' : '')+
+      '</div>';
+    }
     if(alternarPlayers.length){
       html += '<div class="pitch-bench"><h4>🔄 Alternar Jogador (revezam durante a partida)</h4><div class="pitch-row">'+alternarPlayers.map(pitchChip).join('')+'</div></div>';
     }
