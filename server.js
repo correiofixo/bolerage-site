@@ -449,6 +449,34 @@ function snakeDraft(sortedDesc, n){
   return buckets;
 }
 
+// Ordena os 5 nomes de time por quão recentemente cada um foi sorteado (o
+// "Alternantes" não conta) — quem nunca jogou, ou jogou há mais rodadas, vem
+// primeiro. Assim, times que saíram nas últimas semanas (ex.: Brasil e
+// Argentina) só voltam a ser usados se não sobrar mais nenhum nome "descansado".
+function nomesTimesPriorizados(){
+  const rows = db.prepare(`
+    SELECT r.data as data, t.nome_time as nomeTime
+    FROM times_sorteados t
+    JOIN rodadas r ON r.id = t.rodada_id
+    WHERE t.nome_time <> ?
+    ORDER BY r.data DESC
+  `).all(NOME_TIME_ALTERNANTES);
+  const recenciaPorNome = {}; // nome -> 0 (rodada mais recente encontrada), 1, 2...
+  let indiceRodada = -1;
+  let dataAnterior = null;
+  rows.forEach(r=>{
+    if(r.data !== dataAnterior){ indiceRodada++; dataAnterior = r.data; }
+    if(!(r.nomeTime in recenciaPorNome)) recenciaPorNome[r.nomeTime] = indiceRodada;
+  });
+  // nunca usado = prioridade máxima (Infinity); entre os já usados, quanto maior
+  // o índice (mais rodadas atrás), maior a prioridade.
+  return [...NOMES_TIMES].sort((a,b)=>{
+    const ra = recenciaPorNome[a] ?? Infinity;
+    const rb = recenciaPorNome[b] ?? Infinity;
+    return rb - ra;
+  });
+}
+
 function realizarSorteio(rodadaId){
   const rodada = getRodadaPorId(rodadaId);
   if(!rodada) return {ok:false, erro:'Rodada não encontrada.'};
@@ -521,10 +549,13 @@ function realizarSorteio(rodadaId){
   // exatamente 3 sobrando: em vez de ficarem parados na lista de reservas, formam um
   // time extra — aparecem já marcados como "Alternar Jogador" (revezam com os titulares).
   const formarTimeAlternantes = reservasFinal.length === 3;
+  // nomes dos times desta rodada: prioriza quem não jogou (ou jogou há mais tempo)
+  // nas rodadas anteriores, em vez de sempre repetir Brasil/Argentina quando n=2.
+  const nomesDaSemana = nomesTimesPriorizados();
   const tx = db.transaction(()=>{
     for(let i=0;i<n;i++){
-      linhaBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'linha'));
-      golBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOMES_TIMES[i], jg.id, 'goleiro'));
+      linhaBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, nomesDaSemana[i], jg.id, 'linha'));
+      golBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, nomesDaSemana[i], jg.id, 'goleiro'));
     }
     if(formarTimeAlternantes){
       reservasFinal.forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOME_TIME_ALTERNANTES, jg.id, PAPEL_ALTERNAR));
