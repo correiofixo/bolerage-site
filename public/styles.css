@@ -424,3 +424,10 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;}
 }
+
+/* v3.1 — goleiros presentes (fixos, fora do sorteio) e nota de ausências no ranking */
+.gk-banner{margin:10px 0 14px;padding:12px 14px;border-radius:14px;border:1px solid var(--gold-dim);border-left:4px solid var(--gold);
+  background:linear-gradient(180deg, rgba(201,162,39,.16), rgba(201,162,39,.06));text-align:left;line-height:1.5;}
+.gk-banner-label{color:var(--gold-bright);font-weight:700;}
+.gk-banner-nomes{color:#fff;font-weight:700;}
+.rank-ausencia{color:var(--red);font-weight:600;}

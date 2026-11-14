@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 10;
+const APP_BUILD = 11;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -152,6 +152,12 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN corneta INTEGER NOT NULL DEFAULT 
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN time_coracao TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN depto_medico INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN vinho INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+// sorteio dos times: 'manual' (admin clica em "Realizar sorteio") ou 'automatico'
+// (roda sozinho na data/hora em sorteio_agendado, "YYYY-MM-DDTHH:MM", horário de SP).
+try{ db.exec("ALTER TABLE config ADD COLUMN sorteio_modo TEXT NOT NULL DEFAULT 'manual'"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN sorteio_agendado TEXT"); }catch(e){}
+// 1 = a aba "Votos dos Jogadores" (Resenha) mostra quem votou em quem; 0 = oculta.
+try{ db.exec("ALTER TABLE config ADD COLUMN mostrar_votos INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -253,7 +259,7 @@ function janelas(rodadaData){
     confirmOpen:  addDaysToDateStr(rodadaData,-1)+'T08:00:00',
     confirmClose: rodadaData+'T08:00:00',
     voteOpen:     rodadaData+'T10:00:00',
-    voteClose:    rodadaData+'T18:00:00',
+    voteClose:    rodadaData+'T13:00:00',
     // janela de "última hora" da resenha: domingo 10h → 11h
     resenhaLivreOpen:  rodadaData+'T10:00:00',
     resenhaLivreClose: rodadaData+'T11:00:00',
@@ -268,7 +274,7 @@ function computeFase(rodada){
   if(rodada.status==='sorteio_desfeito') return {chave:'sorteio_desfeito', label:'Sorteio desfeito — aguardando novo sorteio manual', cor:'gold'};
   if(rodada.status==='sorteado'){
     if(now < j.voteOpen) return {chave:'sorteado_aguardando_votacao', label:'Times sorteados — votação abre domingo às 10h', cor:'gold'};
-    if(now < j.voteClose) return {chave:'votacao_aberta', label:'Votação aberta até as 18h', cor:'green'};
+    if(now < j.voteClose) return {chave:'votacao_aberta', label:'Votação aberta até as 13h', cor:'green'};
     return {chave:'encerrada', label:'Rodada encerrada', cor:'muted'};
   }
   if(now < j.confirmOpen) return {chave:'pre_confirmacao', label:'Confirmação abre sábado às 8hrs', cor:'muted'};
@@ -477,6 +483,27 @@ function nomesTimesPriorizados(){
   });
 }
 
+// Distribui `items` (já na ordem de prioridade) em baldes com capacidades `caps`.
+// snake=true: "serpentina" (1..n, n..1, ...) pulando balde cheio; snake=false: rodízio simples.
+function distribuirPorCapacidade(items, caps, snake){
+  const n = caps.length;
+  const buckets = Array.from({length:n},()=>[]);
+  let idx = 0, round = 0;
+  while(idx < items.length){
+    const order = (snake && round%2===1)
+      ? Array.from({length:n},(_,k)=>n-1-k)
+      : Array.from({length:n},(_,k)=>k);
+    let colocouAlgum = false;
+    for(const pos of order){
+      if(idx >= items.length) break;
+      if(buckets[pos].length < caps[pos]){ buckets[pos].push(items[idx++]); colocouAlgum = true; }
+    }
+    if(!colocouAlgum) break; // todos cheios
+    round++;
+  }
+  return {buckets, sobras: items.slice(idx)};
+}
+
 function realizarSorteio(rodadaId){
   const rodada = getRodadaPorId(rodadaId);
   if(!rodada) return {ok:false, erro:'Rodada não encontrada.'};
@@ -486,87 +513,53 @@ function realizarSorteio(rodadaId){
   const v = calcViabilidade(rodadaId);
   if(!v.viavel) return {ok:false, erro:'Jogo não viabilizado: confirmações insuficientes.'};
 
+  // Goleiros NÃO entram no sorteio: ficam fixos na tela como "Goleiros Presentes".
   const confirmados = getPorStatus(rodadaId, 'presente');
   const linhaPoolReal = confirmados.filter(x=>x.posicao_padrao==='linha');
-  const goleiroPool = confirmados.filter(x=>x.posicao_padrao==='goleiro');
   const guestRows = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodadaId);
   const guestPool = guestRows.map(g=>({id:'conv:'+g.jogador_id, posicao_padrao:'linha', isGuest:true, hostId:g.jogador_id}));
   const linhaPool = [...linhaPoolReal, ...guestPool];
 
-  let n = 0;
-  for(let cand=5; cand>=1; cand--){
-    const conv = Math.max(0, cand-goleiroPool.length);
-    if(linhaPool.length >= cand*5+conv){ n=cand; break; }
-  }
-  if(n===0) return {ok:false, erro:'Jogadores insuficientes para formar um time.'};
-
-  const conversoesNecessarias = Math.max(0, n-goleiroPool.length);
-  const golDesignados = goleiroPool.slice(0,n);
-  const golReserva = goleiroPool.slice(n);
+  // times de 5 jogadores de linha (máx. 5 times). Se sobrarem 3 ou 4, formam mais um
+  // time menor (ex.: 18 → 5+5+5+3); sobrando 1 ou 2 (ou além de 5 times) viram reservas.
+  const L = linhaPool.length;
+  const cheios = Math.min(5, Math.floor(L/5));
+  const sobraBruta = L - cheios*5;
+  const caps = Array.from({length:cheios},()=>5);
+  if(cheios < 5 && sobraBruta >= 3) caps.push(sobraBruta);
+  if(caps.length < 2) return {ok:false, erro:'Jogadores insuficientes para formar dois times.'};
 
   const ranking = calcularRanking();
   const usarFase2 = fase2Atingida(ranking);
 
-  let linhaOrdenada, golOrdenado;
+  let linhaOrdenada;
   if(usarFase2){
     const mgLinha = mediaGlobalDoPapel(ranking,'linha');
-    const mgGol = mediaGlobalDoPapel(ranking,'goleiro');
     linhaOrdenada = [...linhaPool].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha) - mediaOuFallback(ranking,a.id,'linha',mgLinha));
-    golOrdenado = [...golDesignados].sort((a,b)=> mediaOuFallback(ranking,b.id,'goleiro',mgGol) - mediaOuFallback(ranking,a.id,'goleiro',mgGol));
   }else{
     linhaOrdenada = shuffle(linhaPool);
-    golOrdenado = shuffle(golDesignados);
   }
-  // convidados sempre priorizados como reserva: reordena mantendo jogadores cadastrados
-  // primeiro (na ordem já calculada) e convidados sempre por último.
+  // convidados sempre priorizados como reserva: jogadores cadastrados primeiro (na ordem
+  // já calculada) e convidados sempre por último.
   linhaOrdenada = [...linhaOrdenada.filter(x=>!x.isGuest), ...linhaOrdenada.filter(x=>x.isGuest)];
 
-  const linhaEmCampo = linhaOrdenada.slice(0, n*5);
-  const remainder = linhaOrdenada.slice(n*5);
-  const remainderNaoGuest = remainder.filter(x=>!x.isGuest);
-  const remainderGuest = remainder.filter(x=>x.isGuest);
-  // convidado nunca é convertido em goleiro (sempre joga de linha ou fica de reserva)
-  const convertidos = remainderNaoGuest.slice(0, conversoesNecessarias);
-  const linhaReserva = [...remainderNaoGuest.slice(conversoesNecessarias), ...remainderGuest];
-
-  const linhaBuckets = usarFase2
-    ? snakeDraft(linhaEmCampo, n)
-    : (()=>{ const b=Array.from({length:n},()=>[]); linhaEmCampo.forEach((jg,i)=>b[i%n].push(jg)); return b; })();
-
-  const golCandidatos = [...golOrdenado, ...convertidos];
-  const golBuckets = usarFase2
-    ? snakeDraft(
-        golCandidatos.sort((a,b)=>{
-          const pa = golOrdenado.includes(a) ? mediaOuFallback(ranking,a.id,'goleiro',mediaGlobalDoPapel(ranking,'goleiro')) : mediaOuFallback(ranking,a.id,'linha',mediaGlobalDoPapel(ranking,'linha'));
-          const pb = golOrdenado.includes(b) ? mediaOuFallback(ranking,b.id,'goleiro',mediaGlobalDoPapel(ranking,'goleiro')) : mediaOuFallback(ranking,b.id,'linha',mediaGlobalDoPapel(ranking,'linha'));
-          return pb-pa;
-        }), n)
-    : (()=>{ const b=Array.from({length:n},()=>[]); shuffle(golCandidatos).forEach((jg,i)=>b[i%n].push(jg)); return b; })();
+  const {buckets: linhaBuckets, sobras: linhaReserva} = distribuirPorCapacidade(linhaOrdenada, caps, usarFase2);
 
   const insertTime = db.prepare('INSERT INTO times_sorteados (id,rodada_id,nome_time,jogador_id,papel_na_partida) VALUES (?,?,?,?,?)');
   const insertReserva = db.prepare('INSERT INTO reservas (id,rodada_id,jogador_id) VALUES (?,?,?)');
-  const reservasFinal = [...linhaReserva, ...golReserva];
-  // exatamente 3 sobrando: em vez de ficarem parados na lista de reservas, formam um
-  // time extra — aparecem já marcados como "Alternar Jogador" (revezam com os titulares).
-  const formarTimeAlternantes = reservasFinal.length === 3;
   // nomes dos times desta rodada: prioriza quem não jogou (ou jogou há mais tempo)
-  // nas rodadas anteriores, em vez de sempre repetir Brasil/Argentina quando n=2.
+  // nas rodadas anteriores.
   const nomesDaSemana = nomesTimesPriorizados();
   const tx = db.transaction(()=>{
-    for(let i=0;i<n;i++){
+    for(let i=0;i<caps.length;i++){
       linhaBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, nomesDaSemana[i], jg.id, 'linha'));
-      golBuckets[i].forEach(jg=> insertTime.run(idGen('t'), rodadaId, nomesDaSemana[i], jg.id, 'goleiro'));
     }
-    if(formarTimeAlternantes){
-      reservasFinal.forEach(jg=> insertTime.run(idGen('t'), rodadaId, NOME_TIME_ALTERNANTES, jg.id, PAPEL_ALTERNAR));
-    }else{
-      reservasFinal.forEach(jg=> insertReserva.run(idGen('rv'), rodadaId, jg.id));
-    }
+    linhaReserva.forEach(jg=> insertReserva.run(idGen('rv'), rodadaId, jg.id));
     db.prepare('INSERT OR REPLACE INTO rodada_meta (rodada_id, modo_sorteio) VALUES (?,?)').run(rodadaId, usarFase2?'fase2':'fase1');
     db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('sorteado', rodadaId);
   });
   tx();
-  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'), '+n+' time(s)'+(formarTimeAlternantes?' + time de 3 alternantes':'')+'.');
+  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'): '+caps.length+' time(s) ['+caps.join('+')+'], '+linhaReserva.length+' reserva(s), '+(confirmados.length-linhaPoolReal.length)+' goleiro(s) presente(s).');
   return {ok:true};
 }
 
@@ -732,7 +725,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     deptoMedico:!!j.depto_medico,
   }));
   const cfg = getConfig();
-  res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now}});
+  res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now, sorteioModo:cfg.sorteio_modo||'manual', sorteioAgendado:cfg.sorteio_agendado||'', mostrarVotos:!!cfg.mostrar_votos}});
 });
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
 app.get('/api/admin/mensalidades', requirePerm('mensalidades'), (req,res)=>{
@@ -816,8 +809,37 @@ app.put('/api/admin/simulado', requireSuper, (req,res)=>{
   res.json({ok:true});
 });
 
+// Sorteio dos times: manual (padrão) ou automático (data/hora agendada pelo ADMIN).
+app.put('/api/admin/sorteio-agenda', requireSuper, (req,res)=>{
+  const modo = req.body.modo;
+  if(!['manual','automatico'].includes(modo)) return res.status(400).json({erro:'Modo inválido.'});
+  if(modo==='manual'){
+    db.prepare("UPDATE config SET sorteio_modo='manual', sorteio_agendado=NULL WHERE id=1").run();
+    logEvento('Sorteio dos times definido como MANUAL.');
+    return res.json({ok:true});
+  }
+  const quando = String(req.body.agendadoEm||'');
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(quando)) return res.status(400).json({erro:'Informe a data e o horário do sorteio automático.'});
+  if(quando+':00' <= nowSP()) return res.status(400).json({erro:'A data/horário do sorteio precisa estar no futuro.'});
+  const rodada = getRodadaAtual();
+  if(rodada && ['aguardando_confirmacao','sorteio_desfeito'].includes(rodada.status)){
+    const j = janelas(rodada.data);
+    if(quando+':00' < j.confirmClose) return res.status(400).json({erro:'O sorteio automático só pode ser agendado após o fim da confirmação (domingo às 8h).'});
+  }
+  db.prepare("UPDATE config SET sorteio_modo='automatico', sorteio_agendado=? WHERE id=1").run(quando);
+  logEvento('Sorteio dos times AUTOMÁTICO agendado para '+quando.replace('T',' às ')+'.');
+  res.json({ok:true});
+});
+// Exibe (ou não) a aba "Votos dos Jogadores" na Resenha.
+app.put('/api/admin/mostrar-votos', requireSuper, (req,res)=>{
+  const v = req.body.mostrar ? 1 : 0;
+  db.prepare('UPDATE config SET mostrar_votos=? WHERE id=1').run(v);
+  logEvento('Aba "Votos dos Jogadores" '+(v?'habilitada':'ocultada')+' pelo admin.');
+  res.json({ok:true});
+});
+
 /* ---- rodadas ---- */
-function serializarRodada(rodada){
+function serializarRodada(rodada, viewerId){
   rodada = atualizarStatusSeNecessario(rodada);
   const fase = computeFase(rodada);
   const confirmados = getPorStatus(rodada.id, 'presente').map(j=>j.id);
@@ -851,21 +873,29 @@ function serializarRodada(rodada){
     };
   }
   const votos = db.prepare('SELECT jogador_avaliado_id as avaliadoId, jogador_avaliador_id as avaliadorId, nota, edicoes FROM votos WHERE rodada_id=?').all(rodada.id);
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, vinho, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos};
+  const cfg = getConfig();
+  const mostrarVotos = !!cfg.mostrar_votos;
+  // com a aba desligada, ninguém vê quem votou em quem (só os próprios votos de cada um)
+  const votosOut = mostrarVotos ? votos : votos.map(v=> (viewerId && v.avaliadorId===viewerId) ? v : {...v, avaliadorId:null});
+  // goleiros presentes: não entram no sorteio, ficam fixos na tela dos times
+  const goleirosPresentes = getPorStatus(rodada.id, 'presente').filter(j=>j.posicao_padrao==='goleiro').map(j=>j.id);
+  const sorteioConfig = {modo: cfg.sorteio_modo||'manual', agendadoEm: cfg.sorteio_agendado||null};
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, vinho, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos:votosOut, goleirosPresentes, mostrarVotos, sorteioConfig};
 }
 
+function viewerIdDe(req){ const s = getSessao(extrairToken(req)); return (s && s.jogador_id) || null; }
 app.get('/api/rodadas', (req,res)=>{
   res.json({rodadas: getRodadas().map(r=>({id:r.id, data:r.data, status:r.status}))});
 });
 app.get('/api/rodadas/atual', (req,res)=>{
   const rodada = getRodadaAtual();
   if(!rodada) return res.json({rodada:null});
-  res.json({rodada: serializarRodada(rodada)});
+  res.json({rodada: serializarRodada(rodada, viewerIdDe(req))});
 });
 app.get('/api/rodadas/:id', (req,res)=>{
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
-  res.json({rodada: serializarRodada(rodada)});
+  res.json({rodada: serializarRodada(rodada, viewerIdDe(req))});
 });
 
 app.post('/api/admin/rodadas', requireSuper, (req,res)=>{
@@ -1002,7 +1032,10 @@ function participouDaRodada(rodadaId, jogadorId){
   const emTime = db.prepare('SELECT 1 FROM times_sorteados WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
   if(emTime) return true;
   const emReserva = db.prepare('SELECT 1 FROM reservas WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
-  return !!emReserva;
+  if(emReserva) return true;
+  // goleiros presentes não entram no sorteio, mas participam da rodada (votam e são votados)
+  const gol = db.prepare("SELECT 1 FROM confirmacoes c JOIN jogadores j ON j.id=c.jogador_id WHERE c.rodada_id=? AND c.jogador_id=? AND c.status='presente' AND j.posicao_padrao='goleiro'").get(rodadaId, jogadorId);
+  return !!gol;
 }
 
 app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
@@ -1032,8 +1065,27 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   res.json({ok:true, edicoesRestantes:1});
 });
 
+// Ausências acumuladas por jogador: em cada rodada já sorteada (após a 1ª presença do
+// jogador) em que ele NÃO esteve presente, conta 1 ausência. No Ranking Geral cada
+// ausência tira 10% dos pontos acumulados, em cascata (média × 0,9^ausências).
+function calcularAusencias(){
+  const rodadas = db.prepare("SELECT id FROM rodadas WHERE status='sorteado' ORDER BY data ASC").all();
+  const jogadores = db.prepare('SELECT id FROM jogadores WHERE ativo=1 AND corneta=0').all();
+  const presentes = db.prepare("SELECT rodada_id, jogador_id FROM confirmacoes WHERE status='presente'").all();
+  const setPres = new Set(presentes.map(p=>p.rodada_id+'|'+p.jogador_id));
+  const out = {};
+  jogadores.forEach(jg=>{
+    let jaJogou = false, k = 0;
+    rodadas.forEach(r=>{
+      if(setPres.has(r.id+'|'+jg.id)) jaJogou = true;
+      else if(jaJogou) k++;
+    });
+    if(k>0) out[jg.id] = k;
+  });
+  return out;
+}
 app.get('/api/ranking', (req,res)=>{
-  res.json({ranking: calcularRanking()});
+  res.json({ranking: calcularRanking(), ausencias: calcularAusencias()});
 });
 app.get('/api/ranking-bola', (req,res)=>{
   res.json(calcularRankingBola());
@@ -1162,19 +1214,30 @@ app.get('*', (req,res)=>{
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-/* ---- sorteio automático (todo domingo às 8h05) ---- */
+/* ---- sorteio automático (opcional: o ADMIN agenda data e hora no painel) ---- */
+// Modo padrão = manual (botão "Realizar sorteio"). No modo automático o sorteio roda
+// UMA vez, quando o relógio de São Paulo alcança config.sorteio_agendado; depois o
+// sistema volta sozinho para o modo manual.
 function checarSorteioAutomatico(){
   try{
-    const pendentes = db.prepare("SELECT * FROM rodadas WHERE status='aguardando_confirmacao'").all();
-    pendentes.forEach(r=>{
-      const gatilho = r.data+'T08:05:00';
-      if(nowSP() < gatilho) return;
-      const atualizada = atualizarStatusSeNecessario(r);
+    const cfg = getConfig();
+    if(!cfg || cfg.sorteio_modo!=='automatico' || !cfg.sorteio_agendado) return;
+    if(nowSP() < cfg.sorteio_agendado+':00') return;
+    const rodada = getRodadaAtual();
+    let msg;
+    if(!rodada){
+      msg = 'nenhuma rodada encontrada.';
+    }else{
+      const atualizada = atualizarStatusSeNecessario(rodada);
       if(atualizada.status==='aguardando_confirmacao'){
         const resultado = realizarSorteio(atualizada.id);
-        if(resultado.ok) logEvento('Sorteio automático disparado às 8h05 para a rodada de '+atualizada.data+'.');
+        msg = resultado.ok ? 'sorteio realizado para a rodada de '+atualizada.data+'.' : 'não foi possível sortear ('+resultado.erro+')';
+      }else{
+        msg = 'a rodada de '+atualizada.data+' não está aguardando sorteio (status: '+atualizada.status+').';
       }
-    });
+    }
+    db.prepare("UPDATE config SET sorteio_modo='manual', sorteio_agendado=NULL WHERE id=1").run();
+    logEvento('Sorteio automático agendado para '+cfg.sorteio_agendado.replace('T',' às ')+': '+msg+' Modo voltou para manual.');
   }catch(e){ console.error('Erro no sorteio automático:', e); }
 }
 setInterval(checarSorteioAutomatico, 60*1000);

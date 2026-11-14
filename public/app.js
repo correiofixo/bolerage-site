@@ -145,6 +145,7 @@ const state = {
   ranking: {},
   rankingBola: {cheia:{}, murcha:{}},
   rankingAba: 'geral',
+  resenhaAba: 'resenha',
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
   eventoAbertoExp: 0,    // timestamp (Date.now()) até quando ele deve continuar aberto
@@ -152,6 +153,26 @@ const state = {
 };
 
 function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
+// "2026-11-15T08:05" -> "15/11/2026 às 08:05"
+function formatAgendamento(str){
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(str||'');
+  return m ? (m[3]+'/'+m[2]+'/'+m[1]+' às '+m[4]+':'+m[5]) : '';
+}
+// texto sobre QUANDO o sorteio acontece (manual pelo admin ou automático agendado)
+function textoQuandoSorteio(rod){
+  const cfg = rod && rod.sorteioConfig;
+  if(cfg && cfg.modo==='automatico' && cfg.agendadoEm){
+    return 'O sorteio dos times será realizado automaticamente em '+formatAgendamento(cfg.agendadoEm)+'.';
+  }
+  return 'O sorteio dos times é realizado pelo administrador, após o encerramento da confirmação de presença.';
+}
+// bloco fixo de informações da tela Votação
+function infoVotacaoHtml(){
+  return '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">📅 Quando posso votar ?</p>'+
+    '<p>A votação estará liberada a partir das 10hrs e será encerrada automaticamente às 13hrs do domingo da rodada.</p>'+
+    '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Qual critério para o Ranking ?</p>'+
+    '<p style="margin-bottom:0;">O ranking considera a votação acumulada e recorrente dos jogadores a cada rodada. Os jogadores AUSENTES perdem automaticamente 10% de seus pontos acumulados no RANKING GERAL.</p>';
+}
 function nomeParaExibicao(id){
   if(id && id.startsWith('conv:')){
     return 'Convidado de '+jogadorNome(id.slice(5));
@@ -188,12 +209,12 @@ async function refreshMe(){
     localStorage.setItem('bolerage_player', JSON.stringify(state.currentPlayer));
   }catch(e){}
 }
-async function refreshRanking(){ try{ const data = await api('/api/ranking'); state.ranking = data.ranking; }catch(e){} }
+async function refreshRanking(){ try{ const data = await api('/api/ranking'); state.ranking = data.ranking; state.ausencias = data.ausencias || {}; }catch(e){} }
 async function refreshRankingBola(){ try{ state.rankingBola = await api('/api/ranking-bola'); }catch(e){} }
 async function refreshHomeExtras(){ try{ state.homeExtras = await api('/api/home-extras'); }catch(e){} }
 async function refreshRodadaAtual(){
   try{
-    const data = await api('/api/rodadas/atual');
+    const data = await api('/api/rodadas/atual', {auth:true});
     state.rodadaAtual = data.rodada;
     if(!state.rodadaVisualizadaId && state.rodadaAtual){
       state.rodadaVisualizadaId = state.rodadaAtual.id;
@@ -209,7 +230,7 @@ async function refreshRodadasLista(){
 }
 async function carregarRodadaVisualizada(id){
   try{
-    const data = await api('/api/rodadas/'+id);
+    const data = await api('/api/rodadas/'+id, {auth:true});
     state.rodadaVisualizadaId = id;
     state.rodadaVisualizada = data.rodada;
   }catch(e){}
@@ -507,7 +528,7 @@ function renderInicio(){
   }
   if(fase.chave==='aguardando_sorteio'){
     html += renderMedidorConfirmacao(linhaN, golN);
-    html += '<p class="muted small">Aguardando o administrador realizar o sorteio (automático às 8h05, ou manual pelo admin).</p>';
+    html += '<p class="muted small">Aguardando o sorteio dos times. '+textoQuandoSorteio(rodada)+'</p>';
   }
   if(fase.chave==='nao_viabilizado'){
     html += '<p class="small">Apenas '+linhaN+' jogador(es) de linha (incluindo convidados) e '+golN+' goleiro(s) confirmaram presença. Mínimo necessário: 10 de linha + 2 goleiros, ou 12 de linha no total.</p>';
@@ -532,20 +553,23 @@ function renderInicio(){
   if(rodada.status==='sorteado'){
     const meuTime = rodada.times.times.find(t=>t.jogadores.some(j=>j.jogadorId===state.currentPlayer.id));
     const souReserva = rodada.times.reservas.includes(state.currentPlayer.id);
-    const souAlternante = meuTime && meuTime.nome==='Alternantes';
+    const souAlternante = meuTime && meuTime.nome==='Alternantes'; // rodadas antigas
+    const souGoleiroPresente = (rodada.goleirosPresentes||[]).includes(state.currentPlayer.id);
     html += souAlternante
       ? '<p class="small">Você ficou como <strong>Alternar Jogador</strong> nesta rodada — reveza com os times completos. Veja na aba Sorteio.</p>'
       : meuTime
       ? '<p class="small">Você está no time <strong>'+meuTime.nome+'</strong>. Veja a formação completa na aba Sorteio.</p>'
+      : souGoleiroPresente
+        ? '<p class="small">Você está como <strong>goleiro presente</strong> nesta rodada (fixo, fora do sorteio). Pode votar e receber votos normalmente.</p>'
       : souReserva
         ? '<p class="small">Você ficou como <strong>reserva</strong> nesta rodada, mas pode votar e receber votos normalmente.</p>'
         : '<p class="small muted">Você não participou desta rodada.</p>';
-    if(fase.chave==='votacao_aberta' && (meuTime || souReserva)){
+    if(fase.chave==='votacao_aberta' && (meuTime || souReserva || souGoleiroPresente)){
       const jaVotouEm = new Set(rodada.votos.filter(v=>v.avaliadorId===state.currentPlayer.id).map(v=>v.avaliadoId));
-      const alvos = [...rodada.times.times.flatMap(t=>t.jogadores.map(j=>j.jogadorId)), ...rodada.times.reservas]
+      const alvos = [...new Set([...rodada.times.times.flatMap(t=>t.jogadores.map(j=>j.jogadorId)), ...rodada.times.reservas, ...(rodada.goleirosPresentes||[])])]
         .filter(id=>id!==state.currentPlayer.id && !id.startsWith('conv:'));
       const faltam = alvos.filter(a=>!jaVotouEm.has(a)).length;
-      html += '<p class="small">Votação aberta até as 18h. Faltam avaliar '+faltam+' colega(s). <a href="#" data-action="tab" data-tab="votacao">Ir para votação →</a></p>';
+      html += '<p class="small">Votação aberta até as 13h. Faltam avaliar '+faltam+' colega(s). <a href="#" data-action="tab" data-tab="votacao">Ir para votação →</a></p>';
     }
     if(fase.chave==='encerrada'){
       html += '<p class="small muted">A rodada encerrou. Veja o ranking atualizado na aba Ranking.</p>';
@@ -634,7 +658,49 @@ function renderResenha(){
   const euNaResenha = idsResenhaAtual.includes(meuId);
   const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
-  let html = '<div class="card">'+
+  // abas da Resenha: "Votos dos Jogadores" só aparece se o ADMIN habilitou no painel
+  const mostrarAbaVotos = !!rodAtual.mostrarVotos;
+  const abaResenha = mostrarAbaVotos ? (state.resenhaAba||'resenha') : 'resenha';
+  const abasHtml = mostrarAbaVotos
+    ? '<div class="tabtoggle">'+
+        '<button data-action="resenha-aba" data-aba="resenha" class="'+(abaResenha==='resenha'?'active':'')+'">Resenha</button>'+
+        '<button data-action="resenha-aba" data-aba="votos" class="'+(abaResenha==='votos'?'active':'')+'">Votos dos Jogadores</button>'+
+      '</div>'
+    : '';
+  const seletorRodadaHtml = (rotulo)=>{
+    const ops = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
+      .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
+    return '<div class="field"><label>'+rotulo+'</label><select data-action="mudar-rodada-visualizada">'+ops+'</select></div>';
+  };
+
+  if(abaResenha==='votos'){
+    const rodV = state.rodadaVisualizada || rodAtual;
+    let h = abasHtml + seletorRodadaHtml('Rodada dos votos');
+    const porAvaliador = {};
+    (rodV.votos||[]).forEach(v=>{
+      if(!v.avaliadorId || !v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
+      (porAvaliador[v.avaliadorId] = porAvaliador[v.avaliadorId] || []).push(v);
+    });
+    const nomeJ = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
+    const ids = Object.keys(porAvaliador).sort((a,b)=>nomeJ(a).localeCompare(nomeJ(b),'pt-BR'));
+    h += '<div class="card"><h3 class="titulo-centralizado">Votos dos Jogadores</h3><p class="rodada-sub">Rodada '+formatDataBR(rodV.data)+'</p>'+
+      '<p class="small muted" style="text-align:center;">O voto que cada jogador atribuiu aos colegas nesta rodada.</p></div>';
+    if(!ids.length){
+      h += '<div class="empty">Ainda sem votos nesta rodada.</div>';
+    }else{
+      ids.forEach(idAv=>{
+        const lista = porAvaliador[idAv].slice().sort((a,b)=> (b.nota-a.nota) || nomeJ(a.avaliadoId).localeCompare(nomeJ(b.avaliadoId),'pt-BR'));
+        h += '<div class="card"><h3>'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+' <span class="small muted">votou em '+lista.length+'</span></h3>';
+        lista.forEach(v=>{
+          h += '<div class="list-row"><span>'+escapeHtml(nomeJ(v.avaliadoId))+timeCoracaoSuffixDoId(v.avaliadoId)+'</span><span class="row-right">'+starsHtml(v.nota)+'</span></div>';
+        });
+        h += '</div>';
+      });
+    }
+    setContent(h, 'resenha-votos'); return;
+  }
+
+  let html = abasHtml + '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rodAtual.data)+'</p>'+
     '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
@@ -662,9 +728,7 @@ function renderResenha(){
   }
 
   // Histórico: mesmo seletor de rodada da aba Sorteio, pra rever a resenha de outros domingos.
-  const opcoes = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
-    .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
-  html += '<div class="field"><label>Histórico da resenha — escolha a rodada</label><select data-action="mudar-rodada-visualizada">'+opcoes+'</select></div>';
+  html += seletorRodadaHtml('Histórico da resenha — escolha a rodada');
 
   const rod = state.rodadaVisualizada || rodAtual;
   const idsResenha = rod.resenha || [];
@@ -736,13 +800,18 @@ function renderSorteio(){
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
       '<p>Os times serão exibidos aqui assim que o sorteio for realizado.</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">📅 Quando acontece o sorteio ?</p>'+
-      '<p>O sorteio ocorre aos domingos, às 08:05hrs.</p>'+
+      '<p>'+textoQuandoSorteio(rod)+'</p>'+
       '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Qual o critério do sorteio ?</p>'+
-      '<p style="margin-bottom:0;">Após (4) quatro rodadas, o app irá considerar a média do ranking a fim de sortear times equilibrados. A previsão é que esse critério passe a valer em Outubro de 2026.</p>'+
+      '<p style="margin-bottom:0;">O app considera a média do ranking a fim de sortear times equilibrados.</p>'+
     '</div>';
     setContent(html, 'sorteio'); return;
   }
   html += '<p class="muted small">Sorteio '+(rod.times.modo==='fase2'?'equilibrado pelas notas do ranking':'aleatório (ainda sem dados suficientes para equilíbrio por nota)')+'.</p>';
+
+  const golsPres = (rod.goleirosPresentes||[]);
+  html += '<div class="gk-banner"><span class="gk-banner-label">🧤 Goleiros Presentes:</span> <strong class="gk-banner-nomes">'+
+    (golsPres.length ? golsPres.map(id=>escapeHtml(nomeParaExibicao(id))+timeCoracaoSuffixDoId(id)).join(', ') : '<span class="muted">nenhum goleiro confirmado</span>')+
+  '</strong></div>';
 
   const pitchChip = j => {
     const isConv = String(j.jogadorId).indexOf('conv:')===0;
@@ -848,27 +917,25 @@ function renderVotacao(){
     c.innerHTML = '<div class="empty">'+
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
       '<p>Os nomes dos craques serão exibidos aqui quando os times da semana forem sorteados.</p>'+
-      '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">📅 Quando posso votar ?</p>'+
-      '<p>A votação estará liberada a partir das 10hrs e será encerrada automaticamente às 18hrs do domingo da rodada.</p>'+
-      '<p style="color:var(--text);font-weight:700;margin-top:16px;margin-bottom:4px;">🤔 Posso alterar meu voto ?</p>'+
-      '<p style="margin-bottom:0;">Sim. Após votar, você poderá alterar seu voto apenas uma vez.</p>'+
+      '<div style="margin-top:16px;">'+infoVotacaoHtml()+'</div>'+
     '</div>'; return;
   }
   const fase = rod.fase;
   if(fase.chave!=='votacao_aberta'){
     const msg = fase.chave==='sorteado_aguardando_votacao'
-      ? 'A votação abre hoje às 10h e fecha às 18h.'
-      : 'A janela de votação (domingo, 10h às 18h) está fechada.';
-    c.innerHTML = '<div class="empty">'+msg+'</div>'; return;
+      ? 'A votação abre hoje às 10h e fecha às 13h.'
+      : 'A janela de votação (domingo, 10h às 13h) está fechada.';
+    c.innerHTML = '<div class="empty"><p style="color:var(--text);font-weight:700;margin-bottom:12px;">'+msg+'</p>'+infoVotacaoHtml()+'</div>'; return;
   }
   const meuId = state.currentPlayer.id;
-  const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId);
+  const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId) || (rod.goleirosPresentes||[]).includes(meuId);
   if(!participei){
     c.innerHTML = '<div class="empty">Você não participou desta rodada (nem escalado, nem reserva) e por isso não pode votar.</div>'; return;
   }
   const alvosTimes = rod.times.times.flatMap(t=>t.jogadores.map(j2=>({jogadorId:j2.jogadorId, time:t.nome})));
   const alvosReservas = rod.times.reservas.map(id=>({jogadorId:id, time:'Reserva'}));
-  const alvos = [...alvosTimes, ...alvosReservas].filter(a=>a.jogadorId!==meuId && !a.jogadorId.startsWith('conv:'));
+  const alvosGoleiros = (rod.goleirosPresentes||[]).filter(id=>!alvosTimes.some(a=>a.jogadorId===id)).map(id=>({jogadorId:id, time:'Goleiro'}));
+  const alvos = [...alvosTimes, ...alvosGoleiros, ...alvosReservas].filter(a=>a.jogadorId!==meuId && !a.jogadorId.startsWith('conv:'));
   const meusVotos = {};
   rod.votos.filter(v=>v.avaliadorId===meuId).forEach(v=>meusVotos[v.avaliadoId]={nota:v.nota, edicoes:v.edicoes||0});
 
@@ -915,6 +982,15 @@ async function renderRanking(){
     const somaPontos = (r.linha.media!=null ? r.linha.media*r.linha.total : 0) + (r.goleiro.media!=null ? r.goleiro.media*r.goleiro.total : 0);
     return somaPontos/total;
   };
+  // AUSENTES perdem 10% dos pontos por rodada ausente, em cascata (média × 0,9^ausências).
+  const ausenciasDe = id => (state.ausencias||{})[id] || 0;
+  const fatorAusencia = id => Math.pow(0.9, ausenciasDe(id));
+  const mediaRanking = id => { const m = mediaGeral(id); return m==null ? null : m*fatorAusencia(id); };
+  const textoAusencias = id => {
+    const k = ausenciasDe(id);
+    if(!k) return '';
+    return ' &bull; <span class="rank-ausencia">'+k+' ausência'+(k>1?'s':'')+' (−'+Math.round((1-fatorAusencia(id))*100)+'%)</span>';
+  };
   const totalVotosDe = id => { const r = ranking[id]; return r ? (r.linha.total+r.goleiro.total) : 0; };
   const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
 
@@ -926,15 +1002,16 @@ async function renderRanking(){
   '</div>';
 
   if(aba==='geral'){
-    const linhas = state.elenco.filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, media:mediaGeral(j.id), total:totalVotosDe(j.id)}));
+    const linhas = state.elenco.filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, media:mediaRanking(j.id), total:totalVotosDe(j.id)}));
     const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
     const semNota = linhas.filter(l=>l.media==null);
     html += '<div class="card">';
     comNota.forEach((l,i)=>{
       html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
-        '<div class="rank-count">'+l.total+' avaliação(ões)</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
+        '<div class="rank-count">'+l.total+' avaliação(ões)'+textoAusencias(l.id)+'</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
     });
     if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes.</p>';
+    html += '<p class="small muted" style="margin-top:10px;">Jogadores AUSENTES perdem 10% dos pontos acumulados a cada rodada em que não estiverem presentes.</p>';
     html += '</div>';
     if(semNota.length){
       html += '<div class="card"><h3>Ainda sem avaliações</h3>';
@@ -947,7 +1024,7 @@ async function renderRanking(){
     // Resenha), com a média geral do jogador em estrelas ao lado.
     const isMurcha = aba==='murcha';
     const obj = isMurcha ? (state.rankingBola.murcha||{}) : (state.rankingBola.cheia||{});
-    const lista = Object.keys(obj).map(id=>({id, nome:nomeDe(id), n:obj[id], media:mediaGeral(id)})).sort((a,b)=>b.n-a.n);
+    const lista = Object.keys(obj).map(id=>({id, nome:nomeDe(id), n:obj[id], media:mediaRanking(id)})).sort((a,b)=>b.n-a.n);
     const rotulo = isMurcha ? 'Bola Murcha' : 'Bola Cheia';
     html += '<div class="card">';
     if(lista.length){
@@ -1070,6 +1147,21 @@ async function renderAdmin(){
   html += '<div class="divider"></div>';
   html += '<div class="field"><label>Nova rodada (domingo)</label><input type="date" id="nova-rodada-data"></div>';
   html += '<button class="btn secondary" data-action="criar-rodada">Criar rodada</button></div>';
+
+  const cfgA = elencoAdmin.config;
+  html += '<div class="card"><h3>Sorteio dos times</h3>'+
+    '<div class="field"><label>Como o sorteio será realizado</label><select id="sorteio-modo">'+
+      '<option value="manual" '+(cfgA.sorteioModo!=='automatico'?'selected':'')+'>Manual — o admin clica em "Realizar sorteio"</option>'+
+      '<option value="automatico" '+(cfgA.sorteioModo==='automatico'?'selected':'')+'>Automático — numa data e hora agendadas</option>'+
+    '</select></div>'+
+    '<div class="field"><label>Data e horário do sorteio automático (só vale no modo automático)</label><input type="datetime-local" id="sorteio-agendado" value="'+(cfgA.sorteioAgendado||'')+'"></div>'+
+    '<p class="small muted">O botão "Realizar sorteio" continua ativo nos dois modos. O sorteio automático acontece uma única vez; depois o modo volta para manual.</p>'+
+    (cfgA.sorteioModo==='automatico' && cfgA.sorteioAgendado ? '<p class="small" style="color:var(--gold);">Agendado: '+formatAgendamento(cfgA.sorteioAgendado)+'</p>' : '<p class="small muted">Modo atual: manual.</p>')+
+    '<button class="btn secondary" data-action="salvar-sorteio-agenda">Salvar sorteio</button></div>';
+
+  html += '<div class="card"><h3>Resenha — Votos dos Jogadores</h3>'+
+    '<label class="small"><input type="checkbox" id="cfg-mostrar-votos" '+(cfgA.mostrarVotos?'checked':'')+'> Exibir a aba "Votos dos Jogadores" na tela Resenha (mostra o voto que cada jogador deu aos outros)</label>'+
+    '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-mostrar-votos">Salvar</button></div>';
 
   html += '<div class="card"><h3>Critério para ativar a fase 2 (sorteio por nota)</h3>'+
     '<div class="field"><label>Mínimo de rodadas encerradas</label><input type="number" min="1" id="cfg-min-rodadas" value="'+elencoAdmin.config.minRodadas+'"></div>'+
@@ -1236,6 +1328,18 @@ async function handleRemoverRodada(id, dataStr, faseLabel, ehHistorico){
     await refreshRodadasLista();
     await render();
   }catch(e){ alert(e.message); }
+}
+async function handleSalvarSorteioAgenda(){
+  const modo = document.getElementById('sorteio-modo').value;
+  const agendadoEm = document.getElementById('sorteio-agendado').value;
+  if(modo==='automatico' && !agendadoEm){ alert('Informe a data e o horário do sorteio automático.'); return; }
+  try{ await api('/api/admin/sorteio-agenda', {method:'PUT', adminAuth:true, body:{modo, agendadoEm}}); await refreshRodadaAtual(); await render(); }
+  catch(e){ alert(e.message); }
+}
+async function handleSalvarMostrarVotos(){
+  const mostrar = document.getElementById('cfg-mostrar-votos').checked;
+  try{ await api('/api/admin/mostrar-votos', {method:'PUT', adminAuth:true, body:{mostrar}}); await refreshRodadaAtual(); await render(); }
+  catch(e){ alert(e.message); }
 }
 async function handleSalvarConfig(){
   const minRodadas = parseInt(document.getElementById('cfg-min-rodadas').value,10) || 1;
@@ -1446,6 +1550,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
+  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; return render(); }
   if(action==='ranking-aba'){ state.rankingAba = el.dataset.aba; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='disparar-sorteio') return handleDispararSorteio();
@@ -1453,6 +1558,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='criar-rodada') return handleCriarRodada();
   if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();
+  if(action==='salvar-sorteio-agenda') return handleSalvarSorteioAgenda();
+  if(action==='salvar-mostrar-votos') return handleSalvarMostrarVotos();
   if(action==='adicionar-jogador') return handleAdicionarJogador();
   if(action==='editar-jogador'){ state.editingJogadorId = el.dataset.id; return render(); }
   if(action==='cancelar-edicao'){ state.editingJogadorId = null; return render(); }
