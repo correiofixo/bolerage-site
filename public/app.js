@@ -181,7 +181,9 @@ function nomeParaExibicao(id){
 }
 function mediaDoJogador(jogadorId, papel){
   const r = state.ranking && state.ranking[jogadorId];
-  return (r && r[papel]) ? r[papel].media : null;
+  if(!r || !r[papel] || r[papel].media==null) return null;
+  // desconto de 10% por rodada ausente (em cascata), igual ao Ranking Geral
+  return r[papel].media * Math.pow(0.9, (state.ausencias||{})[jogadorId] || 0);
 }
 function starsHtml(media, grande, extraClass){
   if(media==null) return '<span class="stars-empty small muted">sem avaliações</span>';

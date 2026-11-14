@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 11;
+const APP_BUILD = 12;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -398,9 +398,10 @@ function mediaGlobalDoPapel(ranking, papel){
   if(!vals.length) return 2.5;
   return vals.reduce((a,b)=>a+b,0)/vals.length;
 }
-function mediaOuFallback(ranking, jogadorId, papel, mediaGlobal){
+// média do jogador já com o desconto de 10% por rodada ausente (média × 0,9^ausências)
+function mediaOuFallback(ranking, jogadorId, papel, mediaGlobal, ausencias){
   const r = ranking[jogadorId];
-  if(r && r[papel] && r[papel].media!=null) return r[papel].media;
+  if(r && r[papel] && r[papel].media!=null) return r[papel].media * Math.pow(0.9, (ausencias && ausencias[jogadorId]) || 0);
   return mediaGlobal;
 }
 
@@ -531,11 +532,12 @@ function realizarSorteio(rodadaId){
 
   const ranking = calcularRanking();
   const usarFase2 = fase2Atingida(ranking);
+  const ausencias = calcularAusencias();
 
   let linhaOrdenada;
   if(usarFase2){
     const mgLinha = mediaGlobalDoPapel(ranking,'linha');
-    linhaOrdenada = [...linhaPool].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha) - mediaOuFallback(ranking,a.id,'linha',mgLinha));
+    linhaOrdenada = [...linhaPool].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha,ausencias) - mediaOuFallback(ranking,a.id,'linha',mgLinha,ausencias));
   }else{
     linhaOrdenada = shuffle(linhaPool);
   }
@@ -1065,12 +1067,12 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   res.json({ok:true, edicoesRestantes:1});
 });
 
-// Ausências acumuladas por jogador: em cada rodada já sorteada (após a 1ª presença do
+// Ausências acumuladas por jogador (cornetas incluídos): em cada rodada já sorteada (após a 1ª presença do
 // jogador) em que ele NÃO esteve presente, conta 1 ausência. No Ranking Geral cada
 // ausência tira 10% dos pontos acumulados, em cascata (média × 0,9^ausências).
 function calcularAusencias(){
   const rodadas = db.prepare("SELECT id FROM rodadas WHERE status='sorteado' ORDER BY data ASC").all();
-  const jogadores = db.prepare('SELECT id FROM jogadores WHERE ativo=1 AND corneta=0').all();
+  const jogadores = db.prepare('SELECT id FROM jogadores WHERE ativo=1').all(); // inclui cornetas
   const presentes = db.prepare("SELECT rodada_id, jogador_id FROM confirmacoes WHERE status='presente'").all();
   const setPres = new Set(presentes.map(p=>p.rodada_id+'|'+p.jogador_id));
   const out = {};
