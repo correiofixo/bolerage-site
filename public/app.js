@@ -1629,8 +1629,8 @@ async function renderAdmin(){
   const cfgA = elencoAdmin.config;
   html += '<div class="card"><h3>Sorteio dos times</h3>'+
     '<div class="field"><label>Como o sorteio será realizado</label><select id="sorteio-modo">'+
-      '<option value="manual" '+(cfgA.sorteioModo!=='automatico'?'selected':'')+'>Manual — o admin clica em "Realizar sorteio"</option>'+
-      '<option value="automatico" '+(cfgA.sorteioModo==='automatico'?'selected':'')+'>Automático — numa data e hora agendadas</option>'+
+      '<option value="manual" '+(cfgA.sorteioModo!=='automatico'?'selected':'')+'>Manual (admin realiza)</option>'+
+      '<option value="automatico" '+(cfgA.sorteioModo==='automatico'?'selected':'')+'>Automático (data e hora)</option>'+
     '</select></div>'+
     '<div class="field"><label>Data e horário do sorteio automático (só vale no modo automático)</label><input type="datetime-local" id="sorteio-agendado" value="'+(cfgA.sorteioAgendado||'')+'"></div>'+
     '<p class="small muted">O botão "Realizar sorteio" continua ativo nos dois modos. O sorteio automático acontece uma única vez; depois o modo volta para manual.</p>'+
@@ -1923,9 +1923,12 @@ function pizzaHtml(titulo, segs){
       const [x0,y0] = pt(ang), [x1,y1] = pt(a2);
       fatias += '<path d="M'+CX+' '+CY+' L'+x0.toFixed(2)+' '+y0.toFixed(2)+' A'+R+' '+R+' 0 '+(frac>0.5?1:0)+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+x.cor+'" stroke="rgba(10,22,38,.9)" stroke-width="1"><title>'+escapeHtml(x.label)+': '+fmtPctFront(x.valor,total)+'</title></path>';
     }
-    if(frac>=0.07){
-      const m = ang + frac*Math.PI;
-      rotulos += '<text x="'+(CX+R*0.62*Math.cos(m)).toFixed(2)+'" y="'+(CY+R*0.62*Math.sin(m)+2.4).toFixed(2)+'" text-anchor="middle" class="pizza-pct">'+fmtPctFront(x.valor,total)+'</text>';
+    if(frac>=0.08){
+      // percentual dentro da fatia, num selo escuro com texto branco e grande (alto contraste)
+      const m = ang + frac*Math.PI, t = fmtPctFront(x.valor,total);
+      const px = CX+R*0.64*Math.cos(m), py = CY+R*0.64*Math.sin(m), w = t.length*4.9+5;
+      rotulos += '<g class="pizza-selo"><rect x="'+(px-w/2).toFixed(2)+'" y="'+(py-5.4).toFixed(2)+'" width="'+w.toFixed(2)+'" height="10.8" rx="5.4"/>'+
+        '<text x="'+px.toFixed(2)+'" y="'+(py+3.2).toFixed(2)+'" text-anchor="middle" class="pizza-pct">'+t+'</text></g>';
     }
     ang = a2;
   });

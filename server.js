@@ -1082,7 +1082,7 @@ const COR_PDF = {em_dia:[0.25,0.68,0.35], em_atraso:[0.89,0.34,0.30], isenta:[0.
 function fmtPct(v, total){ return (total>0 ? v/total*100 : 0).toFixed(1).replace('.',',')+'%'; }
 // gráfico de PIZZA com percentuais nas fatias e legenda ao lado
 function pizzaPdf(d, titulo, segs){
-  const r = 40;
+  const r = 46;
   d.garantir(2*r + 36, null);
   d.texto(d.M, d.y, titulo, 10, true); d.y -= 8;
   const total = segs.reduce((t,x)=>t+x.valor,0);
@@ -1093,8 +1093,11 @@ function pizzaPdf(d, titulo, segs){
     const a = sg.valor/total*2*Math.PI;
     d.fatia(cx, cy, r, ang, ang-a, sg.cor);
     if(sg.valor/total >= 0.08){
+      // percentual num selo escuro, texto branco maior (mais destaque)
       const mid = ang - a/2, t = fmtPct(sg.valor,total);
-      d.texto(cx + 0.62*r*Math.cos(mid) - d.largura(t,8)/2, cy + 0.62*r*Math.sin(mid) - 3, t, 8, true, 'left', [1,1,1]);
+      const px = cx + 0.66*r*Math.cos(mid), py = cy + 0.66*r*Math.sin(mid), tw = d.largura(t,10.5);
+      d.cor(px - tw/2 - 3, py - 6.5, tw + 6, 13, [0.04,0.09,0.15]);
+      d.texto(px - tw/2, py - 3.4, t, 10.5, true, 'left', [1,1,1]);
     }
     ang -= a;
   });

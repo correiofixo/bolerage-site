@@ -884,3 +884,32 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 /* login: respiro entre o logo e "Digite seu PIN" */
 .login-halo{margin-bottom:clamp(16px,3.4dvh,32px);}
 .login-logo{width:clamp(76px,16dvh,180px);height:clamp(76px,16dvh,180px);}
+
+/* ---- pizza: percentuais em destaque ---- */
+.pizza-svg{width:clamp(150px,52vw,190px);height:clamp(150px,52vw,190px);}
+.pizza-selo rect{fill:rgba(6,14,26,.86);stroke:rgba(255,255,255,.85);stroke-width:.55;}
+.pizza-pct{font-size:8.2px;font-weight:800;fill:#fff;font-family:var(--font-display);letter-spacing:.2px;paint-order:normal;stroke:none;}
+
+/* ---- painel admin: conteúdo dos cards responsivo (sem estourar, sem cortar) ---- */
+#content .card,#content .fin-zona{min-width:0;}
+.card textarea,.card input,.card select{max-width:100%;box-sizing:border-box;}
+.field input,.field select,.field textarea{width:100%;}
+select{background:var(--bg-elevated-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:14px;max-width:100%;min-width:0;text-overflow:ellipsis;}
+.btn-row{flex-wrap:wrap;}
+.btn-row .btn{flex:1 1 130px;}
+.list-row{flex-wrap:wrap;row-gap:6px;}
+.list-row > span:first-child{min-width:0;flex:1 1 150px;overflow-wrap:anywhere;}
+.list-row > .row-right{flex:0 1 auto;max-width:100%;}
+.card img,.card svg,.fin-zona svg{max-width:100%;}
+.mens-extra{row-gap:8px;}
+.mens-extra label{min-width:0;}
+.mens-extra input{max-width:100%;}
+.rifa-adm-item,.ordem-item{flex-wrap:wrap;}
+.rifa-adm-info{flex:1 1 160px;}
+.ordem-nome{flex:1 1 120px;}
+.voter-topo{row-gap:6px;}
+/* totais: rótulo e valor encolhem juntos para nunca cortar nem quebrar a linha */
+.rel-linha .rel-rot{font-size:clamp(11px,3.55vw,15px);letter-spacing:0;}
+.rel-linha.rel-total .rel-rot{font-size:clamp(11px,3.4vw,15px);}
+.rel-linha.rel-total .rel-val{font-size:clamp(14px,4.3vw,20px);}
+.rel-linha.rel-sub .rel-rot{font-size:clamp(11px,3.5vw,14.5px);}
