@@ -341,7 +341,7 @@ function renderTopbar(){
     '<button data-action="logout">Sair</button>';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
-    ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span>'+
+    ? '<div class="who-mens-line ml-'+m.cls+'">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span>'+
         ((state.currentPlayer.mensalidade==='em_atraso' && state.currentPlayer.diasAtraso!=null) ? '<span class="who-atraso">&nbsp;('+state.currentPlayer.diasAtraso+' dia'+(state.currentPlayer.diasAtraso===1?'':'s')+')</span>' : '')+'</div>'
     : '';
   const whoHtml = '<div class="who-row1">'+

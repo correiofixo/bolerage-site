@@ -829,3 +829,40 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .keypad{grid-template-columns:repeat(3,clamp(46px,10dvh,70px));}
 .keypad button{width:clamp(46px,10dvh,70px);height:clamp(46px,10dvh,70px);}
 #login-screen{padding-top:calc(clamp(8px,1.6dvh,16px) + env(safe-area-inset-top));padding-bottom:calc(clamp(8px,1.6dvh,16px) + env(safe-area-inset-bottom));}
+
+/* ---- login: selo de versão um pouco menos em destaque ---- */
+.login-versao{padding:clamp(3px,.6dvh,5px) 15px;gap:8px;animation-duration:5s;
+  box-shadow:0 0 0 1px rgba(255,241,194,.28),0 3px 12px rgba(228,193,88,.28);}
+.login-versao-rot{font-size:clamp(10px,1.5dvh,12px);letter-spacing:1.6px;}
+.login-versao-num{font-size:clamp(16px,2.7dvh,21px);}
+
+/* ---- topo da tela (topbar) com os mesmos efeitos visuais dos cards ---- */
+#topbar{
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(201,162,39,.20), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(78,161,255,.16), transparent 55%),
+    linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg) 100%);
+  border-bottom:1px solid rgba(201,162,39,.55);
+  box-shadow:0 2px 16px rgba(0,0,0,.35), 0 1px 0 rgba(228,193,88,.25), 0 6px 22px rgba(201,162,39,.10);
+}
+.brand-logo{position:relative;border:2px solid var(--gold-bright);box-shadow:0 0 0 3px rgba(201,162,39,.22),0 0 18px rgba(228,193,88,.45),0 4px 14px rgba(0,0,0,.45);}
+.brand-name{text-shadow:0 0 14px rgba(228,193,88,.22);}
+.brand-name .accent{background:linear-gradient(100deg,#C9A227,#FFE9A6 40%,#C9A227 70%,#E4C158);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:topoBrilho 6s linear infinite;}
+@keyframes topoBrilho{0%{background-position:0% 0;}100%{background-position:220% 0;}}
+#topbar .who button,#topbar .who-actions button{background:linear-gradient(180deg,rgba(228,193,88,.22),rgba(201,162,39,.07));border:1px solid var(--gold-dim);box-shadow:0 0 8px rgba(201,162,39,.18);}
+/* saudação em "bloco" azul, como as zonas */
+.who-row1{padding:6px 10px;border-radius:12px;border:1px solid rgba(78,161,255,.45);background:linear-gradient(90deg,rgba(78,161,255,.20),rgba(78,161,255,.04));}
+.who-name{font-family:var(--font-display);letter-spacing:.4px;}
+/* status da mensalidade em "bloco" colorido */
+.who-mens-line{padding:5px 10px;border-radius:10px;border:1px solid var(--line);}
+.who-mens-line.ml-ok{border-color:var(--green);background:linear-gradient(90deg,rgba(63,174,88,.22),rgba(63,174,88,.04));}
+.who-mens-line.ml-atrasada{border-color:var(--red);background:linear-gradient(90deg,rgba(226,87,76,.24),rgba(226,87,76,.05));}
+.who-mens-line.ml-isenta{border-color:#4EA1FF;background:linear-gradient(90deg,rgba(78,161,255,.22),rgba(78,161,255,.04));}
+.who-mens-line.ml-isenta .who-mens{color:#8EC3FF;}
+/* fase da rodada (chip) com brilho colorido */
+#phase-chip-slot .chip{padding:6px 12px;font-weight:700;background:rgba(255,255,255,.04);}
+#phase-chip-slot .chip.gold{color:var(--gold-bright);border-color:var(--gold);background:linear-gradient(90deg,rgba(201,162,39,.24),rgba(201,162,39,.05));box-shadow:0 0 12px rgba(201,162,39,.25);}
+#phase-chip-slot .chip.green{color:#7BD991;border-color:var(--green);background:linear-gradient(90deg,rgba(63,174,88,.24),rgba(63,174,88,.05));box-shadow:0 0 12px rgba(63,174,88,.25);}
+#phase-chip-slot .chip.red{color:#FF8D84;border-color:var(--red);background:linear-gradient(90deg,rgba(226,87,76,.24),rgba(226,87,76,.05));box-shadow:0 0 12px rgba(226,87,76,.25);}
+#phase-chip-slot .chip.muted{color:#B7C2D3;border-color:rgba(122,134,153,.7);background:linear-gradient(90deg,rgba(122,134,153,.20),rgba(122,134,153,.04));}
+@media (prefers-reduced-motion: reduce){ .brand-name .accent{animation:none;} }
