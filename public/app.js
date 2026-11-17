@@ -145,7 +145,9 @@ const state = {
   ranking: {},
   rankingBola: {cheia:{}, murcha:{}},
   rankingAba: 'geral',
-  resenhaAba: 'resenha',
+  votacaoAba: 'votar',
+  elencoAba: 'jogadores',
+  relatorioFin: null,
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
   eventoAbertoExp: 0,    // timestamp (Date.now()) até quando ele deve continuar aberto
@@ -186,7 +188,7 @@ function renderCardSaude(){
   const cl = classificarIMC(imc);
   const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
   const valorFmt = imc.toFixed(1).replace('.',',');
-  return '<div class="card accent-green"><h3>Saúde do Craque:</h3>'+
+  return '<div class="card accent-green"><h3>Minha Saúde:</h3>'+
     '<div class="imc-box">'+
       '<div class="imc-linha"><span class="imc-sigla">IMC</span><span class="imc-valor"'+(menor?'':' style="color:'+cl.cor+'"')+'>'+valorFmt+'</span></div>'+
       (menor
@@ -428,6 +430,7 @@ function renderTrocarPin(){
     '<div class="field"><label>Apelido</label><input id="perfil-apelido" maxlength="30" value="'+v(p.apelido)+'" placeholder="Como o pessoal te chama"></div>'+
     '<label class="small perfil-check"><input type="checkbox" id="perfil-usar-apelido" '+(p.usarApelido?'checked':'')+'> Exibir meu APELIDO em todo o app (no lugar do meu nome)</label>'+
     '<p class="small muted" style="margin:2px 0 10px;">Seu nome de cadastro'+(p.nome?' (<strong style="color:var(--text)">'+v(p.nome)+'</strong>)':'')+' continua ligado ao seu PIN e não pode ser alterado. Só vale se você preencher o apelido.</p>'+
+    '<div class="field"><label>E-mail</label><input id="perfil-email" type="email" inputmode="email" autocapitalize="none" maxlength="120" value="'+v(p.email)+'" placeholder="seu@email.com"></div>'+
     '<div class="field"><label>Celular (WhatsApp, com DDD)</label><input id="perfil-telefone" type="tel" inputmode="tel" maxlength="30" value="'+v(p.telefone)+'" placeholder="(11) 91234-5678"></div>'+
     '<div class="field"><label>Time do coração</label><select id="perfil-time">'+timeCoracaoOptionsHtml(p.timeCoracao)+'</select></div>'+
     '<div class="field"><label>Idade</label><input id="perfil-idade" type="number" inputmode="numeric" min="5" max="99" value="'+v(p.idade)+'"></div>'+
@@ -451,7 +454,7 @@ async function handleSalvarPerfil(){
   if(msg) msg.textContent = '';
   try{
     const r = await api('/api/me/perfil', {method:'PUT', auth:true, body:{
-      apelido: g('perfil-apelido'), telefone: g('perfil-telefone'), timeCoracao: g('perfil-time'),
+      apelido: g('perfil-apelido'), email: g('perfil-email'), telefone: g('perfil-telefone'), timeCoracao: g('perfil-time'),
       idade: g('perfil-idade'), peso: g('perfil-peso'), altura: g('perfil-altura'),
       usarApelido: document.getElementById('perfil-usar-apelido').checked,
     }});
@@ -746,56 +749,9 @@ function renderResenha(){
   const euNaResenha = idsResenhaAtual.includes(meuId);
   const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
-  // abas da Resenha: "Votos dos Jogadores" só aparece se o ADMIN habilitou no painel
-  const mostrarAbaVotos = !!rodAtual.mostrarVotos;
-  const abaResenha = mostrarAbaVotos ? (state.resenhaAba||'resenha') : 'resenha';
-  const abasHtml = mostrarAbaVotos
-    ? '<div class="tabtoggle">'+
-        '<button data-action="resenha-aba" data-aba="resenha" class="'+(abaResenha==='resenha'?'active':'')+'">Resenha</button>'+
-        '<button data-action="resenha-aba" data-aba="votos" class="'+(abaResenha==='votos'?'active':'')+'">Votos dos Jogadores</button>'+
-      '</div>'
-    : '';
-  const seletorRodadaHtml = (rotulo)=>{
-    const ops = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
-      .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
-    return '<div class="field"><label>'+rotulo+'</label><select data-action="mudar-rodada-visualizada">'+ops+'</select></div>';
-  };
+  const seletorRodadaHtml = seletorRodadaVisualizadaHtml;
 
-  if(abaResenha==='votos'){
-    const rodV = state.rodadaVisualizada || rodAtual;
-    let h = abasHtml + seletorRodadaHtml('Rodada dos votos');
-    const porAvaliador = {};
-    (rodV.votos||[]).forEach(v=>{
-      if(!v.avaliadorId || !v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
-      (porAvaliador[v.avaliadorId] = porAvaliador[v.avaliadorId] || []).push(v);
-    });
-    const nomeJ = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
-    const ids = Object.keys(porAvaliador).sort((a,b)=>nomeJ(a).localeCompare(nomeJ(b),'pt-BR'));
-    h += '<div class="card"><h3 class="titulo-centralizado">Votos dos Jogadores</h3><p class="rodada-sub">Rodada '+formatDataBR(rodV.data)+'</p>'+
-      '<p class="small muted" style="text-align:center;">O voto que cada jogador atribuiu aos colegas nesta rodada.</p></div>';
-    if(!ids.length){
-      h += '<div class="empty">Ainda sem votos nesta rodada.</div>';
-    }else{
-      ids.forEach(idAv=>{
-        const lista = porAvaliador[idAv].slice().sort((a,b)=> (b.nota-a.nota) || nomeJ(a.avaliadoId).localeCompare(nomeJ(b.avaliadoId),'pt-BR'));
-        // botão CORNETA: abre o WhatsApp de quem votou (só se ele cadastrou o celular)
-        const tel = (rodV.telefonesVotantes||{})[idAv];
-        const primeiroNome = nomeJ(idAv).split(' ')[0];
-        const btnCorneta = tel
-          ? '<a class="btn small corneta-btn" href="https://wa.me/'+tel+'?text='+encodeURIComponent('Opa, '+primeiroNome+' !!! Notei seu voto no BolerApp e gostaria de falar sobre o assunto, craque !!! :)')+'" target="_blank" rel="noopener">🎺 CORNETA</a>'
-          : '';
-        h += '<div class="card"><div class="list-row" style="border:none;padding:0 0 6px 0;"><h3 class="voter-name">'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+'</h3>'+btnCorneta+'</div>'+
-          '<p class="small muted" style="margin:0 0 6px;">votou em '+lista.length+' jogador'+(lista.length>1?'es':'')+'</p>';
-        lista.forEach(v=>{
-          h += '<div class="list-row"><span>'+escapeHtml(nomeJ(v.avaliadoId))+timeCoracaoSuffixDoId(v.avaliadoId)+'</span><span class="row-right">'+starsHtml(v.nota)+'</span></div>';
-        });
-        h += '</div>';
-      });
-    }
-    setContent(h, 'resenha-votos'); return;
-  }
-
-  let html = abasHtml + '<div class="card">'+
+  let html = '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rodAtual.data)+'</p>'+
     '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
@@ -1005,11 +961,60 @@ function renderSorteio(){
 /* ============================================================
    RENDER: TAB VOTAÇÃO
    ============================================================ */
+function seletorRodadaVisualizadaHtml(rotulo){
+  const ops = [...state.rodadasLista].sort((a,b)=>a.data<b.data?1:-1)
+    .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
+  return '<div class="field"><label>'+rotulo+'</label><select data-action="mudar-rodada-visualizada">'+ops+'</select></div>';
+}
+// Tela VOTAÇÃO > aba "Votos dos Jogadores" (só aparece se o ADMIN habilitou no painel)
+function renderVotosDosJogadores(abasHtml){
+  const rodV = state.rodadaVisualizada || state.rodadaAtual;
+  let h = abasHtml + seletorRodadaVisualizadaHtml('Rodada dos votos');
+  if(!rodV){ setContent(h+'<div class="empty">Ainda sem votos.</div>', 'votacao-votos'); return; }
+    const porAvaliador = {};
+    (rodV.votos||[]).forEach(v=>{
+      if(!v.avaliadorId || !v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
+      (porAvaliador[v.avaliadorId] = porAvaliador[v.avaliadorId] || []).push(v);
+    });
+    const nomeJ = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
+    const ids = Object.keys(porAvaliador).sort((a,b)=>nomeJ(a).localeCompare(nomeJ(b),'pt-BR'));
+    h += '<div class="card"><h3 class="titulo-centralizado">Votos dos Jogadores</h3><p class="rodada-sub">Rodada '+formatDataBR(rodV.data)+'</p>'+
+      '<p class="small muted" style="text-align:center;">O voto que cada jogador atribuiu aos colegas nesta rodada.</p></div>';
+    if(!ids.length){
+      h += '<div class="empty">Ainda sem votos nesta rodada.</div>';
+    }else{
+      ids.forEach(idAv=>{
+        const lista = porAvaliador[idAv].slice().sort((a,b)=> (b.nota-a.nota) || nomeJ(a.avaliadoId).localeCompare(nomeJ(b.avaliadoId),'pt-BR'));
+        // botão CORNETA: abre o WhatsApp de quem votou (só se ele cadastrou o celular)
+        const tel = (rodV.telefonesVotantes||{})[idAv];
+        const primeiroNome = nomeJ(idAv).split(' ')[0];
+        const btnCorneta = tel
+          ? '<a class="btn small corneta-btn" href="https://wa.me/'+tel+'?text='+encodeURIComponent('Opa, '+primeiroNome+' !!! Notei seu voto no BolerApp e gostaria de falar sobre o assunto, craque !!! :)')+'" target="_blank" rel="noopener">🎺 CORNETA</a>'
+          : '';
+        h += '<div class="card"><div class="list-row" style="border:none;padding:0 0 6px 0;"><h3 class="voter-name">'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+'</h3>'+btnCorneta+'</div>'+
+          '<p class="small muted" style="margin:0 0 6px;">votou em '+lista.length+' jogador'+(lista.length>1?'es':'')+'</p>';
+        lista.forEach(v=>{
+          h += '<div class="list-row"><span>'+escapeHtml(nomeJ(v.avaliadoId))+timeCoracaoSuffixDoId(v.avaliadoId)+'</span><span class="row-right">'+starsHtml(v.nota)+'</span></div>';
+        });
+        h += '</div>';
+      });
+    }
+  setContent(h, 'votacao-votos');
+}
 function renderVotacao(){
   const c = document.getElementById('content');
   const rod = state.rodadaAtual;
+  const mostrarAbaVotos = !!(rod && rod.mostrarVotos);
+  const abaVot = mostrarAbaVotos ? (state.votacaoAba||'votar') : 'votar';
+  const abasVot = mostrarAbaVotos
+    ? '<div class="tabtoggle">'+
+        '<button data-action="votacao-aba" data-aba="votar" class="'+(abaVot==='votar'?'active':'')+'">Votação</button>'+
+        '<button data-action="votacao-aba" data-aba="votos" class="'+(abaVot==='votos'?'active':'')+'">Votos dos Jogadores</button>'+
+      '</div>'
+    : '';
+  if(abaVot==='votos'){ renderVotosDosJogadores(abasVot); return; }
   if(!rod || rod.status!=='sorteado'){
-    c.innerHTML = '<div class="empty">'+
+    c.innerHTML = abasVot+'<div class="empty">'+
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
       '<p>Os nomes dos craques serão exibidos aqui quando os times da semana forem sorteados.</p>'+
       '<div style="margin-top:16px;">'+infoVotacaoHtml()+'</div>'+
@@ -1020,13 +1025,13 @@ function renderVotacao(){
     const msg = fase.chave==='sorteado_aguardando_votacao'
       ? 'A votação abre hoje às 10h e fecha às 13h.'
       : 'A janela de votação (domingo, 10h às 13h) está fechada.';
-    c.innerHTML = '<div class="empty"><p style="color:var(--text);font-weight:700;margin-bottom:12px;">'+msg+'</p>'+infoVotacaoHtml()+'</div>'; return;
+    c.innerHTML = abasVot+'<div class="empty"><p style="color:var(--text);font-weight:700;margin-bottom:12px;">'+msg+'</p>'+infoVotacaoHtml()+'</div>'; return;
   }
   const meuId = state.currentPlayer.id;
   const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId) || (rod.goleirosPresentes||[]).includes(meuId)
     || (!!state.currentPlayer.corneta && (rod.confirmados||[]).includes(meuId));
   if(!participei){
-    c.innerHTML = '<div class="empty">Você não participou desta rodada (nem escalado, nem reserva) e por isso não pode votar.</div>'; return;
+    c.innerHTML = abasVot+'<div class="empty">Você não participou desta rodada (nem escalado, nem reserva) e por isso não pode votar.</div>'; return;
   }
   const alvosTimes = rod.times.times.flatMap(t=>t.jogadores.map(j2=>({jogadorId:j2.jogadorId, time:t.nome})));
   const alvosReservas = rod.times.reservas.map(id=>({jogadorId:id, time:'Reserva'}));
@@ -1052,7 +1057,7 @@ function renderVotacao(){
         ? '<p class="small" style="margin-top:6px;color:var(--gold);">Voto salvo: '+notaAtual+' estrela(s). Você ainda tem mais 1 possibilidade de alterar o voto.</p>'
         : '')+'</div>';
   });
-  c.innerHTML = html;
+  c.innerHTML = abasVot + html;
 }
 async function handleVotar(avaliadoId, nota){
   try{ await api('/api/rodadas/'+state.rodadaAtual.id+'/votos', {method:'POST', auth:true, body:{avaliadoId, nota}}); await refreshRodadaAtual(); render(); }
@@ -1283,6 +1288,9 @@ async function renderAdmin(){
     try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); permsDisp = elencoAdmin.permsDisponiveis || permsDisp; }
     catch(e){ if(on401(e)) return; c.innerHTML='<div class="empty">Erro ao carregar o elenco.</div>'; return; }
     try{ eventos = (await api('/api/admin/eventos', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
+    if(state.elencoAba==='gestao'){
+      try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
+    }
   }
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
@@ -1348,8 +1356,8 @@ async function renderAdmin(){
     (cfgA.sorteioModo==='automatico' && cfgA.sorteioAgendado ? '<p class="small" style="color:var(--gold);">Agendado: '+formatAgendamento(cfgA.sorteioAgendado)+'</p>' : '<p class="small muted">Modo atual: manual.</p>')+
     '<button class="btn secondary" data-action="salvar-sorteio-agenda">Salvar sorteio</button></div>';
 
-  html += '<div class="card"><h3>Resenha — Votos dos Jogadores</h3>'+
-    '<p class="small muted">Liga ou desliga a aba "Votos dos Jogadores" na tela Resenha (mostra o voto que cada jogador deu aos outros). A mudança vale na hora, sem precisar salvar.</p>'+
+  html += '<div class="card"><h3>Votação — Votos dos Jogadores</h3>'+
+    '<p class="small muted">Liga ou desliga a aba "Votos dos Jogadores" na tela Votação (mostra o voto que cada jogador deu aos outros). A mudança vale na hora, sem precisar salvar.</p>'+
     '<div class="presence-toggle-wrap">'+
       '<button class="presence-toggle '+(cfgA.mostrarVotos?'is-on':'is-off')+'" data-action="alternar-mostrar-votos" data-atual="'+(cfgA.mostrarVotos?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
       '<div class="presence-toggle-label">'+(cfgA.mostrarVotos
@@ -1362,7 +1370,15 @@ async function renderAdmin(){
     '<div class="field"><label>Mínimo de votos recebidos por jogador ativo</label><input type="number" min="1" id="cfg-min-votos" value="'+elencoAdmin.config.minVotos+'"></div>'+
     '<button class="btn secondary" data-action="salvar-config">Salvar critérios</button></div>';
 
-  html += '<div class="card"><h3>Elenco</h3>';
+  const abaElenco = state.elencoAba==='gestao' ? 'gestao' : 'jogadores';
+  html += '<div class="card"><h3>Elenco</h3>'+
+    '<div class="tabtoggle">'+
+      '<button data-action="elenco-aba" data-aba="jogadores" class="'+(abaElenco==='jogadores'?'active':'')+'">Jogadores</button>'+
+      '<button data-action="elenco-aba" data-aba="gestao" class="'+(abaElenco==='gestao'?'active':'')+'">Gestão</button>'+
+    '</div>';
+  if(abaElenco==='gestao'){
+    html += renderRelatorioFinanceiroHtml(state.relatorioFin) + '</div>';
+  }else{
   elencoAdmin.jogadores.forEach(j=>{
     if(state.editingJogadorId===j.id){
       html += '<div class="list-row" style="flex-direction:column;align-items:stretch;gap:6px;">'+
@@ -1398,6 +1414,7 @@ async function renderAdmin(){
     '<div class="field"><label>PIN (4 dígitos)</label><input id="novo-pin" maxlength="4"></div>'+
     '<div class="field"><label>Posição padrão</label><select id="novo-pos"><option value="linha">Linha</option><option value="goleiro">Goleiro</option></select></div>'+
     '<button class="btn secondary" data-action="adicionar-jogador">Adicionar</button></div>';
+  } /* fim aba Jogadores */
   } /* fim isSuper (rodada / critérios / elenco) */
 
   if(can('conteudo')){
@@ -1523,6 +1540,54 @@ async function handleRemoverRodada(id, dataStr, faseLabel, ehHistorico){
     await render();
   }catch(e){ alert(e.message); }
 }
+// Aba GESTÃO do card Elenco: relatório financeiro das mensalidades (+ PDF)
+function fmtBRLfront(n){
+  const [int, dec] = Math.abs(n).toFixed(2).split('.');
+  return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
+}
+function renderRelatorioFinanceiroHtml(rel){
+  if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
+  const [ano, mes] = rel.referencia.split('-');
+  const g = rel.geradoEm;
+  const rotuloStatus = {em_dia:'Em dia', em_atraso:'Em atraso', isenta:'Isenta', '':'Sem status'};
+  const badgeCls = {em_dia:'mens-ok', em_atraso:'mens-atrasada', isenta:'mens-isenta', '':''};
+  let h = '<div class="rel-topo">'+
+    '<div><span class="small muted">Referência</span><div class="rel-destaque">'+mes+'/'+ano+'</div></div>'+
+    '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
+  '</div>';
+  if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
+  h += '<p class="small muted" style="margin:0 0 8px;">O valor vem do card Aluguel da quadra (Valor da mensalidade). Jogadores isentos contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<div class="rel-cab"><span>Jogador</span><span>Valor</span></div>';
+  rel.linhas.forEach(l=>{
+    h += '<div class="list-row"><span>'+escapeHtml(l.nome)+' <span class="badge '+badgeCls[l.status]+'">'+rotuloStatus[l.status]+'</span></span>'+
+      '<span class="row-right"><strong>'+fmtBRLfront(l.valor)+'</strong></span></div>';
+  });
+  h += '<h4 style="margin:14px 0 4px;">Subtotal por status</h4>';
+  rel.subtotais.forEach(s=>{
+    h += '<div class="list-row"><span>'+escapeHtml(s.label)+' <span class="small muted">('+s.qtd+')</span></span><span class="row-right"><strong>'+fmtBRLfront(s.total)+'</strong></span></div>';
+  });
+  h += '<div class="rel-total"><span>TOTAL GERAL <span class="small muted">('+rel.qtd+' jogadores)</span></span><strong>'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
+  h += '<button class="btn" style="margin-top:12px;" data-action="gerar-pdf-financeiro">📄 Gerar PDF do relatório</button>';
+  return h;
+}
+async function handleGerarPdfFinanceiro(){
+  try{
+    const res = await fetch('/api/admin/relatorio-financeiro.pdf', {headers:{Authorization:'Bearer '+state.adminToken}});
+    if(!res.ok){
+      let msg = 'Não foi possível gerar o PDF.';
+      try{ msg = (await res.json()).erro || msg; }catch(e){}
+      alert(msg); return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const ref = (state.relatorioFin && state.relatorioFin.referencia) || 'mensalidades';
+    const a = document.createElement('a');
+    a.href = url; a.download = 'relatorio-financeiro-'+ref+'.pdf'; a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){ alert('Erro ao gerar o PDF: '+e.message); }
+}
+
 async function handleToggleReserva(jogadorId, atual){
   if(!state.rodadaAtual) return;
   try{
@@ -1691,7 +1756,7 @@ function startPolling(){
       await refreshRodadaAtual();
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
-      if((state.tab==='sorteio' || state.tab==='resenha') && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
+      if((state.tab==='sorteio' || state.tab==='resenha' || (state.tab==='votacao' && state.votacaoAba==='votos')) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
       render();
@@ -1748,7 +1813,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){
     state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null;
-    if(['sorteio','resenha'].includes(state.tab)) await irParaRodadaMaisRecente();
+    if(['sorteio','resenha','votacao'].includes(state.tab)) await irParaRodadaMaisRecente();
     return render();
   }
   if(action==='toggle-presenca') return handleTogglePresenca(el.dataset.atual);
@@ -1757,7 +1822,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
-  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; return render(); }
+  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos') await irParaRodadaMaisRecente(); return render(); }
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
   if(action==='noop') return;
@@ -1769,6 +1834,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();
   if(action==='salvar-sorteio-agenda') return handleSalvarSorteioAgenda();
+  if(action==='elenco-aba'){ state.elencoAba = el.dataset.aba; return render(); }
+  if(action==='gerar-pdf-financeiro') return handleGerarPdfFinanceiro();
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();

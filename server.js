@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 14;
+const APP_BUILD = 15;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -167,6 +167,7 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN peso REAL"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN altura INTEGER"); }catch(e){}
 // 1 = o jogador quer que o APELIDO seja exibido no lugar do nome em todo o app
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN usar_apelido INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN email TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // mês (YYYY-MM) em que a mensalidade foi zerada pela última vez
 try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
 
@@ -711,6 +712,7 @@ function jogadorPublico(j){
     timeCoracao: j.time_coracao || '',
     deptoMedico: !!j.depto_medico,
     telefone: j.telefone || '',
+    email: j.email || '',
     apelido: j.apelido || '',
     usarApelido: !!(j.usar_apelido && j.apelido),
     idade: j.idade==null ? '' : j.idade,
@@ -772,6 +774,8 @@ app.put('/api/me/perfil', requireAuth, (req,res)=>{
     timeCoracao = String(b.timeCoracao);
   }
   const apelido = String(b.apelido==null ? (j.apelido||'') : b.apelido).trim().slice(0,30);
+  const email = String(b.email==null ? (j.email||'') : b.email).trim().toLowerCase();
+  if(email && (email.length>120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return res.status(400).json({erro:'E-mail inválido.'});
   const numOuNull = (v, min, max, rotulo, inteiro)=>{
     if(v==null || String(v).trim()==='') return null;
     const n = Number(String(v).replace(',','.'));
@@ -786,8 +790,8 @@ app.put('/api/me/perfil', requireAuth, (req,res)=>{
   }catch(e){ return res.status(400).json({erro:e.message}); }
   // só dá para exibir o apelido se ele existir
   const usarApelido = apelido && (b.usarApelido===undefined ? !!j.usar_apelido : !!b.usarApelido) ? 1 : 0;
-  db.prepare('UPDATE jogadores SET telefone=?, time_coracao=?, apelido=?, idade=?, peso=?, altura=?, usar_apelido=? WHERE id=?')
-    .run(telefone, timeCoracao, apelido, idade, peso, altura, usarApelido, j.id);
+  db.prepare('UPDATE jogadores SET telefone=?, time_coracao=?, apelido=?, idade=?, peso=?, altura=?, usar_apelido=?, email=? WHERE id=?')
+    .run(telefone, timeCoracao, apelido, idade, peso, altura, usarApelido, email, j.id);
   res.json({ok:true, jogador: jogadorPublico(getJogadorPorId(j.id))});
 });
 
@@ -809,6 +813,161 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now, sorteioModo:cfg.sorteio_modo||'manual', sorteioAgendado:cfg.sorteio_agendado||'', mostrarVotos:!!cfg.mostrar_votos}});
 });
+/* ============================================================
+   RELATÓRIO FINANCEIRO (Painel Admin > Elenco > Gestão)
+   ============================================================ */
+// "R$ 1.234,50" / "50" / "50,00" / "1.500" -> número (ou null se não der pra entender)
+function parseValorBR(str){
+  let t = String(str||'').replace(/[^\d.,]/g,'');
+  if(!t) return null;
+  if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.');
+  else if((t.match(/\./g)||[]).length>1) t = t.replace(/\./g,'');
+  else if(/\.\d{3}$/.test(t)) t = t.replace('.','');
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : null;
+}
+function fmtBRL(n){
+  const [int, dec] = Math.abs(n).toFixed(2).split('.');
+  return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
+}
+const STATUS_FIN = [
+  {chave:'em_dia',    label:'Em dia'},
+  {chave:'em_atraso', label:'Em atraso'},
+  {chave:'',          label:'Sem status (aguardando)'},
+  {chave:'isenta',    label:'Isenta'},
+];
+// Valor da mensalidade vem do card "Aluguel da quadra" (campo Valor da mensalidade).
+// Isentos contam R$ 0,00. Só jogadores ativos entram.
+function montarRelatorioFinanceiro(){
+  const a = db.prepare('SELECT valor_mensalidade FROM aluguel_quadra WHERE id=1').get();
+  const valorTexto = (a && a.valor_mensalidade) || '';
+  const valorUnit = parseValorBR(valorTexto);
+  const agora = spWallClockNow();
+  const linhas = getJogadores().filter(j=>j.ativo)
+    .sort((x,y)=>x.nome.localeCompare(y.nome,'pt-BR'))
+    .map(j=>{
+      const status = ['em_dia','em_atraso','isenta'].includes(j.mensalidade) ? j.mensalidade : '';
+      const valor = status==='isenta' ? 0 : (valorUnit||0);
+      return {id:j.id, nome:j.nome, status, valor};
+    });
+  const subtotais = STATUS_FIN.map(s=>{
+    const doStatus = linhas.filter(l=>l.status===s.chave);
+    return {status:s.chave, label:s.label, qtd:doStatus.length, total:doStatus.reduce((t,l)=>t+l.valor,0)};
+  });
+  return {
+    referencia: agora.slice(0,7),
+    geradoEm: agora,
+    valorTexto, valorUnitario: valorUnit,
+    aviso: valorUnit==null ? 'Defina o "Valor da mensalidade" no card Aluguel da quadra para calcular os valores.' : '',
+    linhas, subtotais,
+    qtd: linhas.length,
+    totalGeral: linhas.reduce((t,l)=>t+l.valor,0),
+  };
+}
+app.get('/api/admin/relatorio-financeiro', requireSuper, (req,res)=>{
+  res.json(montarRelatorioFinanceiro());
+});
+
+// PDF simples escrito à mão (sem dependências): A4, Helvetica, tabela paginada.
+function gerarPdfRelatorio(rel){
+  const W = 595, H = 842, M = 40, RIGHT = W-M;
+  const pages = [[]];
+  let y = H-M;
+  const cur = ()=>pages[pages.length-1];
+  const esc = s => String(s).replace(/[^ -ÿ]/g,'?').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+  const largura = (s,size)=>{ let w=0; for(const ch of String(s)) w += /\d/.test(ch)?0.556 : (ch===','||ch==='.'||ch===' ')?0.278 : ch==='R'?0.722 : ch==='$'?0.556 : ch==='-'?0.333 : 0.56; return w*size; };
+  const texto = (x,yy,s,size,bold,align)=>{
+    const xx = align==='right' ? x-largura(s,size) : x;
+    cur().push('BT /'+(bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(1)+' '+yy.toFixed(1)+' Td ('+esc(s)+') Tj ET');
+  };
+  const linha = (x1,y1,x2,y2,g)=> cur().push((g!=null?g+' G ':'')+'0.6 w '+x1+' '+y1.toFixed(1)+' m '+x2+' '+y2.toFixed(1)+' l S 0 G');
+  const faixa = (yy,h,g)=> cur().push(g+' g '+M+' '+yy.toFixed(1)+' '+(W-2*M)+' '+h+' re f 0 g');
+  const cabecalhoTabela = ()=>{
+    faixa(y-4, 16, 0.88);
+    texto(M+4, y, '#', 9, true); texto(M+28, y, 'Jogador', 9, true); texto(330, y, 'Status', 9, true); texto(RIGHT-4, y, 'Valor', 9, true, 'right');
+    y -= 18;
+  };
+  const novaPagina = ()=>{ pages.push([]); y = H-M; cabecalhoTabela(); };
+  const garantir = (h)=>{ if(y-h < 60) novaPagina(); };
+
+  const [ano, mes] = rel.referencia.split('-');
+  const g = rel.geradoEm; // YYYY-MM-DDTHH:MM:SS
+  texto(M, y, 'Bolerage F.D.', 18, true); y -= 20;
+  texto(M, y, 'Relatório Financeiro - Mensalidades', 13, true); y -= 18;
+  texto(M, y, 'Referência: '+mes+'/'+ano+'     Valor da mensalidade: '+(rel.valorUnitario==null?'não definido':fmtBRL(rel.valorUnitario)), 10, false); y -= 14;
+  texto(M, y, 'Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+' (horário de São Paulo)', 9, false); y -= 8;
+  linha(M, y, RIGHT, y, 0.5); y -= 18;
+
+  cabecalhoTabela();
+  const rotulo = Object.fromEntries(STATUS_FIN.map(s=>[s.chave,s.label]));
+  rel.linhas.forEach((l,i)=>{
+    garantir(16);
+    if(i%2===1) faixa(y-4, 15, 0.96);
+    texto(M+4, y, String(i+1), 9, false);
+    texto(M+28, y, l.nome, 10, false);
+    texto(330, y, rotulo[l.status]||'', 9, false);
+    texto(RIGHT-4, y, fmtBRL(l.valor), 10, false, 'right');
+    y -= 15;
+  });
+  linha(M, y+8, RIGHT, y+8, 0.5);
+
+  garantir(30+rel.subtotais.length*16+40);
+  y -= 10;
+  texto(M, y, 'Subtotal por status', 11, true); y -= 16;
+  rel.subtotais.forEach(s=>{
+    texto(M+4, y, s.label, 10, false);
+    texto(330, y, s.qtd+' jogador'+(s.qtd===1?'':'es'), 9, false);
+    texto(RIGHT-4, y, fmtBRL(s.total), 10, false, 'right');
+    y -= 16;
+  });
+  linha(M, y+10, RIGHT, y+10, 0.3); y -= 6;
+  faixa(y-6, 20, 0.88);
+  texto(M+4, y, 'TOTAL GERAL', 11, true);
+  texto(330, y, rel.qtd+' jogadores', 9, true);
+  texto(RIGHT-4, y, fmtBRL(rel.totalGeral), 11, true, 'right');
+  if(rel.aviso){ y -= 26; texto(M, y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 9, false); }
+
+  // rodapé com numeração
+  pages.forEach((p,i)=>{ p.push('BT /F1 8 Tf '+(W/2-30)+' 24 Td (Página '+(i+1)+' de '+pages.length+') Tj ET'); });
+
+  // montagem do arquivo PDF
+  const objs = [];
+  const add = s => { objs.push(Buffer.from(s,'latin1')); return objs.length; };
+  add('<< /Type /Catalog /Pages 2 0 R >>');
+  const nP = pages.length;
+  const kids = pages.map((_,i)=> (5+i*2)+' 0 R').join(' ');
+  add('<< /Type /Pages /Kids ['+kids+'] /Count '+nP+' >>');
+  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  pages.forEach((p,i)=>{
+    const conteudoNum = 6+i*2;
+    add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+conteudoNum+' 0 R >>');
+    const stream = Buffer.from(p.join('\n'),'latin1');
+    objs.push(Buffer.concat([Buffer.from('<< /Length '+stream.length+' >>\nstream\n','latin1'), stream, Buffer.from('\nendstream','latin1')]));
+  });
+  const partes = [Buffer.from('%PDF-1.4\n','latin1')];
+  const offsets = [];
+  let pos = partes[0].length;
+  objs.forEach((o,i)=>{
+    offsets.push(pos);
+    const b = Buffer.concat([Buffer.from((i+1)+' 0 obj\n','latin1'), o, Buffer.from('\nendobj\n','latin1')]);
+    partes.push(b); pos += b.length;
+  });
+  let xref = 'xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+  offsets.forEach(o=>{ xref += String(o).padStart(10,'0')+' 00000 n \n'; });
+  xref += 'trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+pos+'\n%%EOF\n';
+  partes.push(Buffer.from(xref,'latin1'));
+  return Buffer.concat(partes);
+}
+app.get('/api/admin/relatorio-financeiro.pdf', requireSuper, (req,res)=>{
+  const rel = montarRelatorioFinanceiro();
+  const pdf = gerarPdfRelatorio(rel);
+  logEvento('Relatório financeiro (PDF) gerado pelo administrador — referência '+rel.referencia+'.');
+  res.set('Content-Type','application/pdf');
+  res.set('Content-Disposition','attachment; filename="relatorio-financeiro-'+rel.referencia+'.pdf"');
+  res.send(pdf);
+});
+
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
 app.get('/api/admin/mensalidades', requirePerm('mensalidades'), (req,res)=>{
   const jogadores = getJogadores().filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, mensalidade:j.mensalidade||''}));

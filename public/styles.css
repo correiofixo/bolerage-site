@@ -466,3 +466,10 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .imc-escala{position:relative;height:16px;margin:4px 6px 0;font-size:11px;}
 .imc-escala span{position:absolute;top:0;transform:translateX(-50%);}
 .perfil-check{display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--text);}
+
+/* v3.5 — relatório financeiro (Admin > Elenco > Gestão) */
+.rel-topo{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin:6px 0 8px;}
+.rel-destaque{font-family:var(--font-display);font-size:22px;color:var(--gold-bright);line-height:1.1;}
+.rel-cab{display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid var(--line);color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:.6px;}
+.rel-total{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:linear-gradient(180deg,rgba(201,162,39,.2),rgba(201,162,39,.08));border:1px solid var(--gold-dim);font-size:16px;}
+.rel-total strong{font-family:var(--font-display);font-size:20px;color:var(--gold-bright);}
