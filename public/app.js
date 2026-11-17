@@ -1163,6 +1163,7 @@ async function renderAdmin(){
 
   html += '<div class="card"><h3>Resenha — Votos dos Jogadores</h3>'+
     '<label class="small"><input type="checkbox" id="cfg-mostrar-votos" '+(cfgA.mostrarVotos?'checked':'')+'> Exibir a aba "Votos dos Jogadores" na tela Resenha (mostra o voto que cada jogador deu aos outros)</label>'+
+    '<p class="small" style="margin-top:8px;color:'+(cfgA.mostrarVotos?'var(--green)':'var(--text-muted)')+';">Situação atual: '+(cfgA.mostrarVotos?'aba HABILITADA':'aba OCULTA')+'</p>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-mostrar-votos">Salvar</button></div>';
 
   html += '<div class="card"><h3>Critério para ativar a fase 2 (sorteio por nota)</h3>'+
@@ -1340,7 +1341,12 @@ async function handleSalvarSorteioAgenda(){
 }
 async function handleSalvarMostrarVotos(){
   const mostrar = document.getElementById('cfg-mostrar-votos').checked;
-  try{ await api('/api/admin/mostrar-votos', {method:'PUT', adminAuth:true, body:{mostrar}}); await refreshRodadaAtual(); await render(); }
+  try{
+    const r = await api('/api/admin/mostrar-votos', {method:'PUT', adminAuth:true, body:{mostrar}});
+    await refreshRodadaAtual();
+    await render();
+    showToast(r && r.mostrarVotos ? 'Aba "Votos dos Jogadores" HABILITADA' : 'Aba "Votos dos Jogadores" OCULTA');
+  }
   catch(e){ alert(e.message); }
 }
 async function handleSalvarConfig(){

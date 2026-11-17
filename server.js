@@ -837,7 +837,8 @@ app.put('/api/admin/mostrar-votos', requireSuper, (req,res)=>{
   const v = req.body.mostrar ? 1 : 0;
   db.prepare('UPDATE config SET mostrar_votos=? WHERE id=1').run(v);
   logEvento('Aba "Votos dos Jogadores" '+(v?'habilitada':'ocultada')+' pelo admin.');
-  res.json({ok:true});
+  // devolve o valor realmente gravado (lido de volta do banco)
+  res.json({ok:true, mostrarVotos: !!getConfig().mostrar_votos});
 });
 
 /* ---- rodadas ---- */
