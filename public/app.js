@@ -192,7 +192,7 @@ function renderMinhaPosicao(){
   if(!p){
     return '<div class="meu-score-box meu-posicao"><div class="meu-posicao-vazio">Sem posição no ranking ainda — você aparece aqui depois de receber avaliações.</div></div>';
   }
-  const ROT = {top5:'🏆 Top 5 — Destaques', top10:'⭐ Top 10 — Entre os melhores', under5:'⚠️ Under 5 — Precisam melhorar', meio:'⚽ Na briga'};
+  const ROT = {top5:'🏆 As Lendas (Top 5)', top10:'⭐ Os Craques (Top 10)', under5:'⚠️ Zona da Degola', meio:'⚔️ A briga dos Guerreiros'};
   const medalha = p.pos===1 ? '🥇' : p.pos===2 ? '🥈' : p.pos===3 ? '🥉' : '';
   return '<div class="meu-score-box meu-posicao posicao-'+p.zona+'" data-action="tab" data-tab="ranking">'+
     '<div class="meu-posicao-num">'+(medalha ? '<span class="meu-posicao-medalha">'+medalha+'</span>' : '')+p.pos+'º</div>'+
@@ -556,7 +556,7 @@ function posicaoNoRankingGeral(jogadorId){
 const ORDEM_INICIO_PADRAO = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
 const NOMES_CARDS_INICIO = {
   rodada:'Rodada do Próximo Domingão', status_carreira:'Minha Temporada', se_liga:'Se Liga - Craque',
-  departamento_medico:'Departamento Médico', eventos:'Eventos', pagamento:'Dados para Pagamento (Aluguel da Quadra)', gestao:'Gestão Atual',
+  departamento_medico:'Departamento Médico', eventos:'Eventos', pagamento:'Dados para Pagamento do Aluguel da Quadra', gestao:'Gestão Atual',
 };
 function ordemCardsInicio(){
   const salva = (state.homeExtras && state.homeExtras.ordem) || [];
@@ -604,7 +604,7 @@ function renderExtrasIniciais(){
     p.eventos = html;
   }
   if(ex.aluguel){
-    p.pagamento = '<div class="card hz hz-verde"><h3>💳 Dados para Pagamento - (Aluguel da Quadra):</h3>'+
+    p.pagamento = '<div class="card hz hz-verde"><h3 class="titulo-uma-linha">💳 Dados para Pagamento do Aluguel da Quadra:</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(ex.aluguel.chavePix)+'</span>'+
         (ex.aluguel.chavePix ? '<button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(ex.aluguel.chavePix)+'">Copiar</button>' : '')+
@@ -1294,13 +1294,13 @@ async function renderRanking(){
     const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
     const semNota = linhas.filter(l=>l.media==null);
     const n = comNota.length;
-    // zonas: 1º ao 5º = Top 5; 6º ao 10º = Top 10; os 5 últimos (se houver mais de 10) = Under 5
+    // zonas: 1º ao 5º = As Lendas (Top 5); 6º ao 10º = Os Craques (Top 10); os 5 últimos (se houver mais de 10) = Zona da Degola
     const zonaDe = i => i<5 ? 'top5' : i<10 ? 'top10' : (n>10 && i>=Math.max(10, n-5)) ? 'under5' : 'meio';
     const ZONAS = {
-      top5:   {tit:'🏆 TOP 5 — JOGADORES DESTAQUES', sub:'A briga pela liderança é aqui. Cada décimo conta!'},
-      top10:  {tit:'⭐ TOP 10 — ENTRE OS MELHORES', sub:'Mais uma boa rodada e você entra no Top 5!'},
-      meio:   {tit:'⚽ NA BRIGA', sub:'A tabela vira a cada rodada — todo mundo pode subir.'},
-      under5: {tit:'⚠️ UNDER 5 — PRECISAM MELHORAR', sub:'Zona de alerta (rebaixamento só na brincadeira 😄). Uma boa rodada te tira daqui!'},
+      top5:   {tit:'🏆 TOP 5 — AS LENDAS', sub:'A briga pela liderança é aqui. Cada décimo conta!'},
+      top10:  {tit:'⭐ TOP 10 — OS CRAQUES', sub:'Mais uma boa rodada e você entra no Top 5!'},
+      meio:   {tit:'⚔️ A BRIGA DOS GUERREIROS', sub:'A tabela vira a cada rodada — todo guerreiro pode subir!'},
+      under5: {tit:'⚠️ ZONA DA DEGOLA — PRECISAM MELHORAR ESSAS FERAS', sub:'Zona de alerta (rebaixamento só na brincadeira 😄). Uma boa rodada te tira daqui!'},
     };
     const d2 = v => v.toFixed(2).replace('.',',');
     // texto de incentivo em NÚMEROS INTEIROS: 1 ponto = 0,1 estrela (a mesma casa decimal exibida
@@ -1328,9 +1328,10 @@ async function renderRanking(){
       html += '<div class="card"><p class="muted small">Ainda não há avaliações suficientes.</p></div>';
     }else{
       html += '<div class="rank-legenda">'+
-        '<span class="rank-chip chip-top5">🏆 Top 5 Destaques</span>'+
-        '<span class="rank-chip chip-top10">⭐ Top 10 Entre os Melhores</span>'+
-        (n>10 ? '<span class="rank-chip chip-under5">⚠️ Under 5 Precisam Melhorar</span>' : '')+
+        '<span class="rank-chip chip-top5">🏆 As Lendas</span>'+
+        '<span class="rank-chip chip-top10">⭐ Os Craques</span>'+
+        (n>10 ? '<span class="rank-chip chip-meio">⚔️ A briga dos Guerreiros</span>' : '')+
+        (n>10 ? '<span class="rank-chip chip-under5">⚠️ Zona da Degola</span>' : '')+
       '</div>';
       let zonaAtual = null;
       comNota.forEach((l,i)=>{
@@ -1364,16 +1365,16 @@ async function renderRanking(){
     const lista = Object.keys(obj).map(id=>({id, nome:nomeDe(id), n:obj[id], media:mediaRanking(id)})).sort((a,b)=>b.n-a.n);
     const rotulo = isMurcha ? 'Bola Murcha' : 'Bola Cheia';
     const n = lista.length;
-    // mesmas zonas do Ranking Geral (Top 5 / Top 10 / resto); aqui não há "Under 5"
+    // mesmas zonas do Ranking Geral (As Lendas / Os Craques / A briga dos Guerreiros); aqui não há Zona da Degola
     const zonaDe = i => i<5 ? 'top5' : i<10 ? 'top10' : 'meio';
     const ZB = isMurcha ? {
       top5:  {tit:'🏈 TOP 5 — BOLA MURCHA', sub:'Quem mais levou a Bola Murcha. Hora de reagir e sair dessa lista!'},
       top10: {tit:'⚠️ TOP 10 — NA MIRA', sub:'Cuidado: mais uma rodada ruim e você sobe nessa lista!'},
       meio:  {tit:'⚽ POR AQUI, TUDO BEM', sub:'Mantenha o nível e fique longe da Bola Murcha.'},
     } : {
-      top5:  {tit:'🏆 TOP 5 — BOLA CHEIA DESTAQUES', sub:'Os maiores craques das rodadas. A briga pela liderança é aqui!'},
-      top10: {tit:'⭐ TOP 10 — ENTRE OS MELHORES', sub:'Mais uma rodada brilhante e você entra no Top 5!'},
-      meio:  {tit:'⚽ NA BRIGA', sub:'Uma grande rodada e você entra para a lista dos craques.'},
+      top5:  {tit:'🏆 TOP 5 — AS LENDAS DA BOLA CHEIA', sub:'Os maiores craques das rodadas. A briga pela liderança é aqui!'},
+      top10: {tit:'⭐ TOP 10 — OS CRAQUES', sub:'Mais uma rodada brilhante e você entra no Top 5!'},
+      meio:  {tit:'⚔️ A BRIGA DOS GUERREIROS', sub:'Uma grande rodada e você entra para a lista dos craques.'},
     };
     const vezes = k => k+' vez'+(k===1?'':'es');
     const gapB = i => {
@@ -1387,8 +1388,8 @@ async function renderRanking(){
       html += '<div class="card"><p class="muted small">Ainda sem rodadas com votos suficientes.</p></div>';
     }else{
       html += '<div class="rank-legenda">'+
-        '<span class="rank-chip '+(isMurcha?'chip-murcha5':'chip-top5')+'">'+(isMurcha?'🏈 Top 5 Bola Murcha':'🏆 Top 5 Destaques')+'</span>'+
-        '<span class="rank-chip '+(isMurcha?'chip-murcha10':'chip-top10')+'">'+(isMurcha?'⚠️ Top 10 Na Mira':'⭐ Top 10 Entre os Melhores')+'</span>'+
+        '<span class="rank-chip '+(isMurcha?'chip-murcha5':'chip-top5')+'">'+(isMurcha?'🏈 Top 5 Bola Murcha':'🏆 As Lendas')+'</span>'+
+        '<span class="rank-chip '+(isMurcha?'chip-murcha10':'chip-top10')+'">'+(isMurcha?'⚠️ Top 10 Na Mira':'⭐ Os Craques')+'</span>'+
       '</div>';
       let zonaAtual = null;
       lista.forEach((l,i)=>{

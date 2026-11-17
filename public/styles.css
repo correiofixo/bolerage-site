@@ -700,3 +700,36 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .mens-item.ms-em_dia{border-left-color:var(--green);background:linear-gradient(90deg,rgba(63,174,88,.16),transparent 70%);}
 .mens-item.ms-em_atraso{border-left-color:var(--red);background:linear-gradient(90deg,rgba(226,87,76,.18),transparent 70%);}
 .mens-item.ms-isenta{border-left-color:#4EA1FF;background:linear-gradient(90deg,rgba(78,161,255,.16),transparent 70%);}
+
+/* v4.9 — número da colocação em destaque, "A briga dos Guerreiros" e título do pagamento em uma linha */
+.rank-pos{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:44px;height:44px;border-radius:50%;
+  font-family:var(--font-display);font-size:24px;font-weight:800;line-height:1;color:var(--text);
+  background:rgba(255,255,255,.06);border:2px solid var(--line);}
+.rank-pos .rank-medalha{font-size:34px;line-height:1;}
+.rank-row:has(.rank-medalha) .rank-pos{background:none;border-color:transparent;}
+.rank-z-top5 .rank-pos{color:#241a00;background:linear-gradient(180deg,var(--gold-bright),var(--gold));border-color:var(--gold-bright);box-shadow:0 0 12px rgba(228,193,88,.45);}
+.rank-z-top10 .rank-pos{color:#06213f;background:linear-gradient(180deg,#9ACBFF,#4EA1FF);border-color:#9ACBFF;box-shadow:0 0 10px rgba(78,161,255,.4);}
+.rank-z-meio .rank-pos{color:#2b1300;background:linear-gradient(180deg,#FFC36B,#F0902E);border-color:#FFC36B;box-shadow:0 0 10px rgba(240,144,46,.4);}
+.rank-z-under5 .rank-pos{color:#fff;background:linear-gradient(180deg,#FF8D84,#C93A3A);border-color:#FF8D84;box-shadow:0 0 10px rgba(226,87,76,.4);}
+.rank-row:has(.rank-medalha).rank-z-top5 .rank-pos,.rank-row:has(.rank-medalha).rank-z-top10 .rank-pos{box-shadow:none;}
+
+.chip-meio{color:#ffe9cf;background:rgba(240,144,46,.2);border-color:#F0902E;}
+/* A briga dos Guerreiros: zona "em chamas" com brilho pulsante e título cintilante */
+.zona-meio:not(.murcha){border:1px solid #F0902E;
+  background:linear-gradient(135deg,rgba(240,144,46,.20),rgba(226,87,76,.10) 55%,rgba(167,123,255,.10));
+  animation:brigaGlow 2.8s ease-in-out infinite;}
+.zona-meio:not(.murcha) .rank-zona-tit{font-size:18px;letter-spacing:1px;
+  background:linear-gradient(100deg,#F0902E 0%,#FFE0A8 25%,#F0902E 50%,#FF6A4D 75%,#F0902E 100%);background-size:220% 100%;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:brigaShine 3.4s linear infinite;}
+.zona-meio:not(.murcha) .rank-zona-sub{color:#FFD9A8;}
+.zona-meio:not(.murcha) .rank-gap{color:#FFC36B;}
+.zona-meio:not(.murcha) .rank-row{border-bottom-color:rgba(240,144,46,.28);}
+@keyframes brigaGlow{0%,100%{box-shadow:0 0 0 1px rgba(240,144,46,.25),0 0 10px rgba(240,144,46,.18);}50%{box-shadow:0 0 0 1px rgba(255,106,77,.55),0 0 22px rgba(255,106,77,.38);}}
+@keyframes brigaShine{0%{background-position:0% 0;}100%{background-position:220% 0;}}
+@media (prefers-reduced-motion: reduce){ .zona-meio:not(.murcha), .zona-meio:not(.murcha) .rank-zona-tit{animation:none;} }
+
+.card h3.titulo-uma-linha{white-space:nowrap;overflow:hidden;text-overflow:clip;font-size:clamp(9.5px, calc((100vw - 62px) / 23), 18px);}
+/* Bola Murcha: número da colocação em tons de vermelho/laranja */
+.zona-top5.murcha .rank-z-top5 .rank-pos{color:#fff;background:linear-gradient(180deg,#FF8D84,#C93A3A);border-color:#FF8D84;box-shadow:0 0 10px rgba(226,87,76,.4);}
+.zona-top10.murcha .rank-z-top10 .rank-pos{color:#2b1300;background:linear-gradient(180deg,#FFC36B,#F0902E);border-color:#FFC36B;box-shadow:0 0 10px rgba(240,144,46,.4);}
+.zona-top5.murcha .rank-row:has(.rank-medalha) .rank-pos,.zona-top10.murcha .rank-row:has(.rank-medalha) .rank-pos{background:none;border-color:transparent;box-shadow:none;}
