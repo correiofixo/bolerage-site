@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 29;
+const APP_BUILD = 30;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -176,6 +176,11 @@ try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEF
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
 // RIFAS: ganhador e prêmio da rifa de cada rodada (cadastrado pelo admin, exibido na aba Rifas da Resenha)
 try{ db.exec("CREATE TABLE IF NOT EXISTS rifas (rodada_id TEXT PRIMARY KEY, ganhador TEXT NOT NULL DEFAULT '', premio TEXT NOT NULL DEFAULT '', atualizado_em TEXT)"); }catch(e){}
+// CONTROLE DE ACESSOS: cada entrada no app (login/abertura) e cada troca de tela de cada jogador
+try{ db.exec("CREATE TABLE IF NOT EXISTS acessos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, ts TEXT NOT NULL, tipo TEXT NOT NULL, tela TEXT)"); }catch(e){}
+try{ db.exec("CREATE INDEX IF NOT EXISTS idx_acessos_jog_ts ON acessos (jogador_id, ts)"); }catch(e){}
+// TRAMPOS: vagas de emprego que os amigos indicam para o grupo
+try{ db.exec("CREATE TABLE IF NOT EXISTS trampos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, titulo TEXT NOT NULL, empresa TEXT NOT NULL DEFAULT '', local TEXT NOT NULL DEFAULT '', descricao TEXT NOT NULL DEFAULT '', contato TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '', criado_em TEXT NOT NULL)"); }catch(e){}
 // ordem dos cards da tela inicial (chaves separadas por vírgula; vazio = ordem padrão)
 try{ db.exec("ALTER TABLE config ADD COLUMN home_ordem TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // saldo em caixa = saldo atual da conta corrente do time (entra no fluxo de caixa)
@@ -713,6 +718,7 @@ app.post('/api/login', loginLimiter, (req,res)=>{
   const jogador = db.prepare('SELECT * FROM jogadores WHERE pin=? AND ativo=1').get(pin);
   if(!jogador) return res.status(401).json({erro:'PIN não encontrado.'});
   const token = criarSessao(jogador.id, false);
+  registrarAcesso(jogador.id, 'entrada', null);
   res.json({token, jogador:jogadorPublico(jogador)});
 });
 
@@ -1942,6 +1948,118 @@ app.put('/api/admin/rifas', requirePerm('conteudo'), (req,res)=>{
   db.prepare('INSERT INTO rifas (rodada_id, ganhador, premio, atualizado_em) VALUES (?,?,?,?) ON CONFLICT(rodada_id) DO UPDATE SET ganhador=excluded.ganhador, premio=excluded.premio, atualizado_em=excluded.atualizado_em')
     .run(rodada.id, ganhador, premio, nowISO());
   logEvento('Rifa da rodada de '+rodada.data+': ganhador "'+ganhador+'"'+(premio?', prêmio "'+premio+'"':'')+'.');
+  res.json({ok:true});
+});
+
+/* ---- CONTROLE DE ACESSOS ---- */
+const TELAS_ACESSO = ['inicio','sorteio','votacao','resenha','ranking','trocarPin','admin'];
+const NOMES_TELAS = {inicio:'Início', sorteio:'Sorteio', votacao:'Votação', resenha:'Resenha', ranking:'Ranking', trocarPin:'Meu Contrato', admin:'Admin'};
+// 'entrada' (PIN) e 'abertura' (app aberto com a sessão ativa) contam como UMA visita se vierem em menos de 20 min
+function registrarAcesso(jogadorId, tipo, tela){
+  try{
+    if(tipo==='entrada' || tipo==='abertura'){
+      const ult = db.prepare("SELECT ts FROM acessos WHERE jogador_id=? AND tipo IN ('entrada','abertura') ORDER BY ts DESC LIMIT 1").get(jogadorId);
+      if(ult && (Date.now() - Date.parse(ult.ts)) < 20*60*1000) return;
+    }
+    db.prepare('INSERT INTO acessos (id, jogador_id, ts, tipo, tela) VALUES (?,?,?,?,?)').run(idGen('ac'), jogadorId, nowISO(), tipo, tela||null);
+  }catch(e){ console.error('Erro ao registrar acesso:', e); }
+}
+app.post('/api/acesso', requireAuth, (req,res)=>{
+  const tipo = String((req.body||{}).tipo||'');
+  const tela = String((req.body||{}).tela||'');
+  if(tipo==='abertura') registrarAcesso(req.jogadorId, 'abertura', null);
+  else if(tipo==='tela' && TELAS_ACESSO.includes(tela)) registrarAcesso(req.jogadorId, 'tela', tela);
+  else return res.status(400).json({erro:'Registro de acesso inválido.'});
+  res.json({ok:true});
+});
+const FMT_SP = new Intl.DateTimeFormat('en-US', {timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23', weekday:'short'});
+const DOW_IDX = {Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6};
+function spPartes(iso){
+  const p = {}; FMT_SP.formatToParts(new Date(iso)).forEach(x=>{ p[x.type] = x.value; });
+  return {data:p.year+'-'+p.month+'-'+p.day, hora:parseInt(p.hour,10), min:p.minute, dow:DOW_IDX[p.weekday], hm:p.hour+':'+p.minute};
+}
+// Relatório de acessos por jogador (Super Admin). dias = 7, 30, 90 ou 0 (tudo)
+app.get('/api/admin/acessos', requireSuper, (req,res)=>{
+  const dias = [7,30,90,0].includes(parseInt(req.query.dias,10)) ? parseInt(req.query.dias,10) : 30;
+  const corte = dias ? new Date(Date.now() - dias*86400000).toISOString() : null;
+  const linhas = corte
+    ? db.prepare('SELECT jogador_id, ts, tipo, tela FROM acessos WHERE ts>=? ORDER BY ts ASC').all(corte)
+    : db.prepare('SELECT jogador_id, ts, tipo, tela FROM acessos ORDER BY ts ASC').all();
+  const ativos = getJogadores().filter(j=>j.ativo);
+  const por = {};
+  ativos.forEach(j=>{ por[j.id] = {id:j.id, nome:j.nome, entradas:0, dias:new Set(), telas:{}, horas:Array(24).fill(0), dow:Array(7).fill(0), ultimos:[], ultimoTs:null, porDia:{}}; });
+  const heat = Array.from({length:7}, ()=>Array(24).fill(0));
+  const telasGeral = {}, hojeSP = spPartes(nowISO()).data;
+  let totalEntradas = 0, primeiro = null;
+  linhas.forEach(r=>{
+    const j = por[r.jogador_id]; if(!j) return;
+    const p = spPartes(r.ts);
+    if(r.tipo==='tela'){
+      j.telas[r.tela] = (j.telas[r.tela]||0)+1; telasGeral[r.tela] = (telasGeral[r.tela]||0)+1;
+    }else{
+      j.entradas++; totalEntradas++; j.dias.add(p.data); j.horas[p.hora]++; j.dow[p.dow]++; heat[p.dow][p.hora]++;
+      j.porDia[p.data] = (j.porDia[p.data]||0)+1; j.ultimoTs = r.ts;
+      j.ultimos.push({data:p.data.slice(8,10)+'/'+p.data.slice(5,7), dow:p.dow, hm:p.hm});
+      if(!primeiro) primeiro = r.ts;
+    }
+  });
+  // últimos 14 dias (horário de SP), do mais antigo ao mais recente
+  const ult14 = [];
+  for(let i=13;i>=0;i--) ult14.push(spPartes(new Date(Date.now()-i*86400000).toISOString()).data);
+  const topo = arr => { let b = 0; arr.forEach((v,i)=>{ if(v>arr[b]) b = i; }); return arr[b]>0 ? b : null; };
+  const semanas = dias ? dias/7 : Math.max(1, (Date.now() - Date.parse(primeiro||nowISO()))/(7*86400000));
+  const jogadores = Object.values(por).map(j=>{
+    const telaFav = Object.keys(j.telas).sort((a,b)=>j.telas[b]-j.telas[a])[0] || null;
+    return {
+      id:j.id, nome:j.nome, entradas:j.entradas, diasAtivos:j.dias.size,
+      mediaSemanal: Math.round(j.entradas/semanas*10)/10,
+      ultimoAcesso: j.ultimoTs, diasSemAcesso: j.ultimoTs ? Math.max(0, diasEntreDatas(spPartes(j.ultimoTs).data, hojeSP)) : null,
+      horaPreferida: topo(j.horas), diaPreferido: topo(j.dow), telaFavorita: telaFav,
+      telas: j.telas, porDia14: ult14.map(d=>j.porDia[d]||0), ultimos: j.ultimos.slice(-12).reverse(),
+    };
+  }).sort((a,b)=> (b.entradas-a.entradas) || a.nome.localeCompare(b.nome,'pt-BR'));
+  const ativosN = jogadores.filter(j=>j.entradas>0).length;
+  res.json({
+    dias, geradoEm: spWallClockNow(), nomesTelas: NOMES_TELAS,
+    totais: {entradas:totalEntradas, jogadoresAtivos:ativosN, totalJogadores:jogadores.length,
+      mediaPorJogador: ativosN ? Math.round(totalEntradas/ativosN*10)/10 : 0,
+      horaPico: topo(heat.reduce((acc,l)=>acc.map((v,i)=>v+l[i]), Array(24).fill(0))),
+      diaPico: topo(heat.map(l=>l.reduce((a,b)=>a+b,0))), telas: telasGeral},
+    heat, jogadores,
+  });
+});
+
+/* ---- TRAMPOS (vagas indicadas pelos amigos) ---- */
+function limparTexto(v, max){ return String(v==null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').trim().slice(0, max); }
+app.get('/api/trampos', requireAuth, (req,res)=>{
+  const souAdmin = jogadorEhAdmin(req.jogadorId);
+  const linhas = db.prepare('SELECT t.*, j.nome AS autor_nome, j.apelido AS autor_apelido, j.usar_apelido AS autor_usar FROM trampos t LEFT JOIN jogadores j ON j.id=t.jogador_id ORDER BY t.criado_em DESC LIMIT 60').all();
+  res.json({trampos: linhas.map(t=>({
+    id:t.id, titulo:t.titulo, empresa:t.empresa, local:t.local, descricao:t.descricao, contato:t.contato, link:t.link,
+    criadoEm:t.criado_em, autor: (t.autor_usar && t.autor_apelido) ? t.autor_apelido : (t.autor_nome||'?'),
+    posso_remover: t.jogador_id===req.jogadorId || souAdmin,
+  }))});
+});
+app.post('/api/trampos', requireAuth, (req,res)=>{
+  const b = req.body || {};
+  const titulo = limparTexto(b.titulo, 80);
+  if(titulo.length < 3) return res.status(400).json({erro:'Informe o título da vaga (mínimo 3 letras).'});
+  let link = limparTexto(b.link, 250);
+  if(link && !/^https?:\/\/[^\s]+$/i.test(link)) return res.status(400).json({erro:'O link da vaga precisa começar com http:// ou https://'});
+  const minhas = db.prepare('SELECT COUNT(*) c FROM trampos WHERE jogador_id=?').get(req.jogadorId).c;
+  if(minhas >= 10) return res.status(400).json({erro:'Você já tem 10 vagas publicadas. Remova alguma antes de publicar outra.'});
+  const id = idGen('tr');
+  db.prepare('INSERT INTO trampos (id,jogador_id,titulo,empresa,local,descricao,contato,link,criado_em) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, req.jogadorId, titulo, limparTexto(b.empresa,60), limparTexto(b.local,60), limparTexto(b.descricao,700), limparTexto(b.contato,80), link, nowISO());
+  logEvento('Vaga de trampo publicada: "'+titulo+'" por '+getJogadorPorId(req.jogadorId).nome+'.');
+  res.json({ok:true, id});
+});
+app.delete('/api/trampos/:id', requireAuth, (req,res)=>{
+  const t = db.prepare('SELECT * FROM trampos WHERE id=?').get(req.params.id);
+  if(!t) return res.status(404).json({erro:'Vaga não encontrada.'});
+  if(t.jogador_id !== req.jogadorId && !jogadorEhAdmin(req.jogadorId)) return res.status(403).json({erro:'Só quem publicou (ou um admin) pode remover a vaga.'});
+  db.prepare('DELETE FROM trampos WHERE id=?').run(t.id);
+  logEvento('Vaga de trampo removida: "'+t.titulo+'".');
   res.json({ok:true});
 });
 

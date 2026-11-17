@@ -151,6 +151,11 @@ const state = {
   gestaoSub: 'dre',
   rifasAdmin: [],
   resenhaAba: 'resenha',
+  trampos: [],
+  trampoFormAberto: false,
+  acessosPeriodo: 30,
+  acessos: null,
+  acessoAberto: null,
   rifas: [],
   rifaRodadaId: null,
   editandoMensId: null,
@@ -388,15 +393,15 @@ function renderLogin(){
   }).join('');
   document.getElementById('content').innerHTML =
     '<div id="login-screen">'+
-      '<img src="/assets/logo.jpg" alt="Bolerage F.D." class="login-logo">'+
-      '<div class="sub">Digite seu PIN de 4 dígitos</div>'+
+      '<div class="login-halo"><img src="/assets/logo.jpg" alt="Bolerage F.D." class="login-logo"></div>'+
+      (state.appVersion ? '<div class="login-versao"><span class="login-versao-rot">VERSÃO</span><span class="login-versao-num">'+escapeHtml(state.appVersion)+'</span></div>' : '')+
+      '<div class="sub login-sub">Digite seu PIN de 4 dígitos</div>'+
       '<div class="pin-dots">'+dots+'</div>'+
       '<div class="keypad">'+keypad+'</div>'+
       '<div class="login-error">'+escapeHtml(state.loginError)+'</div>'+
       '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo Bolerage'+
         ' <a class="wa-link wa-link-destaque" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
-      (state.appVersion ? '<div class="app-version login-version">Versão '+escapeHtml(state.appVersion)+'</div>' : '')+
     '</div>';
 }
 
@@ -802,6 +807,71 @@ async function handleTogglePresenca(atual){
 /* ============================================================
    RENDER: TAB RESENHA
    ============================================================ */
+// ---- REDES SOCIAIS (aba da Resenha)
+const LINK_SPOTIFY = 'https://open.spotify.com/playlist/5yrAcmZ6MYoaUUAT18IFOY?si=33d454bc5e824902';
+const LINK_INSTAGRAM = 'https://www.instagram.com/boleragefd/';
+function renderRedesHtml(){
+  return '<div class="card hz hz-verde rede-card"><div class="rede-ico">🎧</div><h3>Spotify Bolerage</h3>'+
+      '<p class="small muted" style="text-align:center;">A playlist oficial da resenha. Dá o play e bora pro churrasco!</p>'+
+      '<a class="btn rede-btn rede-spotify" href="'+LINK_SPOTIFY+'" target="_blank" rel="noopener">▶ Ouvir a playlist</a></div>'+
+    '<div class="card hz hz-roxo rede-card"><div class="rede-ico">📸</div><h3>Instagram Bolerage</h3>'+
+      '<p class="small muted" style="text-align:center;">Fotos, vídeos e resenhas do grupo. Segue lá: <strong style="color:var(--text)">@boleragefd</strong></p>'+
+      '<a class="btn rede-btn rede-insta" href="'+LINK_INSTAGRAM+'" target="_blank" rel="noopener">📷 Seguir no Instagram</a></div>';
+}
+
+// ---- TRAMPOS (aba da Resenha): vagas que os amigos indicam para o grupo
+async function refreshTrampos(){ try{ state.trampos = (await api('/api/trampos', {auth:true})).trampos || []; }catch(e){} }
+function linkWhatsApp(contato){
+  const dig = String(contato||'').replace(/\D/g,'');
+  return dig.length>=10 && dig.length<=13 && /^[\d\s()+\-]+$/.test(String(contato).trim()) ? 'https://wa.me/'+(dig.length<=11?'55':'')+dig : '';
+}
+function renderTramposHtml(){
+  const lista = state.trampos || [];
+  let h = '<div class="card hz hz-ciano" style="text-align:center;"><div class="rede-ico">💼</div><h3>Trampos</h3>'+
+    '<p class="small muted">Sabe de uma vaga? Divulgue aqui para ajudar os amigos do grupo — e confira as indicações dos outros craques.</p>'+
+    (state.trampoFormAberto ? '' : '<button class="btn" data-action="trampo-abrir">➕ Divulgar uma vaga</button>')+'</div>';
+  if(state.trampoFormAberto){
+    h += '<div class="card"><h3>Nova vaga</h3>'+
+      '<div class="field"><label>Título da vaga *</label><input id="tr-titulo" maxlength="80" placeholder="Ex.: Auxiliar administrativo"></div>'+
+      '<div class="field"><label>Empresa</label><input id="tr-empresa" maxlength="60"></div>'+
+      '<div class="field"><label>Local / modelo (presencial, remoto...)</label><input id="tr-local" maxlength="60"></div>'+
+      '<div class="field"><label>Contato (WhatsApp ou e-mail)</label><input id="tr-contato" maxlength="80" inputmode="email" placeholder="(11) 91234-5678 ou rh@empresa.com"></div>'+
+      '<div class="field"><label>Link da vaga</label><input id="tr-link" maxlength="250" inputmode="url" placeholder="https://..."></div>'+
+      '<div class="field"><label>Descrição</label><textarea id="tr-descricao" maxlength="700" rows="4" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;"></textarea></div>'+
+      '<div class="btn-row"><button class="btn" data-action="trampo-publicar">Publicar vaga</button><button class="btn secondary" data-action="trampo-cancelar">Cancelar</button></div></div>';
+  }
+  if(!lista.length){
+    h += '<div class="empty">Nenhuma vaga divulgada ainda. Seja o primeiro a indicar!</div>';
+  }else{
+    lista.forEach(t=>{
+      const wa = linkWhatsApp(t.contato);
+      const data = new Date(t.criadoEm); const dtxt = isNaN(data) ? '' : data.toLocaleDateString('pt-BR');
+      h += '<div class="card hz hz-verde trampo-card"><h3 class="trampo-titulo">'+escapeHtml(t.titulo)+'</h3>'+
+        '<div class="trampo-chips">'+(t.empresa?'<span class="badge">🏢 '+escapeHtml(t.empresa)+'</span>':'')+(t.local?'<span class="badge">📍 '+escapeHtml(t.local)+'</span>':'')+'</div>'+
+        (t.descricao ? '<p class="small avisos-text" style="margin:8px 0;">'+escapeHtml(t.descricao)+'</p>' : '')+
+        '<div class="trampo-acoes">'+
+          (t.link ? '<a class="btn small" href="'+escapeHtml(t.link)+'" target="_blank" rel="noopener noreferrer">🔗 Ver vaga</a>' : '')+
+          (wa ? '<a class="btn small" href="'+wa+'" target="_blank" rel="noopener">💬 WhatsApp</a>' : (t.contato ? '<span class="badge">📞 '+escapeHtml(t.contato)+'</span>' : ''))+
+        '</div>'+
+        '<div class="trampo-rodape"><span class="small muted">Indicada por <strong style="color:var(--text)">'+escapeHtml(t.autor)+'</strong>'+(dtxt?' • '+dtxt:'')+'</span>'+
+          (t.posso_remover ? '<button class="btn danger small" data-action="trampo-remover" data-id="'+t.id+'">remover</button>' : '')+'</div></div>';
+    });
+  }
+  return h;
+}
+async function handlePublicarTrampo(){
+  const g = id => document.getElementById(id).value;
+  try{
+    await api('/api/trampos', {method:'POST', auth:true, body:{titulo:g('tr-titulo'), empresa:g('tr-empresa'), local:g('tr-local'), contato:g('tr-contato'), link:g('tr-link'), descricao:g('tr-descricao')}});
+    state.trampoFormAberto = false; await refreshTrampos(); state._lastContentKey = null; render(); showToast('Vaga publicada!');
+  }catch(e){ alert(e.message); }
+}
+async function handleRemoverTrampo(id){
+  if(!confirm('Remover esta vaga?')) return;
+  try{ await api('/api/trampos/'+id, {method:'DELETE', auth:true}); await refreshTrampos(); render(); }
+  catch(e){ alert(e.message); }
+}
+
 // ---- RIFAS (aba da Resenha): ganhador e prêmio da rifa da rodada
 async function refreshRifasAdmin(){ try{ state.rifasAdmin = (await api('/api/admin/rifas', {adminAuth:true})).rifas || []; }catch(e){} }
 async function refreshRifas(){ try{ state.rifas = (await api('/api/rifas')).rifas || []; }catch(e){} }
@@ -843,11 +913,16 @@ function renderResenha(){
   const euNaResenha = idsResenhaAtual.includes(meuId);
   const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
-  const abasResenha = '<div class="tabtoggle">'+
-      '<button data-action="resenha-aba" data-aba="resenha" class="'+(state.resenhaAba!=='rifas'?'active':'')+'">Resenha</button>'+
-      '<button data-action="resenha-aba" data-aba="rifas" class="'+(state.resenhaAba==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
+  const ab = state.resenhaAba || 'resenha';
+  const abasResenha = '<div class="tabtoggle tabtoggle-grid">'+
+      '<button data-action="resenha-aba" data-aba="resenha" class="'+(ab==='resenha'?'active':'')+'">Resenha</button>'+
+      '<button data-action="resenha-aba" data-aba="rifas" class="'+(ab==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
+      '<button data-action="resenha-aba" data-aba="redes" class="'+(ab==='redes'?'active':'')+'">📲 Redes Sociais</button>'+
+      '<button data-action="resenha-aba" data-aba="trampos" class="'+(ab==='trampos'?'active':'')+'">💼 Trampos</button>'+
     '</div>';
-  if(state.resenhaAba==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
+  if(ab==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
+  if(ab==='redes'){ setContent(abasResenha + renderRedesHtml(), 'resenha-redes'); return; }
+  if(ab==='trampos'){ setContent(abasResenha + renderTramposHtml(), 'resenha-trampos'); return; }
 
   let html = abasResenha + '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
@@ -1479,6 +1554,7 @@ async function renderAdmin(){
     try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); permsDisp = elencoAdmin.permsDisponiveis || permsDisp; }
     catch(e){ if(on401(e)) return; c.innerHTML='<div class="empty">Erro ao carregar o elenco.</div>'; return; }
     try{ eventos = (await api('/api/admin/eventos', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
+    try{ state.acessos = await api('/api/admin/acessos?dias='+state.acessosPeriodo, {adminAuth:true}); }catch(e){ if(on401(e)) return; state.acessos = null; }
     if(state.elencoAba==='gestao'){
       try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
     }
@@ -1623,6 +1699,7 @@ async function renderAdmin(){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
     state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
+  if(isSuper) html += renderAcessosHtml(state.acessos);
   // card ORDEM: escolhe a sequência dos cards da tela inicial
   {
     const ordem = ordemCardsInicio();
@@ -2047,6 +2124,87 @@ async function handleSalvarAtrasoDesde(id){
     showToast('Atraso atualizado!');
   }catch(e){ alert(e.message); }
 }
+// ---------- CONTROLE DE ACESSOS (Super Admin) ----------
+const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const DIAS_SEMANA_LONGO = ['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+const COR_TELAS = {inicio:'#4EA1FF', sorteio:'#F0902E', votacao:'#3FAE58', resenha:'#A77BFF', ranking:'#E4C158', trocarPin:'#35C8D8', admin:'#E2574C'};
+function textoUltimoAcesso(j){
+  if(j.diasSemAcesso==null) return 'nunca acessou';
+  return j.diasSemAcesso===0 ? 'hoje' : (j.diasSemAcesso===1 ? 'ontem' : 'há '+j.diasSemAcesso+' dias');
+}
+function renderAcessosHtml(d){
+  if(!d) return '<div class="card"><h3>📊 Controle de acessos</h3><p class="small muted">Não foi possível carregar os acessos.</p></div>';
+  const T = d.totais, nomes = d.nomesTelas || {};
+  const periodos = [[7,'7 dias'],[30,'30 dias'],[90,'90 dias'],[0,'Tudo']];
+  let h = '<div class="card"><h3>📊 Controle de acessos</h3>'+
+    '<p class="small muted">Quem entra no app, quando e quais telas usa. Considera cada visita (PIN ou app reaberto), horário de São Paulo.</p>'+
+    '<div class="filtros-fin">'+periodos.map(p=>'<button data-action="acessos-periodo" data-d="'+p[0]+'" class="'+(d.dias===p[0]?'active':'')+'">'+p[1]+'</button>').join('')+'</div>';
+
+  // KPIs
+  h += '<div class="kpi-grid">'+
+    '<div class="kpi kpi-azul"><div class="kpi-num">'+T.entradas+'</div><div class="kpi-rot">visitas ao app</div></div>'+
+    '<div class="kpi kpi-verde"><div class="kpi-num">'+T.jogadoresAtivos+'<small>/'+T.totalJogadores+'</small></div><div class="kpi-rot">jogadores que entraram</div></div>'+
+    '<div class="kpi kpi-dourado"><div class="kpi-num">'+String(T.mediaPorJogador).replace('.',',')+'</div><div class="kpi-rot">visitas por jogador ativo</div></div>'+
+    '<div class="kpi kpi-roxo"><div class="kpi-num">'+(T.horaPico==null?'—':T.horaPico+'h')+'</div><div class="kpi-rot">'+(T.diaPico==null?'horário de pico':'pico: '+DIAS_SEMANA_LONGO[T.diaPico])+'</div></div>'+
+  '</div>';
+
+  // mapa de calor dia da semana x hora
+  const maxHeat = Math.max(1, ...d.heat.map(l=>Math.max(...l)));
+  let heat = '<div class="heat"><div class="heat-linha heat-cab"><span></span>'+[...Array(24).keys()].map(hh=>'<span>'+(hh%3===0?hh:'')+'</span>').join('')+'</div>';
+  d.heat.forEach((linha,dow)=>{
+    heat += '<div class="heat-linha"><span class="heat-dia">'+DIAS_SEMANA[dow]+'</span>'+linha.map((v,hh)=>{
+      const a = v ? (0.18 + 0.82*v/maxHeat).toFixed(2) : 0.05;
+      return '<span class="heat-cel" style="background:rgba(240,144,46,'+a+')" title="'+DIAS_SEMANA[dow]+' '+hh+'h: '+v+' visita'+(v===1?'':'s')+'"></span>';
+    }).join('')+'</div>';
+  });
+  heat += '</div><p class="small muted" style="margin:4px 0 0;">Quanto mais forte a cor, mais visitas naquele dia e horário (colunas = hora do dia).</p>';
+  h += finZona('laranja', '🔥 MAPA DE CALOR', 'Dia da semana x horário das visitas', heat);
+
+  // telas mais acessadas (pizza)
+  const segsTelas = Object.keys(T.telas).sort((a,b)=>T.telas[b]-T.telas[a]).map(k=>({label:nomes[k]||k, valor:T.telas[k], cor:COR_TELAS[k]||'#8A8A99', txt:T.telas[k]+' acesso'+(T.telas[k]===1?'':'s')}));
+  h += finZona('roxo', '📱 TELAS MAIS ACESSADAS', 'Onde os jogadores mais entram', pizzaHtml('', segsTelas));
+
+  // ranking de uso por jogador (toque para ver o detalhe)
+  const maxEnt = Math.max(1, ...d.jogadores.map(j=>j.entradas));
+  let rank = '';
+  d.jogadores.filter(j=>j.entradas>0).forEach((j,i)=>{
+    const aberto = state.acessoAberto===j.id;
+    const medalha = i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
+    rank += '<div class="ac-item'+(aberto?' aberto':'')+'"><div class="ac-linha" data-action="acesso-abrir" data-id="'+j.id+'">'+
+      '<span class="ac-pos">'+medalha+'</span>'+
+      '<span class="ac-info"><span class="ac-nome">'+escapeHtml(j.nome)+'</span><span class="ac-barra"><i style="width:'+Math.max(4, j.entradas/maxEnt*100).toFixed(0)+'%"></i></span>'+
+        '<span class="ac-sub">último acesso '+textoUltimoAcesso(j)+'</span></span>'+
+      '<span class="ac-num"><strong>'+j.entradas+'</strong><small>visita'+(j.entradas===1?'':'s')+'</small></span></div>';
+    if(aberto){
+      const maxD = Math.max(1, ...j.porDia14);
+      const telasJ = Object.keys(j.telas).sort((a,b)=>j.telas[b]-j.telas[a]);
+      rank += '<div class="ac-detalhe">'+
+        '<div class="ac-stats">'+
+          '<div><b>'+j.diasAtivos+'</b><span>dias com acesso</span></div>'+
+          '<div><b>'+String(j.mediaSemanal).replace('.',',')+'</b><span>visitas por semana</span></div>'+
+          '<div><b>'+(j.horaPreferida==null?'—':j.horaPreferida+'h')+'</b><span>horário preferido</span></div>'+
+          '<div><b>'+(j.diaPreferido==null?'—':DIAS_SEMANA[j.diaPreferido])+'</b><span>dia preferido</span></div>'+
+        '</div>'+
+        '<div class="stack-tit" style="margin-top:8px;">Últimos 14 dias</div>'+
+        '<div class="mini-bars">'+j.porDia14.map((v,k)=>'<span class="mini-col" title="'+v+' visita'+(v===1?'':'s')+'"><i style="height:'+(v?Math.max(12, v/maxD*100):4)+'%;'+(v?'':'opacity:.25;')+'"></i></span>').join('')+'</div>'+
+        '<div class="stack-tit" style="margin-top:8px;">Telas que mais usa</div>'+
+        (telasJ.length ? telasJ.slice(0,4).map(k=>'<div class="ac-tela"><span>'+(nomes[k]||k)+'</span><span class="ac-tela-barra"><i style="width:'+(j.telas[k]/j.telas[telasJ[0]]*100).toFixed(0)+'%;background:'+(COR_TELAS[k]||'#8A8A99')+'"></i></span><b>'+j.telas[k]+'</b></div>').join('') : '<p class="small muted">Sem telas registradas.</p>')+
+        '<div class="stack-tit" style="margin-top:8px;">Últimas visitas (dia e horário)</div>'+
+        '<div class="ac-ultimos">'+j.ultimos.map(u=>'<span class="badge">'+DIAS_SEMANA[u.dow]+' '+u.data+' • '+u.hm+'</span>').join('')+'</div>'+
+      '</div>';
+    }
+    rank += '</div>';
+  });
+  if(!rank) rank = '<p class="small muted">Nenhum acesso registrado neste período.</p>';
+  h += finZona('dourado', '🏆 QUEM MAIS USA O APP', 'Toque em um jogador para ver o detalhe (dias, horários e telas)', rank);
+
+  // sem acesso
+  const sumidos = d.jogadores.filter(j=>j.entradas===0);
+  h += finZona(sumidos.length?'vermelho':'verde', '🕵️ SEM ACESSO NO PERÍODO', sumidos.length ? sumidos.length+' jogador'+(sumidos.length===1?'':'es')+' não entrou'+(sumidos.length===1?'':'ram')+' no app' : 'Todo mundo entrou pelo menos uma vez!',
+    sumidos.length ? '<div class="ac-sumidos">'+sumidos.map(j=>'<span class="badge">'+escapeHtml(j.nome)+'</span>').join('')+'</div>' : '');
+  h += '<p class="small muted" style="margin-top:6px;">Os acessos passam a ser contados a partir desta versão do app.</p></div>';
+  return h;
+}
 async function handleSalvarSaldoCaixa(){
   try{
     await api('/api/admin/saldo-caixa', {method:'PUT', adminAuth:true, body:{saldo: document.getElementById('saldo-caixa').value}});
@@ -2250,6 +2408,7 @@ function startPolling(){
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
       if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
+      if(state.tab==='resenha' && state.resenhaAba==='trampos' && !state.trampoFormAberto) await refreshTrampos();
       if((state.tab==='sorteio' || (state.tab==='votacao' && (state.votacaoAba==='votos' || state.votacaoAba==='historico'))) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
@@ -2282,6 +2441,7 @@ async function render(){
   if(state._lastRenderedTab !== state.tab){
     state._lastContentKey = null;
     state._lastRenderedTab = state.tab;
+    registrarTela(state.tab);
   }
   if(state.tab==='inicio') renderInicio();
   else if(state.tab==='resenha') renderResenha();
@@ -2316,7 +2476,11 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
-  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; if(state.resenhaAba==='rifas') await refreshRifas(); return render(); }
+  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; if(state.resenhaAba==='rifas') await refreshRifas(); if(state.resenhaAba==='trampos') await refreshTrampos(); return render(); }
+  if(action==='trampo-abrir'){ state.trampoFormAberto = true; state._lastContentKey = null; return render(); }
+  if(action==='trampo-cancelar'){ state.trampoFormAberto = false; state._lastContentKey = null; return render(); }
+  if(action==='trampo-publicar') return handlePublicarTrampo();
+  if(action==='trampo-remover') return handleRemoverTrampo(el.dataset.id);
   if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); return render(); }
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
@@ -2344,6 +2508,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   }
   if(action==='rifa-remover'){ if(confirm('Remover o ganhador e o prêmio desta rifa?')) return handleSalvarRifa(true, el.dataset.id); return; }
   if(action==='limpar-rifa'){ if(confirm('Remover o ganhador e o prêmio desta rodada?')) return handleSalvarRifa(true); return; }
+  if(action==='acessos-periodo'){ state.acessosPeriodo = parseInt(el.dataset.d,10); return render(); }
+  if(action==='acesso-abrir'){ state.acessoAberto = (state.acessoAberto===el.dataset.id) ? null : el.dataset.id; return render(); }
   if(action==='gestao-sub'){ state.gestaoSub = el.dataset.sub; return render(); }
   if(action==='baixar-pdf-fin'){
     const sel = document.getElementById('rel-pdf-status');
@@ -2437,6 +2603,11 @@ function resetInatividade(){
 /* ============================================================
    BOOT
    ============================================================ */
+// controle de acessos: registra a troca de tela e a abertura do app (silencioso, nunca atrapalha)
+function registrarTela(tela){
+  if(!state.token || !state.currentPlayer) return;
+  api('/api/acesso', {method:'POST', auth:true, body:{tipo:'tela', tela}}).catch(()=>{});
+}
 async function boot(){
   document.getElementById('content').innerHTML = '<div class="empty">Carregando…</div>';
   await refreshVersion();
@@ -2446,7 +2617,10 @@ async function boot(){
   await refreshRodadasLista();
   await refreshRanking();
   await refreshHomeExtras();
-  if(state.currentPlayer && state.token){ startPolling(); resetInatividade(); }
+  if(state.currentPlayer && state.token){
+    startPolling(); resetInatividade();
+    api('/api/acesso', {method:'POST', auth:true, body:{tipo:'abertura'}}).catch(()=>{});
+  }
   await render();
 }
 boot();
