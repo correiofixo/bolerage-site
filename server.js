@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 15;
+const APP_BUILD = 16;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -170,6 +170,10 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN usar_apelido INTEGER NOT NULL DEF
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN email TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // mês (YYYY-MM) em que a mensalidade foi zerada pela última vez
 try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
+// custos da quadra (fluxo de caixa)
+try{ db.exec("ALTER TABLE config ADD COLUMN custo_aluguel REAL NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -830,142 +834,221 @@ function fmtBRL(n){
   const [int, dec] = Math.abs(n).toFixed(2).split('.');
   return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
 }
+// ordem de exibição dos grupos (chave 'sem_status' = jogador sem status de mensalidade)
 const STATUS_FIN = [
-  {chave:'em_dia',    label:'Em dia'},
-  {chave:'em_atraso', label:'Em atraso'},
-  {chave:'',          label:'Sem status (aguardando)'},
-  {chave:'isenta',    label:'Isenta'},
+  {chave:'em_dia',     campo:'em_dia',    label:'Em dia'},
+  {chave:'em_atraso',  campo:'em_atraso', label:'Em atraso'},
+  {chave:'isenta',     campo:'isenta',    label:'Isento'},
+  {chave:'sem_status', campo:'',          label:'Sem status'},
 ];
 // Valor da mensalidade vem do card "Aluguel da quadra" (campo Valor da mensalidade).
-// Isentos contam R$ 0,00. Só jogadores ativos entram.
+// Só EM DIA e EM ATRASO têm valor; ISENTO e SEM STATUS contam R$ 0,00. Só ativos entram.
 function montarRelatorioFinanceiro(){
   const a = db.prepare('SELECT valor_mensalidade FROM aluguel_quadra WHERE id=1').get();
   const valorTexto = (a && a.valor_mensalidade) || '';
   const valorUnit = parseValorBR(valorTexto);
   const agora = spWallClockNow();
-  const linhas = getJogadores().filter(j=>j.ativo)
-    .sort((x,y)=>x.nome.localeCompare(y.nome,'pt-BR'))
-    .map(j=>{
-      const status = ['em_dia','em_atraso','isenta'].includes(j.mensalidade) ? j.mensalidade : '';
-      const valor = status==='isenta' ? 0 : (valorUnit||0);
-      return {id:j.id, nome:j.nome, status, valor};
-    });
-  const subtotais = STATUS_FIN.map(s=>{
-    const doStatus = linhas.filter(l=>l.status===s.chave);
-    return {status:s.chave, label:s.label, qtd:doStatus.length, total:doStatus.reduce((t,l)=>t+l.valor,0)};
+  const cfg = getConfig() || {};
+  const jogadores = getJogadores().filter(j=>j.ativo).sort((x,y)=>x.nome.localeCompare(y.nome,'pt-BR'));
+  const grupos = STATUS_FIN.map(s=>{
+    const linhas = jogadores.filter(j=>{
+      const st = ['em_dia','em_atraso','isenta'].includes(j.mensalidade) ? j.mensalidade : '';
+      return st === s.campo;
+    }).map(j=>({id:j.id, nome:j.nome, valor: (s.chave==='em_dia'||s.chave==='em_atraso') ? (valorUnit||0) : 0}));
+    return {chave:s.chave, label:s.label, qtd:linhas.length, total:linhas.reduce((t,l)=>t+l.valor,0), linhas};
   });
+  const tot = k => (grupos.find(g=>g.chave===k)||{total:0}).total;
+  const custos = {
+    aluguel: Number(cfg.custo_aluguel)||0,
+    higienizacao: Number(cfg.custo_higienizacao)||0,
+    carvao: Number(cfg.custo_carvao)||0,
+  };
+  const despesas = custos.aluguel + custos.higienizacao + custos.carvao;
+  const receitas = {recebido: tot('em_dia'), aReceber: tot('em_atraso')};
+  receitas.total = receitas.recebido + receitas.aReceber;
   return {
     referencia: agora.slice(0,7),
     geradoEm: agora,
     valorTexto, valorUnitario: valorUnit,
     aviso: valorUnit==null ? 'Defina o "Valor da mensalidade" no card Aluguel da quadra para calcular os valores.' : '',
-    linhas, subtotais,
-    qtd: linhas.length,
-    totalGeral: linhas.reduce((t,l)=>t+l.valor,0),
+    grupos,
+    qtd: jogadores.length,
+    totalGeral: grupos.reduce((t,g)=>t+g.total,0),
+    custos, despesas, receitas,
+    saldoPrevisto: receitas.total - despesas,
   };
 }
 app.get('/api/admin/relatorio-financeiro', requireSuper, (req,res)=>{
   res.json(montarRelatorioFinanceiro());
 });
+// Custos da quadra (valores mensais informados pelo admin) para o fluxo de caixa.
+app.put('/api/admin/custos', requireSuper, (req,res)=>{
+  const b = req.body || {};
+  const lerValor = (v, rotulo)=>{
+    if(v==null || String(v).trim()==='') return 0;
+    const n = parseValorBR(v);
+    if(n==null || n<0 || n>1000000) throw new Error(rotulo+' inválido.');
+    return Math.round(n*100)/100;
+  };
+  let aluguel, higienizacao, carvao;
+  try{
+    aluguel = lerValor(b.aluguel, 'Aluguel da Quadra');
+    higienizacao = lerValor(b.higienizacao, 'Higienização');
+    carvao = lerValor(b.carvao, 'Carvão');
+  }catch(e){ return res.status(400).json({erro:e.message}); }
+  db.prepare('UPDATE config SET custo_aluguel=?, custo_higienizacao=?, custo_carvao=? WHERE id=1').run(aluguel, higienizacao, carvao);
+  logEvento('Custos da quadra atualizados: aluguel '+fmtBRL(aluguel)+', higienização '+fmtBRL(higienizacao)+', carvão '+fmtBRL(carvao)+'.');
+  res.json({ok:true});
+});
 
-// PDF simples escrito à mão (sem dependências): A4, Helvetica, tabela paginada.
-function gerarPdfRelatorio(rel){
+// PDF simples escrito à mão (sem dependências): A4, Helvetica, páginas numeradas.
+function novoPdf(){
   const W = 595, H = 842, M = 40, RIGHT = W-M;
   const pages = [[]];
-  let y = H-M;
+  const doc = {W, H, M, RIGHT, y: H-M};
   const cur = ()=>pages[pages.length-1];
   const esc = s => String(s).replace(/[^ -ÿ]/g,'?').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
   const largura = (s,size)=>{ let w=0; for(const ch of String(s)) w += /\d/.test(ch)?0.556 : (ch===','||ch==='.'||ch===' ')?0.278 : ch==='R'?0.722 : ch==='$'?0.556 : ch==='-'?0.333 : 0.56; return w*size; };
-  const texto = (x,yy,s,size,bold,align)=>{
+  doc.texto = (x,yy,s,size,bold,align)=>{
     const xx = align==='right' ? x-largura(s,size) : x;
     cur().push('BT /'+(bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(1)+' '+yy.toFixed(1)+' Td ('+esc(s)+') Tj ET');
   };
-  const linha = (x1,y1,x2,y2,g)=> cur().push((g!=null?g+' G ':'')+'0.6 w '+x1+' '+y1.toFixed(1)+' m '+x2+' '+y2.toFixed(1)+' l S 0 G');
-  const faixa = (yy,h,g)=> cur().push(g+' g '+M+' '+yy.toFixed(1)+' '+(W-2*M)+' '+h+' re f 0 g');
-  const cabecalhoTabela = ()=>{
-    faixa(y-4, 16, 0.88);
-    texto(M+4, y, '#', 9, true); texto(M+28, y, 'Jogador', 9, true); texto(330, y, 'Status', 9, true); texto(RIGHT-4, y, 'Valor', 9, true, 'right');
-    y -= 18;
+  doc.linha = (x1,y1,x2,y2,g)=> cur().push((g!=null?g+' G ':'')+'0.6 w '+x1+' '+y1.toFixed(1)+' m '+x2+' '+y2.toFixed(1)+' l S 0 G');
+  doc.faixa = (yy,h,g)=> cur().push(g+' g '+M+' '+yy.toFixed(1)+' '+(W-2*M)+' '+h+' re f 0 g');
+  // garante espaço de h pontos; se faltar, abre nova página e executa cab() (cabeçalho opcional)
+  doc.garantir = (h, cab)=>{ if(doc.y-h < 60){ pages.push([]); doc.y = H-M; if(cab) cab(); } };
+  doc.build = ()=>{
+    pages.forEach((p,i)=>{ p.push('BT /F1 8 Tf '+(W/2-30)+' 24 Td (Página '+(i+1)+' de '+pages.length+') Tj ET'); });
+    const objs = [];
+    const add = s => { objs.push(Buffer.from(s,'latin1')); return objs.length; };
+    add('<< /Type /Catalog /Pages 2 0 R >>');
+    const nP = pages.length;
+    const kids = pages.map((_,i)=> (5+i*2)+' 0 R').join(' ');
+    add('<< /Type /Pages /Kids ['+kids+'] /Count '+nP+' >>');
+    add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    pages.forEach((p,i)=>{
+      add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+(6+i*2)+' 0 R >>');
+      const stream = Buffer.from(p.join('\n'),'latin1');
+      objs.push(Buffer.concat([Buffer.from('<< /Length '+stream.length+' >>\nstream\n','latin1'), stream, Buffer.from('\nendstream','latin1')]));
+    });
+    const partes = [Buffer.from('%PDF-1.4\n','latin1')];
+    const offsets = [];
+    let pos = partes[0].length;
+    objs.forEach((o,i)=>{
+      offsets.push(pos);
+      const b = Buffer.concat([Buffer.from((i+1)+' 0 obj\n','latin1'), o, Buffer.from('\nendobj\n','latin1')]);
+      partes.push(b); pos += b.length;
+    });
+    let xref = 'xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
+    offsets.forEach(o=>{ xref += String(o).padStart(10,'0')+' 00000 n \n'; });
+    xref += 'trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+pos+'\n%%EOF\n';
+    partes.push(Buffer.from(xref,'latin1'));
+    return Buffer.concat(partes);
   };
-  const novaPagina = ()=>{ pages.push([]); y = H-M; cabecalhoTabela(); };
-  const garantir = (h)=>{ if(y-h < 60) novaPagina(); };
-
+  return doc;
+}
+function dataHoraBR(g){ return g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16); }
+function cabecalhoPdf(d, rel, subtitulo){
   const [ano, mes] = rel.referencia.split('-');
-  const g = rel.geradoEm; // YYYY-MM-DDTHH:MM:SS
-  texto(M, y, 'Bolerage F.D.', 18, true); y -= 20;
-  texto(M, y, 'Relatório Financeiro - Mensalidades', 13, true); y -= 18;
-  texto(M, y, 'Referência: '+mes+'/'+ano+'     Valor da mensalidade: '+(rel.valorUnitario==null?'não definido':fmtBRL(rel.valorUnitario)), 10, false); y -= 14;
-  texto(M, y, 'Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+' (horário de São Paulo)', 9, false); y -= 8;
-  linha(M, y, RIGHT, y, 0.5); y -= 18;
+  d.texto(d.M, d.y, 'Bolerage F.D.', 18, true); d.y -= 20;
+  d.texto(d.M, d.y, subtitulo, 13, true); d.y -= 18;
+  d.texto(d.M, d.y, 'Referência: '+mes+'/'+ano+'     Valor da mensalidade: '+(rel.valorUnitario==null?'não definido':fmtBRL(rel.valorUnitario)), 10, false); d.y -= 14;
+  d.texto(d.M, d.y, 'Gerado em '+dataHoraBR(rel.geradoEm)+' (horário de São Paulo)', 9, false); d.y -= 8;
+  d.linha(d.M, d.y, d.RIGHT, d.y, 0.5); d.y -= 18;
+}
 
-  cabecalhoTabela();
-  const rotulo = Object.fromEntries(STATUS_FIN.map(s=>[s.chave,s.label]));
-  rel.linhas.forEach((l,i)=>{
-    garantir(16);
-    if(i%2===1) faixa(y-4, 15, 0.96);
-    texto(M+4, y, String(i+1), 9, false);
-    texto(M+28, y, l.nome, 10, false);
-    texto(330, y, rotulo[l.status]||'', 9, false);
-    texto(RIGHT-4, y, fmtBRL(l.valor), 10, false, 'right');
-    y -= 15;
+// PDF 1: mensalidades AGRUPADAS POR STATUS, com subtotal de cada grupo e total geral.
+// filtro (opcional) = chave de um grupo -> só aquele grupo.
+function gerarPdfRelatorio(rel, filtro){
+  const d = novoPdf();
+  const grupos = filtro ? rel.grupos.filter(g=>g.chave===filtro) : rel.grupos;
+  cabecalhoPdf(d, rel, 'Relatório Financeiro - Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
+  const cabTabela = ()=>{
+    d.faixa(d.y-4, 16, 0.88);
+    d.texto(d.M+4, d.y, '#', 9, true); d.texto(d.M+28, d.y, 'Jogador', 9, true); d.texto(d.RIGHT-4, d.y, 'Valor', 9, true, 'right');
+    d.y -= 18;
+  };
+  grupos.forEach(g=>{
+    d.garantir(70, null);
+    // título do grupo
+    d.faixa(d.y-5, 18, 0.80);
+    d.texto(d.M+4, d.y, g.label.toUpperCase(), 11, true);
+    d.texto(d.RIGHT-4, d.y, g.qtd+' jogador'+(g.qtd===1?'':'es'), 9, false, 'right');
+    d.y -= 20;
+    g.linhas.forEach((l,i)=>{
+      d.garantir(18, ()=>{ d.texto(d.M, d.y, g.label+' (continuação)', 10, true); d.y -= 16; });
+      if(i%2===1) d.faixa(d.y-4, 15, 0.96);
+      d.texto(d.M+4, d.y, String(i+1), 9, false);
+      d.texto(d.M+28, d.y, l.nome, 10, false);
+      d.texto(d.RIGHT-4, d.y, fmtBRL(l.valor), 10, false, 'right');
+      d.y -= 15;
+    });
+    if(!g.linhas.length){ d.texto(d.M+4, d.y, 'Nenhum jogador neste status.', 9, false); d.y -= 15; }
+    d.linha(d.M, d.y+9, d.RIGHT, d.y+9, 0.4);
+    d.texto(d.M+28, d.y-4, 'Subtotal - '+g.label, 10, true);
+    d.texto(d.RIGHT-4, d.y-4, fmtBRL(g.total), 10, true, 'right');
+    d.y -= 28;
   });
-  linha(M, y+8, RIGHT, y+8, 0.5);
+  if(!filtro){
+    d.garantir(40, null);
+    d.faixa(d.y-6, 20, 0.88);
+    d.texto(d.M+4, d.y, 'TOTAL GERAL', 11, true);
+    d.texto(d.M+160, d.y, rel.qtd+' jogadores', 9, true);
+    d.texto(d.RIGHT-4, d.y, fmtBRL(rel.totalGeral), 11, true, 'right');
+    d.y -= 24;
+  }
+  if(rel.aviso){ d.garantir(20, null); d.texto(d.M, d.y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 9, false); }
+  return d.build();
+}
 
-  garantir(30+rel.subtotais.length*16+40);
-  y -= 10;
-  texto(M, y, 'Subtotal por status', 11, true); y -= 16;
-  rel.subtotais.forEach(s=>{
-    texto(M+4, y, s.label, 10, false);
-    texto(330, y, s.qtd+' jogador'+(s.qtd===1?'':'es'), 9, false);
-    texto(RIGHT-4, y, fmtBRL(s.total), 10, false, 'right');
-    y -= 16;
-  });
-  linha(M, y+10, RIGHT, y+10, 0.3); y -= 6;
-  faixa(y-6, 20, 0.88);
-  texto(M+4, y, 'TOTAL GERAL', 11, true);
-  texto(330, y, rel.qtd+' jogadores', 9, true);
-  texto(RIGHT-4, y, fmtBRL(rel.totalGeral), 11, true, 'right');
-  if(rel.aviso){ y -= 26; texto(M, y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 9, false); }
-
-  // rodapé com numeração
-  pages.forEach((p,i)=>{ p.push('BT /F1 8 Tf '+(W/2-30)+' 24 Td (Página '+(i+1)+' de '+pages.length+') Tj ET'); });
-
-  // montagem do arquivo PDF
-  const objs = [];
-  const add = s => { objs.push(Buffer.from(s,'latin1')); return objs.length; };
-  add('<< /Type /Catalog /Pages 2 0 R >>');
-  const nP = pages.length;
-  const kids = pages.map((_,i)=> (5+i*2)+' 0 R').join(' ');
-  add('<< /Type /Pages /Kids ['+kids+'] /Count '+nP+' >>');
-  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-  pages.forEach((p,i)=>{
-    const conteudoNum = 6+i*2;
-    add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+conteudoNum+' 0 R >>');
-    const stream = Buffer.from(p.join('\n'),'latin1');
-    objs.push(Buffer.concat([Buffer.from('<< /Length '+stream.length+' >>\nstream\n','latin1'), stream, Buffer.from('\nendstream','latin1')]));
-  });
-  const partes = [Buffer.from('%PDF-1.4\n','latin1')];
-  const offsets = [];
-  let pos = partes[0].length;
-  objs.forEach((o,i)=>{
-    offsets.push(pos);
-    const b = Buffer.concat([Buffer.from((i+1)+' 0 obj\n','latin1'), o, Buffer.from('\nendobj\n','latin1')]);
-    partes.push(b); pos += b.length;
-  });
-  let xref = 'xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
-  offsets.forEach(o=>{ xref += String(o).padStart(10,'0')+' 00000 n \n'; });
-  xref += 'trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+pos+'\n%%EOF\n';
-  partes.push(Buffer.from(xref,'latin1'));
-  return Buffer.concat(partes);
+// PDF 2: fluxo de caixa = RECEITAS (mensalidades) - DESPESAS (custos da quadra) = SALDO PREVISTO.
+function gerarPdfFluxoCaixa(rel){
+  const d = novoPdf();
+  cabecalhoPdf(d, rel, 'Fluxo de Caixa');
+  const secao = (titulo)=>{
+    d.faixa(d.y-5, 18, 0.80); d.texto(d.M+4, d.y, titulo, 11, true); d.y -= 22;
+  };
+  const item = (rotulo, valor, negrito)=>{
+    d.texto(d.M+10, d.y, rotulo, 10, !!negrito); d.texto(d.RIGHT-4, d.y, fmtBRL(valor), 10, !!negrito, 'right'); d.y -= 16;
+  };
+  secao('RECEITAS (mensalidades)');
+  const g = k => rel.grupos.find(x=>x.chave===k);
+  item('Em dia ('+g('em_dia').qtd+' jogador'+(g('em_dia').qtd===1?'':'es')+') - já recebido', rel.receitas.recebido);
+  item('Em atraso ('+g('em_atraso').qtd+' jogador'+(g('em_atraso').qtd===1?'':'es')+') - a receber', rel.receitas.aReceber);
+  d.linha(d.M, d.y+11, d.RIGHT, d.y+11, 0.4);
+  item('Total de receitas', rel.receitas.total, true);
+  d.y -= 10;
+  secao('DESPESAS (custos da quadra)');
+  item('Aluguel da Quadra', rel.custos.aluguel);
+  item('Higienização', rel.custos.higienizacao);
+  item('Carvão', rel.custos.carvao);
+  d.linha(d.M, d.y+11, d.RIGHT, d.y+11, 0.4);
+  item('Total de despesas', rel.despesas, true);
+  d.y -= 14;
+  d.faixa(d.y-10, 30, rel.saldoPrevisto<0 ? 0.85 : 0.88);
+  d.texto(d.M+8, d.y, 'SALDO PREVISTO (receitas - despesas)', 12, true);
+  d.texto(d.RIGHT-8, d.y, fmtBRL(rel.saldoPrevisto), 14, true, 'right');
+  d.y -= 36;
+  d.texto(d.M, d.y, 'Receitas = mensalidades Em dia + Em atraso. Isentos e jogadores sem status contam R$ 0,00.', 8, false);
+  if(rel.aviso){ d.y -= 12; d.texto(d.M, d.y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 8, false); }
+  return d.build();
+}
+function enviarPdf(res, pdf, nome){
+  res.set('Content-Type','application/pdf');
+  res.set('Content-Disposition','attachment; filename="'+nome+'"');
+  res.send(pdf);
 }
 app.get('/api/admin/relatorio-financeiro.pdf', requireSuper, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
-  const pdf = gerarPdfRelatorio(rel);
-  logEvento('Relatório financeiro (PDF) gerado pelo administrador — referência '+rel.referencia+'.');
-  res.set('Content-Type','application/pdf');
-  res.set('Content-Disposition','attachment; filename="relatorio-financeiro-'+rel.referencia+'.pdf"');
-  res.send(pdf);
+  const filtro = STATUS_FIN.some(s=>s.chave===req.query.status) ? String(req.query.status) : null;
+  logEvento('Relatório financeiro (PDF) gerado pelo administrador — referência '+rel.referencia+(filtro?' — filtro '+filtro:'')+'.');
+  enviarPdf(res, gerarPdfRelatorio(rel, filtro), 'relatorio-financeiro-'+rel.referencia+(filtro?'-'+filtro:'')+'.pdf');
+});
+app.get('/api/admin/fluxo-caixa.pdf', requireSuper, (req,res)=>{
+  const rel = montarRelatorioFinanceiro();
+  logEvento('Fluxo de caixa (PDF) gerado pelo administrador — referência '+rel.referencia+'.');
+  enviarPdf(res, gerarPdfFluxoCaixa(rel), 'fluxo-de-caixa-'+rel.referencia+'.pdf');
 });
 
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)

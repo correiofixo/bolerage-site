@@ -147,6 +147,7 @@ const state = {
   rankingAba: 'geral',
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
+  gestaoFiltro: 'todos',
   relatorioFin: null,
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
@@ -1540,51 +1541,99 @@ async function handleRemoverRodada(id, dataStr, faseLabel, ehHistorico){
     await render();
   }catch(e){ alert(e.message); }
 }
-// Aba GESTÃO do card Elenco: relatório financeiro das mensalidades (+ PDF)
+// Aba GESTÃO do card Elenco: relatório financeiro (agrupado por status) + custos + fluxo de caixa
 function fmtBRLfront(n){
   const [int, dec] = Math.abs(n).toFixed(2).split('.');
   return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
 }
+function inputValorBRL(n){ return n ? Number(n).toFixed(2).replace('.',',') : ''; }
 function renderRelatorioFinanceiroHtml(rel){
   if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
   const [ano, mes] = rel.referencia.split('-');
   const g = rel.geradoEm;
-  const rotuloStatus = {em_dia:'Em dia', em_atraso:'Em atraso', isenta:'Isenta', '':'Sem status'};
-  const badgeCls = {em_dia:'mens-ok', em_atraso:'mens-atrasada', isenta:'mens-isenta', '':''};
+  const filtro = state.gestaoFiltro || 'todos';
+  const gruposVis = filtro==='todos' ? rel.grupos : rel.grupos.filter(x=>x.chave===filtro);
+  const badgeCls = {em_dia:'mens-ok', em_atraso:'mens-atrasada', isenta:'mens-isenta', sem_status:''};
   let h = '<div class="rel-topo">'+
     '<div><span class="small muted">Referência</span><div class="rel-destaque">'+mes+'/'+ano+'</div></div>'+
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
-  h += '<p class="small muted" style="margin:0 0 8px;">O valor vem do card Aluguel da quadra (Valor da mensalidade). Jogadores isentos contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
-  h += '<div class="rel-cab"><span>Jogador</span><span>Valor</span></div>';
-  rel.linhas.forEach(l=>{
-    h += '<div class="list-row"><span>'+escapeHtml(l.nome)+' <span class="badge '+badgeCls[l.status]+'">'+rotuloStatus[l.status]+'</span></span>'+
-      '<span class="row-right"><strong>'+fmtBRLfront(l.valor)+'</strong></span></div>';
+  h += '<p class="small muted" style="margin:0 0 8px;">O valor vem do card Aluguel da quadra. Só jogadores Em dia e Em atraso têm valor; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+
+  // filtros por status
+  h += '<div class="filtros-fin">'+
+    '<button data-action="gestao-filtro" data-f="todos" class="'+(filtro==='todos'?'active':'')+'">Todos</button>'+
+    rel.grupos.map(x=>'<button data-action="gestao-filtro" data-f="'+x.chave+'" class="'+(filtro===x.chave?'active':'')+'">'+x.label+' <span class="muted">('+x.qtd+')</span></button>').join('')+
+  '</div>';
+
+  // grupos por status, cada um com subtotal
+  gruposVis.forEach(gr=>{
+    h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+'</span></div>';
+    if(gr.linhas.length){
+      gr.linhas.forEach(l=>{
+        h += '<div class="list-row"><span>'+escapeHtml(l.nome)+'</span><span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
+      });
+    }else{
+      h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
+    }
+    h += '<div class="rel-sub"><span>Subtotal — '+gr.label+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div></div>';
   });
-  h += '<h4 style="margin:14px 0 4px;">Subtotal por status</h4>';
-  rel.subtotais.forEach(s=>{
-    h += '<div class="list-row"><span>'+escapeHtml(s.label)+' <span class="small muted">('+s.qtd+')</span></span><span class="row-right"><strong>'+fmtBRLfront(s.total)+'</strong></span></div>';
-  });
-  h += '<div class="rel-total"><span>TOTAL GERAL <span class="small muted">('+rel.qtd+' jogadores)</span></span><strong>'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
-  h += '<button class="btn" style="margin-top:12px;" data-action="gerar-pdf-financeiro">📄 Gerar PDF do relatório</button>';
+  if(filtro==='todos'){
+    h += '<div class="rel-total"><span>TOTAL GERAL <span class="small muted">('+rel.qtd+' jogadores)</span></span><strong>'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
+  }else{
+    const gr = gruposVis[0];
+    h += '<div class="rel-total"><span>SOMA — '+gr.label.toUpperCase()+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div>';
+  }
+  h += '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.pdf'+(filtro==='todos'?'':'?status='+filtro)+'" data-arq="relatorio-financeiro-'+rel.referencia+(filtro==='todos'?'':'-'+filtro)+'.pdf">📄 Gerar PDF do relatório'+(filtro==='todos'?'':' ('+gruposVis[0].label+')')+'</button>';
+
+  // custos da quadra
+  const c = rel.custos;
+  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Custos da quadra</h4>'+
+    '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
+    '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
+    '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
+    '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
+    '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
+
+  // fluxo de caixa
+  const saldoCor = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
+  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Fluxo de caixa</h4>'+
+    '<div class="rel-fluxo-tit">Receitas (mensalidades)</div>'+
+    '<div class="list-row"><span>Em dia <span class="small muted">(já recebido)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.recebido)+'</span></div>'+
+    '<div class="list-row"><span>Em atraso <span class="small muted">(a receber)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.aReceber)+'</span></div>'+
+    '<div class="rel-sub"><span>Total de receitas</span><strong>'+fmtBRLfront(rel.receitas.total)+'</strong></div>'+
+    '<div class="rel-fluxo-tit">Despesas (custos da quadra)</div>'+
+    '<div class="list-row"><span>Aluguel da Quadra</span><span class="row-right">'+fmtBRLfront(c.aluguel)+'</span></div>'+
+    '<div class="list-row"><span>Higienização</span><span class="row-right">'+fmtBRLfront(c.higienizacao)+'</span></div>'+
+    '<div class="list-row"><span>Carvão</span><span class="row-right">'+fmtBRLfront(c.carvao)+'</span></div>'+
+    '<div class="rel-sub"><span>Total de despesas</span><strong>'+fmtBRLfront(rel.despesas)+'</strong></div>'+
+    '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
+    '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
 }
-async function handleGerarPdfFinanceiro(){
+async function handleSalvarCustos(){
+  const g = id => document.getElementById(id).value;
   try{
-    const res = await fetch('/api/admin/relatorio-financeiro.pdf', {headers:{Authorization:'Bearer '+state.adminToken}});
+    await api('/api/admin/custos', {method:'PUT', adminAuth:true, body:{aluguel:g('custo-aluguel'), higienizacao:g('custo-higienizacao'), carvao:g('custo-carvao')}});
+    await render();
+    showToast('Custos salvos!');
+  }catch(e){ alert(e.message); }
+}
+async function handleBaixarPdf(url, nomeArq){
+  try{
+    const res = await fetch(url, {headers:{Authorization:'Bearer '+state.adminToken}});
     if(!res.ok){
       let msg = 'Não foi possível gerar o PDF.';
       try{ msg = (await res.json()).erro || msg; }catch(e){}
       alert(msg); return;
     }
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const ref = (state.relatorioFin && state.relatorioFin.referencia) || 'mensalidades';
+    const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'relatorio-financeiro-'+ref+'.pdf'; a.target = '_blank';
+    a.href = href; a.download = nomeArq || 'relatorio.pdf'; a.target = '_blank';
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    setTimeout(()=>URL.revokeObjectURL(href), 60000);
   }catch(e){ alert('Erro ao gerar o PDF: '+e.message); }
 }
 
@@ -1835,7 +1884,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-config') return handleSalvarConfig();
   if(action==='salvar-sorteio-agenda') return handleSalvarSorteioAgenda();
   if(action==='elenco-aba'){ state.elencoAba = el.dataset.aba; return render(); }
-  if(action==='gerar-pdf-financeiro') return handleGerarPdfFinanceiro();
+  if(action==='baixar-pdf') return handleBaixarPdf(el.dataset.url, el.dataset.arq);
+  if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
+  if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
