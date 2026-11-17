@@ -496,3 +496,7 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .mens-extra label{display:flex;flex-direction:column;gap:3px;color:var(--text-muted);}
 .mens-extra input{width:112px;padding:7px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-size:14px;}
 .mens-extra input[type=date]{width:140px;}
+
+/* v4.1 — valor da mensalidade pré-preenchido + botão editar no card Mensalidades */
+.mens-valor-linha{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0 4px;}
+.mens-extra{margin-top:4px;}

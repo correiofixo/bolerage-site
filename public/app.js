@@ -148,6 +148,7 @@ const state = {
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
   gestaoFiltro: 'todos',
+  editandoMensId: null,
   relatorioFin: null,
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
@@ -1308,7 +1309,7 @@ async function renderAdmin(){
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
   if(can('mensalidades')){
-    try{ const rm = await api('/api/admin/mensalidades', {adminAuth:true}); mensalPlayers = rm.jogadores; mensalMeta = rm; }catch(e){ if(on401(e)) return; }
+    try{ const rm = await api('/api/admin/mensalidades', {adminAuth:true}); mensalPlayers = rm.jogadores; mensalMeta = rm; state._mensalPadrao = rm.valorPadrao; }catch(e){ if(on401(e)) return; }
   }
   if(elencoAdmin) state.elencoAdmin = elencoAdmin;
 
@@ -1486,21 +1487,38 @@ async function renderAdmin(){
     const padraoTxt = mensalMeta.valorPadrao==null ? 'não definido' : fmtBRLfront(mensalMeta.valorPadrao);
     html += '<div class="card"><h3>Mensalidades</h3>'+
       '<p class="small muted">Marque o status de cada jogador. Aparece na tela Início de cada um como selo verde (OK) ou vermelho (Atrasada).</p>'+
-      '<p class="small muted">Se o jogador paga um valor diferente, informe em <strong style="color:var(--text)">Valor (R$)</strong> e toque em Salvar. Vazio = valor padrão do card Aluguel da quadra (<strong style="color:var(--text)">'+padraoTxt+'</strong>).</p>';
+      '<p class="small muted">O valor de cada jogador vem preenchido com o valor da mensalidade do card Aluguel da quadra (<strong style="color:var(--text)">'+padraoTxt+'</strong>). Se o jogador paga um valor diferente, toque em <strong style="color:var(--text)">editar</strong>.</p>';
     mensalPlayers.forEach(j=>{
       const atrasado = j.mensalidade==='em_atraso';
+      const individual = j.valorMensalidade!=='';
+      const valorEf = individual ? Number(j.valorMensalidade) : mensalMeta.valorPadrao;   // individual ou o padrão do Aluguel da quadra
+      const editando = state.editandoMensId===j.id;
       html += '<div class="mens-item">'+
         '<div class="list-row" style="border:none;padding-bottom:4px;"><span>'+escapeHtml(j.nome)+
           (atrasado && j.diasAtraso!=null ? ' <span class="atraso-dias">'+j.diasAtraso+' dia'+(j.diasAtraso===1?'':'s')+'</span>' : '')+'</span>'+
           '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></div>'+
-        '<div class="mens-extra">'+
-          '<label class="small">Valor (R$) <input id="mens-valor-'+j.id+'" inputmode="decimal" value="'+inputValorBRL(j.valorMensalidade)+'" placeholder="padrão"></label>'+
-          (atrasado
-            ? '<label class="small">Em atraso desde <input type="date" id="mens-desde-'+j.id+'" value="'+(j.atrasoDesde||'')+'"></label>'+
-              (mensalMeta.ultimoVencimento ? '<button type="button" class="btn secondary small" data-action="mens-usar-vencimento" data-id="'+j.id+'" data-data="'+mensalMeta.ultimoVencimento+'" title="2º domingo do mês">Vencimento '+mensalMeta.ultimoVencimento.slice(8,10)+'/'+mensalMeta.ultimoVencimento.slice(5,7)+'</button>' : '')
-            : '')+
-          '<button class="btn small" data-action="mens-salvar" data-id="'+j.id+'">Salvar</button>'+
-        '</div></div>';
+        // valor: preenchido automaticamente com o padrão (Aluguel da quadra); "editar" abre o campo
+        '<div class="mens-valor-linha">'+
+          '<span class="small muted">Valor: <strong style="color:var(--text)">'+(valorEf==null?'não definido':fmtBRLfront(valorEf))+'</strong>'+
+            (individual ? ' <span class="badge">individual</span>' : ' <span class="small muted">(padrão)</span>')+'</span>'+
+          '<button class="btn secondary small" data-action="mens-editar" data-id="'+j.id+'">'+(editando?'fechar':'editar')+'</button>'+
+        '</div>'+
+        (editando
+          ? '<div class="mens-extra">'+
+              '<label class="small">Valor (R$) <input id="mens-valor-'+j.id+'" inputmode="decimal" value="'+inputValorBRL(valorEf)+'"></label>'+
+              '<button type="button" class="btn secondary small" data-action="mens-usar-padrao" data-id="'+j.id+'" data-valor="'+inputValorBRL(mensalMeta.valorPadrao)+'">Usar padrão</button>'+
+              '<button class="btn small" data-action="mens-salvar-valor" data-id="'+j.id+'">Salvar</button>'+
+            '</div>'
+          : '')+
+        // status EM ATRASO: início do atraso (2º domingo) — como estava
+        (atrasado
+          ? '<div class="mens-extra">'+
+              '<label class="small">Em atraso desde <input type="date" id="mens-desde-'+j.id+'" value="'+(j.atrasoDesde||'')+'"></label>'+
+              (mensalMeta.ultimoVencimento ? '<button type="button" class="btn secondary small" data-action="mens-usar-vencimento" data-id="'+j.id+'" data-data="'+mensalMeta.ultimoVencimento+'" title="2º domingo do mês">Vencimento '+mensalMeta.ultimoVencimento.slice(8,10)+'/'+mensalMeta.ultimoVencimento.slice(5,7)+'</button>' : '')+
+              '<button class="btn small" data-action="mens-salvar-atraso" data-id="'+j.id+'">Salvar</button>'+
+            '</div>'
+          : '')+
+        '</div>';
     });
     html += '</div>';
   }
@@ -1658,14 +1676,27 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
 }
+// salva o valor da mensalidade do jogador (igual ao padrão => volta a usar o padrão)
 async function handleSalvarMensalidadeValor(id){
-  const body = {valor: document.getElementById('mens-valor-'+id).value};
-  const desde = document.getElementById('mens-desde-'+id);
-  if(desde && desde.value) body.atrasoDesde = desde.value;
+  let bruto = document.getElementById('mens-valor-'+id).value.trim();
+  const padrao = state._mensalPadrao;
+  const n = Number(bruto.replace(/\./g,'').replace(',','.'));
+  if(bruto!=='' && padrao!=null && Number.isFinite(n) && Math.abs(n-padrao)<0.005) bruto = '';
   try{
-    await api('/api/admin/jogadores/'+id+'/financeiro', {method:'PUT', adminAuth:true, body});
+    await api('/api/admin/jogadores/'+id+'/financeiro', {method:'PUT', adminAuth:true, body:{valor: bruto}});
+    state.editandoMensId = null;
     await render();
     showToast('Mensalidade salva!');
+  }catch(e){ alert(e.message); }
+}
+// salva só a data de início do atraso
+async function handleSalvarAtrasoDesde(id){
+  const desde = document.getElementById('mens-desde-'+id);
+  if(!desde || !desde.value){ alert('Informe a data de início do atraso.'); return; }
+  try{
+    await api('/api/admin/jogadores/'+id+'/financeiro', {method:'PUT', adminAuth:true, body:{atrasoDesde: desde.value}});
+    await render();
+    showToast('Atraso atualizado!');
   }catch(e){ alert(e.message); }
 }
 async function handleSalvarSaldoCaixa(){
@@ -1953,7 +1984,10 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
   if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
-  if(action==='mens-salvar') return handleSalvarMensalidadeValor(el.dataset.id);
+  if(action==='mens-editar'){ state.editandoMensId = (state.editandoMensId===el.dataset.id) ? null : el.dataset.id; return render(); }
+  if(action==='mens-usar-padrao'){ const inp = document.getElementById('mens-valor-'+el.dataset.id); if(inp) inp.value = el.dataset.valor; return; }
+  if(action==='mens-salvar-valor') return handleSalvarMensalidadeValor(el.dataset.id);
+  if(action==='mens-salvar-atraso') return handleSalvarAtrasoDesde(el.dataset.id);
   if(action==='mens-usar-vencimento'){ const inp = document.getElementById('mens-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
