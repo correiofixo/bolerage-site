@@ -580,3 +580,17 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .rifa-premio{display:inline-flex;flex-direction:column;align-items:center;gap:2px;padding:10px 16px;border-radius:12px;border:1px dashed var(--gold-dim);background:rgba(255,255,255,.04);max-width:100%;}
 .rifa-premio-rot{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--gold-bright);}
 .rifa-premio strong{font-size:17px;overflow-wrap:anywhere;}
+
+/* v4.4 — posição no ranking dentro do card Meu Score Atual */
+.meu-posicao{align-items:center;justify-content:center;gap:14px;margin-top:10px;cursor:pointer;}
+.meu-posicao-num{font-family:var(--font-display);font-size:46px;line-height:1;font-weight:700;color:var(--gold);white-space:nowrap;}
+.meu-posicao-medalha{font-size:36px;margin-right:6px;vertical-align:middle;}
+.meu-posicao-txt{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--text-muted);min-width:0;}
+.meu-posicao-txt strong{color:var(--text);font-size:14px;}
+.meu-posicao-vazio{font-size:13px;color:var(--text-muted);text-align:center;}
+.posicao-top5{border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,162,39,.18);}
+.posicao-top10{border-color:#4EA1FF;box-shadow:0 0 0 3px rgba(78,161,255,.14);}
+.posicao-top10 .meu-posicao-num{color:#8EC3FF;}
+.posicao-under5{border-color:var(--red);box-shadow:0 0 0 3px rgba(226,87,76,.14);}
+.posicao-under5 .meu-posicao-num{color:#FF8D84;}
+.posicao-meio .meu-posicao-num{color:var(--text);}

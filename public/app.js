@@ -185,6 +185,19 @@ function classificarIMC(imc){
   return {rotulo:'Obesidade grau III', cor:'#C93A3A'};
 }
 // card "Saúde do Craque": só aparece quando idade, peso e altura estão preenchidos no perfil
+// "Minha posição" no Ranking Geral — mesmo destaque do card de estrelas e pontuação
+function renderMinhaPosicao(){
+  const p = posicaoNoRankingGeral(state.currentPlayer.id);
+  if(!p){
+    return '<div class="meu-score-box meu-posicao"><div class="meu-posicao-vazio">Sem posição no ranking ainda — você aparece aqui depois de receber avaliações.</div></div>';
+  }
+  const ROT = {top5:'🏆 Top 5 — Destaques', top10:'⭐ Top 10 — Entre os melhores', under5:'⚠️ Under 5 — Precisam melhorar', meio:'⚽ Na briga'};
+  const medalha = p.pos===1 ? '🥇' : p.pos===2 ? '🥈' : p.pos===3 ? '🥉' : '';
+  return '<div class="meu-score-box meu-posicao posicao-'+p.zona+'" data-action="tab" data-tab="ranking">'+
+    '<div class="meu-posicao-num">'+(medalha ? '<span class="meu-posicao-medalha">'+medalha+'</span>' : '')+p.pos+'º</div>'+
+    '<div class="meu-posicao-txt"><strong>Posição no Ranking Geral</strong><span>de '+p.total+' jogadores • '+ROT[p.zona]+'</span></div>'+
+  '</div>';
+}
 function renderCardSaude(){
   const p = state.currentPlayer;
   if(!p || !p.idade || !p.peso || !p.altura) return '';
@@ -518,6 +531,26 @@ function renderMedidorConfirmacao(linhaN, golN){
   '</div>';
 }
 
+// Posição do jogador no Ranking Geral (mesma regra da tela Ranking: média geral com o
+// desconto de 10% por ausência; só jogadores ativos com avaliação entram na lista).
+function posicaoNoRankingGeral(jogadorId){
+  const ranking = state.ranking || {};
+  const mediaGeral = id => {
+    const r = ranking[id];
+    if(!r) return null;
+    const total = r.linha.total + r.goleiro.total;
+    if(!total) return null;
+    const soma = (r.linha.media!=null ? r.linha.media*r.linha.total : 0) + (r.goleiro.media!=null ? r.goleiro.media*r.goleiro.total : 0);
+    return (soma/total) * Math.pow(0.9, (state.ausencias||{})[id] || 0);
+  };
+  const lista = (state.elenco||[]).filter(j=>j.ativo).map(j=>({id:j.id, media:mediaGeral(j.id)}))
+    .filter(x=>x.media!=null).sort((a,b)=>b.media-a.media);
+  const i = lista.findIndex(x=>x.id===jogadorId);
+  if(i<0) return null;
+  const n = lista.length;
+  const zona = i<5 ? 'top5' : i<10 ? 'top10' : (n>10 && i>=Math.max(10, n-5)) ? 'under5' : 'meio';
+  return {pos:i+1, total:n, zona};
+}
 function renderExtrasIniciais(){
   const ex = state.homeExtras;
   if(!ex) return '';
@@ -570,6 +603,7 @@ function renderExtrasIniciais(){
     const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
     html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
       '<div class="meu-score-box">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
+      renderMinhaPosicao()+
       '</div>';
     html += renderCardSaude();
   }
