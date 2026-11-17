@@ -148,6 +148,10 @@ const state = {
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
   gestaoFiltro: 'todos',
+  gestaoSub: 'demo',
+  resenhaAba: 'resenha',
+  rifas: [],
+  rifaRodadaId: null,
   editandoMensId: null,
   relatorioFin: null,
   homeExtras: null,
@@ -745,6 +749,29 @@ async function handleTogglePresenca(atual){
 /* ============================================================
    RENDER: TAB RESENHA
    ============================================================ */
+// ---- RIFAS (aba da Resenha): ganhador e prêmio da rifa da rodada
+async function refreshRifas(){ try{ state.rifas = (await api('/api/rifas')).rifas || []; }catch(e){} }
+function renderRifasHtml(){
+  const rifas = state.rifas || [];
+  if(!rifas.length){
+    return '<div class="card rifa-card"><div class="rifa-trofeu">🎟️</div><h2 class="titulo-centralizado">Rifa da Rodada</h2>'+
+      '<p class="small muted" style="text-align:center;">O ganhador e o prêmio da rifa serão exibidos aqui assim que o administrador cadastrar.</p></div>';
+  }
+  const atual = rifas[0];
+  let h = '<div class="card rifa-card"><div class="rifa-trofeu">🏆</div><h2 class="titulo-centralizado" style="margin-bottom:0;">Ganhador da Rifa</h2>'+
+    '<p class="rodada-sub">Rodada '+formatDataBR(atual.data)+'</p>'+
+    '<div class="rifa-ganhador">'+escapeHtml(nomeExibicaoPorNomeReal(atual.ganhador))+'</div>'+
+    (atual.premio ? '<div class="rifa-premio"><span class="rifa-premio-rot">🎁 Prêmio</span><strong>'+escapeHtml(atual.premio)+'</strong></div>' : '')+
+  '</div>';
+  if(rifas.length>1){
+    h += '<div class="card"><h3 class="titulo-centralizado">Ganhadores anteriores</h3>';
+    rifas.slice(1).forEach(r=>{
+      h += '<div class="list-row"><span><strong>'+escapeHtml(nomeExibicaoPorNomeReal(r.ganhador))+'</strong><br><span class="small muted">'+escapeHtml(r.premio||'—')+'</span></span><span class="badge">'+formatDataBR(r.data)+'</span></div>';
+    });
+    h += '</div>';
+  }
+  return h;
+}
 function renderResenha(){
   const rodAtual = state.rodadaAtual;
   if(!rodAtual){
@@ -755,9 +782,13 @@ function renderResenha(){
   const euNaResenha = idsResenhaAtual.includes(meuId);
   const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
-  const seletorRodadaHtml = seletorRodadaVisualizadaHtml;
+  const abasResenha = '<div class="tabtoggle">'+
+      '<button data-action="resenha-aba" data-aba="resenha" class="'+(state.resenhaAba!=='rifas'?'active':'')+'">Resenha</button>'+
+      '<button data-action="resenha-aba" data-aba="rifas" class="'+(state.resenhaAba==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
+    '</div>';
+  if(state.resenhaAba==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
 
-  let html = '<div class="card">'+
+  let html = abasResenha + '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
     '<p class="rodada-sub">Rodada '+formatDataBR(rodAtual.data)+'</p>'+
     '<p class="small muted">Craque, se tivermos mais de 6 confirmados na resenha com churrasco, já conseguimos adiantar as compras e levar só o equivalente no domingo !!! \u{1F60E}</p>'+
@@ -784,45 +815,17 @@ function renderResenha(){
     html += '<p class="small muted" style="padding:0 2px;">O check-in da resenha fica disponível de sábado às 8h até domingo às 11h.</p>';
   }
 
-  // Histórico: mesmo seletor de rodada da aba Sorteio, pra rever a resenha de outros domingos.
-  html += seletorRodadaHtml('Histórico da resenha — escolha a rodada');
-
-  const rod = state.rodadaVisualizada || rodAtual;
-  const idsResenha = rod.resenha || [];
+  // Confirmados na resenha da rodada atual (o histórico Bola Cheia x Bola Murcha foi para a tela Votação)
+  const rod = rodAtual;
   const idsVinho = new Set(rod.vinho || []);
-  const gente = idsResenha.map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
-
-  // Bola Cheia / Bola Murcha — só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
-  const aggRod = {};
-  (rod.votos || []).forEach(v=>{
-    if(!v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
-    const a = aggRod[v.avaliadoId] || (aggRod[v.avaliadoId] = {soma:0, n:0});
-    a.soma += v.nota; a.n += 1;
-  });
-  const rankRod = Object.keys(aggRod)
-    .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
-    .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
-  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
-  html += '<div class="card">'+
-    '<h3 class="titulo-centralizado">Bola Cheia ⚽ x Bola Murcha \u{1F3C8}</h3>'+
-    '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
-  if(rankRod.length){
-    const cheia = rankRod[0];
-    const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;
-    html += '<div class="list-row"><span>🏆 Bola Cheia — <strong>'+escapeHtml(nomeDe(cheia.id))+timeCoracaoSuffixDoId(cheia.id)+'</strong></span><span class="row-right">'+starsHtml(cheia.media)+'</span></div>';
-    if(murcha) html += '<div class="list-row"><span>📉 Bola Murcha — <strong>'+escapeHtml(nomeDe(murcha.id))+timeCoracaoSuffixDoId(murcha.id)+'</strong></span><span class="row-right">'+starsHtml(murcha.media)+'</span></div>';
-    html += '<p class="small muted" style="margin-top:6px;">Considera só os votos desta rodada.</p>';
-  }else{
-    html += '<p class="small muted">Ainda sem votos nesta rodada.</p>';
-  }
-  html += '</div>';
-
-  const contagemCls = 'contagem-destaque'+(gente.length>6?' contagem-verde':'');
-  html += '<div class="card"><h3 class="titulo-centralizado">Confirmados na Resenha com Churrasco <span class="'+contagemCls+'">'+gente.length+'</span></h3>';
+  const gente = (rod.resenha || []).map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
+  const contagemCls = 'contagem-resenha'+(gente.length>6?' contagem-verde':'');
+  html += '<div class="card"><h3 class="titulo-centralizado" style="margin-bottom:2px;">Confirmados na Resenha com Churrasco</h3>'+
+    '<div class="resenha-total"><span class="'+contagemCls+'">'+gente.length+'</span><span class="resenha-total-rot">jogador'+(gente.length===1?'':'es')+' com check-in</span></div>';
   if(gente.length){
     gente.forEach(j=> html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+'</span><span class="row-right"><span class="badge ok-destaque">OK</span>'+(idsVinho.has(j.id)?'<span class="badge badge-vinho">🍷</span>':'')+'</span></div>');
   }else{
-    html += '<p class="small muted">Ninguém na resenha nessa rodada.</p>';
+    html += '<p class="small muted" style="text-align:center;">Ninguém na resenha nessa rodada.</p>';
   }
   html += '</div>';
   setContent(html, 'resenha');
@@ -1007,18 +1010,50 @@ function renderVotosDosJogadores(abasHtml){
     }
   setContent(h, 'votacao-votos');
 }
+// Tela VOTAÇÃO > "Histórico Bola Cheia x Bola Murcha": quem foi Bola Cheia/Murcha em cada rodada
+function renderHistoricoBola(abasHtml){
+  const rod = state.rodadaVisualizada || state.rodadaAtual;
+  let html = abasHtml + seletorRodadaVisualizadaHtml('Histórico Bola Cheia x Bola Murcha — escolha a rodada');
+  if(!rod){ setContent(html+'<div class="empty">Nenhuma rodada agendada ainda.</div>', 'votacao-historico'); return; }
+  // só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
+  const aggRod = {};
+  (rod.votos || []).forEach(v=>{
+    if(!v.avaliadoId || v.avaliadoId.indexOf('conv:')===0) return;
+    const a = aggRod[v.avaliadoId] || (aggRod[v.avaliadoId] = {soma:0, n:0});
+    a.soma += v.nota; a.n += 1;
+  });
+  const rankRod = Object.keys(aggRod)
+    .map(id=>({id, media:aggRod[id].soma/aggRod[id].n, n:aggRod[id].n}))
+    .sort((x,y)=> (y.media - x.media) || (y.n - x.n));
+  const nomeDe = id => { const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; };
+  html += '<div class="card">'+
+    '<h3 class="titulo-centralizado">Bola Cheia ⚽ x Bola Murcha \u{1F3C8}</h3>'+
+    '<p class="rodada-sub">Rodada '+formatDataBR(rod.data)+'</p>';
+  if(rankRod.length){
+    const cheia = rankRod[0];
+    const murcha = rankRod.length >= 2 ? rankRod[rankRod.length-1] : null;
+    html += '<div class="list-row"><span>🏆 Bola Cheia — <strong>'+escapeHtml(nomeDe(cheia.id))+timeCoracaoSuffixDoId(cheia.id)+'</strong></span><span class="row-right">'+starsHtml(cheia.media)+'</span></div>';
+    if(murcha) html += '<div class="list-row"><span>📉 Bola Murcha — <strong>'+escapeHtml(nomeDe(murcha.id))+timeCoracaoSuffixDoId(murcha.id)+'</strong></span><span class="row-right">'+starsHtml(murcha.media)+'</span></div>';
+    html += '<p class="small muted" style="margin-top:6px;">Considera só os votos desta rodada.</p>';
+  }else{
+    html += '<p class="small muted">Ainda sem votos nesta rodada.</p>';
+  }
+  html += '</div>';
+  setContent(html, 'votacao-historico');
+}
 function renderVotacao(){
   const c = document.getElementById('content');
   const rod = state.rodadaAtual;
   const mostrarAbaVotos = !!(rod && rod.mostrarVotos);
-  const abaVot = mostrarAbaVotos ? (state.votacaoAba||'votar') : 'votar';
-  const abasVot = mostrarAbaVotos
-    ? '<div class="tabtoggle">'+
-        '<button data-action="votacao-aba" data-aba="votar" class="'+(abaVot==='votar'?'active':'')+'">Votação</button>'+
-        '<button data-action="votacao-aba" data-aba="votos" class="'+(abaVot==='votos'?'active':'')+'">Votos dos Jogadores</button>'+
-      '</div>'
-    : '';
+  let abaVot = state.votacaoAba || 'votar';
+  if(abaVot==='votos' && !mostrarAbaVotos) abaVot = 'votar';
+  const abasVot = '<div class="tabtoggle tabtoggle-wrap">'+
+      '<button data-action="votacao-aba" data-aba="votar" class="'+(abaVot==='votar'?'active':'')+'">Votação</button>'+
+      '<button data-action="votacao-aba" data-aba="historico" class="'+(abaVot==='historico'?'active':'')+'">Histórico Bola Cheia x Bola Murcha</button>'+
+      (mostrarAbaVotos ? '<button data-action="votacao-aba" data-aba="votos" class="'+(abaVot==='votos'?'active':'')+'">Votos dos Jogadores</button>' : '')+
+    '</div>';
   if(abaVot==='votos'){ renderVotosDosJogadores(abasVot); return; }
+  if(abaVot==='historico'){ renderHistoricoBola(abasVot); return; }
   if(!rod || rod.status!=='sorteado'){
     c.innerHTML = abasVot+'<div class="empty">'+
       '<p style="color:var(--text);font-weight:700;margin-bottom:4px;">🚨 AVISO IMPORTANTE:</p>'+
@@ -1252,16 +1287,47 @@ async function renderRanking(){
     const obj = isMurcha ? (state.rankingBola.murcha||{}) : (state.rankingBola.cheia||{});
     const lista = Object.keys(obj).map(id=>({id, nome:nomeDe(id), n:obj[id], media:mediaRanking(id)})).sort((a,b)=>b.n-a.n);
     const rotulo = isMurcha ? 'Bola Murcha' : 'Bola Cheia';
-    html += '<div class="card">';
-    if(lista.length){
-      lista.forEach((l,i)=>{
-        html += '<div class="rank-row rank-row-click" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
-          '<div class="rank-count rank-count-bola'+(isMurcha?' rank-count-murcha':' rank-count-cheia')+'">'+l.n+'&#215; '+rotulo+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
-      });
+    const n = lista.length;
+    // mesmas zonas do Ranking Geral (Top 5 / Top 10 / resto); aqui não há "Under 5"
+    const zonaDe = i => i<5 ? 'top5' : i<10 ? 'top10' : 'meio';
+    const ZB = isMurcha ? {
+      top5:  {tit:'🏈 TOP 5 — BOLA MURCHA', sub:'Quem mais levou a Bola Murcha. Hora de reagir e sair dessa lista!'},
+      top10: {tit:'⚠️ TOP 10 — NA MIRA', sub:'Cuidado: mais uma rodada ruim e você sobe nessa lista!'},
+      meio:  {tit:'⚽ POR AQUI, TUDO BEM', sub:'Mantenha o nível e fique longe da Bola Murcha.'},
+    } : {
+      top5:  {tit:'🏆 TOP 5 — BOLA CHEIA DESTAQUES', sub:'Os maiores craques das rodadas. A briga pela liderança é aqui!'},
+      top10: {tit:'⭐ TOP 10 — ENTRE OS MELHORES', sub:'Mais uma rodada brilhante e você entra no Top 5!'},
+      meio:  {tit:'⚽ NA BRIGA', sub:'Uma grande rodada e você entra para a lista dos craques.'},
+    };
+    const vezes = k => k+' vez'+(k===1?'':'es');
+    const gapB = i => {
+      if(i===0) return isMurcha ? '😬 Líder da Bola Murcha — hora de reagir!' : (n>1 ? (lista[0].n===lista[1].n ? '👑 Líder — empatado com o 2º' : '👑 Líder • '+vezes(lista[0].n-lista[1].n)+' de vantagem sobre o 2º') : '👑 Líder');
+      if(i===5){ const dif = lista[4].n-lista[i].n; return dif===0 ? 'Empatado com o Top 5 — falta pouco!' : 'A '+vezes(dif)+' de entrar no Top 5'; }
+      const dif = lista[i-1].n-lista[i].n;
+      return dif===0 ? '▲ Empatado com o posto acima' : '▲ A '+vezes(dif)+' do posto acima';
+    };
+    const posB = i => (i<3) ? '<span class="rank-medalha">'+(isMurcha ? '🏈' : ['🥇','🥈','🥉'][i])+'</span>' : String(i+1);
+    if(!n){
+      html += '<div class="card"><p class="muted small">Ainda sem rodadas com votos suficientes.</p></div>';
     }else{
-      html += '<p class="muted small">Ainda sem rodadas com votos suficientes.</p>';
+      html += '<div class="rank-legenda">'+
+        '<span class="rank-chip '+(isMurcha?'chip-murcha5':'chip-top5')+'">'+(isMurcha?'🏈 Top 5 Bola Murcha':'🏆 Top 5 Destaques')+'</span>'+
+        '<span class="rank-chip '+(isMurcha?'chip-murcha10':'chip-top10')+'">'+(isMurcha?'⚠️ Top 10 Na Mira':'⭐ Top 10 Entre os Melhores')+'</span>'+
+      '</div>';
+      let zonaAtual = null;
+      lista.forEach((l,i)=>{
+        const z = zonaDe(i);
+        if(z!==zonaAtual){
+          if(zonaAtual!==null) html += '</div>';
+          html += '<div class="card rank-zona zona-'+z+(isMurcha?' murcha':'')+'"><div class="rank-zona-tit">'+ZB[z].tit+'</div><div class="rank-zona-sub">'+ZB[z].sub+'</div>';
+          zonaAtual = z;
+        }
+        html += '<div class="rank-row rank-row-click rank-z-'+z+(i===0?' rank-lider':'')+'" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+posB(i)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
+          '<div class="rank-count rank-count-bola'+(isMurcha?' rank-count-murcha':' rank-count-cheia')+'">'+l.n+'&#215; '+rotulo+'</div>'+
+          '<div class="rank-gap">'+gapB(i)+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
+      });
+      html += '</div>';
     }
-    html += '</div>';
   }
   c.innerHTML = html;
 }
@@ -1347,6 +1413,7 @@ async function renderAdmin(){
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
     try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+    await refreshRifas(); await refreshRodadasLista();
     try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
@@ -1479,6 +1546,21 @@ async function renderAdmin(){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
     state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
+  // card RIFAS: cadastra o ganhador e o prêmio da rifa de uma rodada (aparece em Resenha > Rifas)
+  {
+    const rodsOrd = [...(state.rodadasLista||[])].sort((a,b)=>a.data<b.data?1:-1);
+    const rodSel = (rodsOrd.find(r=>r.id===state.rifaRodadaId) || (state.rodadaAtual && rodsOrd.find(r=>r.id===state.rodadaAtual.id)) || rodsOrd[0] || null);
+    if(rodSel) state.rifaRodadaId = rodSel.id;
+    const rifaAtual = rodSel ? (state.rifas||[]).find(r=>r.rodadaId===rodSel.id) : null;
+    html += '<div class="card"><h3>RIFAS</h3>'+
+      '<p class="small muted">Cadastre o ganhador e o prêmio da rifa. Aparece para todos em Resenha &gt; Rifas.</p>'+
+      '<div class="field"><label>Rodada</label><select data-action="rifa-rodada">'+rodsOrd.map(r=>'<option value="'+r.id+'" '+(rodSel && r.id===rodSel.id?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('')+'</select></div>'+
+      '<div class="field"><label>Nome do ganhador</label><input id="rifa-ganhador" maxlength="60" list="rifa-jogadores" value="'+escapeHtml(rifaAtual?rifaAtual.ganhador:'')+'" placeholder="Digite ou escolha um jogador">'+
+        '<datalist id="rifa-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
+      '<div class="field"><label>Prêmio</label><input id="rifa-premio" maxlength="120" value="'+escapeHtml(rifaAtual?rifaAtual.premio:'')+'" placeholder="Ex.: Uma garrafa de vinho 🍷"></div>'+
+      '<div class="btn-row"><button class="btn" data-action="salvar-rifa">Salvar rifa</button>'+
+      '<button class="btn secondary" data-action="limpar-rifa">Limpar</button></div></div>';
+  }
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
     if(state.editingEventoId===e.id){
@@ -1656,106 +1738,148 @@ function barrasComparativasHtml(titulo, itens){
   ).join('')+'</div>';
 }
 function inputValorBRL(n){ return n ? Number(n).toFixed(2).replace('.',',') : ''; }
-function renderRelatorioFinanceiroHtml(rel, podeEditar){
+// ---------- GESTÃO (Painel Admin): sub-abas ----------
+const GESTAO_SUBS = [
+  ['demo','Demonstrativo'],
+  ['jogadores','Jogadores por Status'],
+  ['recdes','Receitas x Despesas'],
+  ['saldo','Saldo em Caixa'],
+  ['custos','Custos da Quadra'],
+];
+// linha de total sem quebra de linha: rótulo corta com "…" se faltar espaço, valor nunca quebra
+function relLinhaHtml(rotulo, valor, cls){
+  return '<div class="rel-linha'+(cls?' '+cls:'')+'"><span class="rel-rot">'+rotulo+'</span><strong class="rel-val">'+valor+'</strong></div>';
+}
+function relBotoesExport(rel, filtroPdf){
+  return '<div class="rel-export">'+
+    '<button class="btn" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.pdf'+(filtroPdf?'?status='+filtroPdf:'')+'" data-arq="relatorio-financeiro-'+rel.referencia+(filtroPdf?'-'+filtroPdf:'')+'.pdf">📄 PDF do relatório</button>'+
+    (filtroPdf ? '' : '<button class="btn" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 PDF do fluxo de caixa</button>')+
+    '<button class="btn secondary" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.xlsx" data-arq="relatorios-financeiros-'+rel.referencia+'.xlsx">📊 Exportar para Excel</button>'+
+  '</div>';
+}
+function renderRelatorioFinanceiroHtml(rel, podeEditarCustos){
   if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
+  const sub = GESTAO_SUBS.some(x=>x[0]===state.gestaoSub) ? state.gestaoSub : 'demo';
   const [ano, mes] = rel.referencia.split('-');
   const g = rel.geradoEm;
-  const filtro = state.gestaoFiltro || 'todos';
-  const gruposVis = filtro==='todos' ? rel.grupos : rel.grupos.filter(x=>x.chave===filtro);
+  const contab = rel.grupos.filter(x=>x.contabiliza);
   const badgeCls = {em_dia:'mens-ok', em_atraso:'mens-atrasada', isenta:'mens-isenta', sem_status:''};
+  const c = rel.custos;
+  const saldoCor = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
+
   let h = '<div class="rel-topo">'+
     '<div><span class="small muted">Referência</span><div class="rel-destaque">'+mes+'/'+ano+'</div></div>'+
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
-  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; os dias em atraso contam a partir do vencimento (2º domingo do mês). Para alterar o valor de um jogador, use o card Mensalidades; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<div class="subtabs">'+GESTAO_SUBS.map(x=>'<button data-action="gestao-sub" data-sub="'+x[0]+'" class="'+(sub===x[0]?'active':'')+'">'+x[1]+'</button>').join('')+'</div>';
+  h += '<p class="small muted" style="margin:0 0 8px;">Jogadores <strong style="color:var(--text)">sem status</strong> (cadastrados, ainda não contratados) não entram nos totais e gráficos. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
-  // resumo gráfico: jogadores e valores por status, com percentuais
-  h += '<div class="rel-graficos">'+
-    barraEmpilhadaHtml('Jogadores por status', rel.grupos.map(x=>({label:x.label, valor:x.qtd, cor:COR_FIN[x.chave], txt:x.qtd+' jogador'+(x.qtd===1?'':'es')})))+
-    barraEmpilhadaHtml('Valor por status (R$)', rel.grupos.filter(x=>x.total>0).map(x=>({label:x.label, valor:x.total, cor:COR_FIN[x.chave], txt:fmtBRLfront(x.total)})))+
-    '<div class="stack-bloco"><div class="stack-tit">Recebido x previsto</div>'+
-      '<div class="cmp-trilho cmp-trilho-lg"><span class="cmp-barra" style="width:'+(rel.receitas.total>0?(rel.receitas.recebido/rel.receitas.total*100).toFixed(1):0)+'%;background:'+COR_FIN.em_dia+'"></span></div>'+
-      '<div class="small" style="margin-top:4px;"><strong>'+fmtPctFront(rel.receitas.recebido, rel.receitas.total)+'</strong> do previsto já foi recebido ('+fmtBRLfront(rel.receitas.recebido)+' de '+fmtBRLfront(rel.receitas.total)+').</div></div>'+
-  '</div>';
-
-  // filtros por status
-  h += '<div class="filtros-fin">'+
-    '<button data-action="gestao-filtro" data-f="todos" class="'+(filtro==='todos'?'active':'')+'">Todos</button>'+
-    rel.grupos.map(x=>'<button data-action="gestao-filtro" data-f="'+x.chave+'" class="'+(filtro===x.chave?'active':'')+'">'+x.label+' <span class="muted">('+x.qtd+')</span></button>').join('')+
-  '</div>';
-
-  // grupos por status, cada um com subtotal
-  gruposVis.forEach(gr=>{
-    h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+' • '+fmtPctFront(gr.qtd, rel.qtd)+' do elenco</span></div>';
-    if(gr.linhas.length){
-      gr.linhas.forEach(l=>{
-        const individual = l.valorIndividual!=null;
-        h += '<div class="list-row"><span>'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
-          (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso</span>' : '')+'</span>'+
-          '<span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
-      });
-    }else{
-      h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
+  if(sub==='demo'){
+    // ---- 1) Demonstrativo de Resultados: fluxo de caixa + relatórios
+    h += '<h4 class="rel-h">Demonstrativo de Resultados</h4>'+
+      '<div class="rel-fluxo-tit">Fluxo de caixa</div>'+
+      relLinhaHtml('Saldo em caixa (conta corrente)', fmtBRLfront(rel.saldoCaixa), 'rel-sub')+
+      relLinhaHtml('Receitas — Em dia <span class="rel-obs">(recebido)</span>', fmtBRLfront(rel.receitas.recebido), 'rel-item')+
+      relLinhaHtml('Receitas — Em atraso <span class="rel-obs">(a receber)</span>', fmtBRLfront(rel.receitas.aReceber), 'rel-item')+
+      relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub')+
+      relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub')+
+      relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-sub')+
+      '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
+      '<div class="rel-graficos" style="margin-top:12px;">'+
+        barraEmpilhadaHtml('Valor por status (R$)', contab.filter(x=>x.total>0).map(x=>({label:x.label, valor:x.total, cor:COR_FIN[x.chave], txt:fmtBRLfront(x.total)})))+
+        '<div class="stack-bloco"><div class="stack-tit">Recebido x previsto</div>'+
+          '<div class="cmp-trilho cmp-trilho-lg"><span class="cmp-barra" style="width:'+(rel.receitas.total>0?(rel.receitas.recebido/rel.receitas.total*100).toFixed(1):0)+'%;background:'+COR_FIN.em_dia+'"></span></div>'+
+          '<div class="small" style="margin-top:4px;"><strong>'+fmtPctFront(rel.receitas.recebido, rel.receitas.total)+'</strong> do previsto já foi recebido.</div></div>'+
+      '</div>'+
+      '<div class="rel-fluxo-tit">Relatórios</div>'+relBotoesExport(rel, null);
+  }
+  else if(sub==='jogadores'){
+    // ---- 2) Jogadores por status (agrupado, com subtotal)
+    const filtro = (state.gestaoFiltro==='todos' || rel.grupos.some(x=>x.chave===state.gestaoFiltro)) ? (state.gestaoFiltro||'todos') : 'todos';
+    const gruposVis = filtro==='todos' ? contab : rel.grupos.filter(x=>x.chave===filtro);
+    h += '<h4 class="rel-h">Jogadores por Status</h4>'+
+      '<div class="rel-graficos">'+barraEmpilhadaHtml('Jogadores por status', contab.map(x=>({label:x.label, valor:x.qtd, cor:COR_FIN[x.chave], txt:x.qtd+' jogador'+(x.qtd===1?'':'es')})))+'</div>'+
+      '<div class="filtros-fin">'+
+        '<button data-action="gestao-filtro" data-f="todos" class="'+(filtro==='todos'?'active':'')+'">Todos</button>'+
+        rel.grupos.map(x=>'<button data-action="gestao-filtro" data-f="'+x.chave+'" class="'+(filtro===x.chave?'active':'')+'">'+x.label+' <span class="muted">('+x.qtd+')</span></button>').join('')+
+      '</div>';
+    gruposVis.forEach(gr=>{
+      h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+
+        (gr.contabiliza ? ' • '+fmtPctFront(gr.qtd, rel.qtd)+' do elenco' : ' • não contabilizado')+'</span></div>';
+      if(gr.linhas.length){
+        gr.linhas.forEach(l=>{
+          const individual = l.valorIndividual!=null;
+          h += '<div class="list-row"><span>'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
+            (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso</span>' : '')+'</span>'+
+            '<span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
+        });
+      }else{
+        h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
+      }
+      if(gr.contabiliza) h += relLinhaHtml('Subtotal — '+gr.label+(rel.totalGeral>0 ? ' <span class="rel-obs">('+fmtPctFront(gr.total, rel.totalGeral)+')</span>' : ''), fmtBRLfront(gr.total), 'rel-sub');
+      h += '</div>';
+    });
+    if(filtro==='todos'){
+      h += '<div class="rel-linha rel-total"><span class="rel-rot">TOTAL GERAL <span class="rel-obs">('+rel.qtd+' jogadores)</span></span><strong class="rel-val">'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
+      if(rel.qtdSemStatus>0) h += '<p class="small muted" style="margin:6px 2px 0;">'+rel.qtdSemStatus+' jogador'+(rel.qtdSemStatus===1?'':'es')+' sem status não contabilizado'+(rel.qtdSemStatus===1?'':'s')+' (use o filtro "Sem status" para ver).</p>';
+    }else if(gruposVis[0] && gruposVis[0].contabiliza){
+      h += '<div class="rel-linha rel-total"><span class="rel-rot">SOMA — '+gruposVis[0].label.toUpperCase()+'</span><strong class="rel-val">'+fmtBRLfront(gruposVis[0].total)+'</strong></div>';
     }
-    h += '<div class="rel-sub"><span>Subtotal — '+gr.label+(rel.totalGeral>0 ? ' <span class="small muted">('+fmtPctFront(gr.total, rel.totalGeral)+' do total)</span>' : '')+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div></div>';
-  });
-  if(filtro==='todos'){
-    h += '<div class="rel-total"><span>TOTAL GERAL <span class="small muted">('+rel.qtd+' jogadores)</span></span><strong>'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
-  }else{
-    const gr = gruposVis[0];
-    h += '<div class="rel-total"><span>SOMA — '+gr.label.toUpperCase()+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div>';
+    h += relBotoesExport(rel, filtro==='todos' ? null : filtro);
   }
-  h += '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.pdf'+(filtro==='todos'?'':'?status='+filtro)+'" data-arq="relatorio-financeiro-'+rel.referencia+(filtro==='todos'?'':'-'+filtro)+'.pdf">📄 Gerar PDF do relatório'+(filtro==='todos'?'':' ('+gruposVis[0].label+')')+'</button>';
-
-  // saldo em caixa (conta corrente) e custos da quadra — só o Super Admin edita; demais admins só visualizam
-  const c = rel.custos;
-  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Saldo em caixa</h4>';
-  {
-    h += '<p class="small muted">Informe o saldo atualizado da conta corrente do time. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
-      '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
-      '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>';
-  }
-
-  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Custos da quadra</h4>';
-  if(podeEditar){
-    h += '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
-      '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
-      '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
-      '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
-      '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
-  }else{
-    h += '<div class="list-row"><span>Aluguel da Quadra</span><span class="row-right">'+fmtBRLfront(c.aluguel)+'</span></div>'+
-      '<div class="list-row"><span>Higienização</span><span class="row-right">'+fmtBRLfront(c.higienizacao)+'</span></div>'+
-      '<div class="list-row"><span>Carvão</span><span class="row-right">'+fmtBRLfront(c.carvao)+'</span></div>';
-  }
-
-  // fluxo de caixa: saldo em caixa + receitas - despesas = saldo previsto
-  const saldoCor = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
-  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Fluxo de caixa</h4>'+
-    '<div class="rel-fluxo-tit">Saldo em caixa (conta corrente)</div>'+
-    '<div class="rel-sub"><span>Saldo atual em caixa</span><strong>'+fmtBRLfront(rel.saldoCaixa)+'</strong></div>'+
-    '<div class="rel-fluxo-tit">Receitas (mensalidades)</div>'+
-    '<div class="list-row"><span>Em dia <span class="small muted">(já recebido)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.recebido)+'</span></div>'+
-    '<div class="list-row"><span>Em atraso <span class="small muted">(a receber)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.aReceber)+'</span></div>'+
-    '<div class="rel-sub"><span>Total de receitas</span><strong>'+fmtBRLfront(rel.receitas.total)+'</strong></div>'+
-    '<div class="rel-fluxo-tit">Despesas (custos da quadra)</div>'+
-    '<div class="list-row"><span>Aluguel da Quadra</span><span class="row-right">'+fmtBRLfront(c.aluguel)+'</span></div>'+
-    '<div class="list-row"><span>Higienização</span><span class="row-right">'+fmtBRLfront(c.higienizacao)+'</span></div>'+
-    '<div class="list-row"><span>Carvão</span><span class="row-right">'+fmtBRLfront(c.carvao)+'</span></div>'+
-    '<div class="rel-sub"><span>Total de despesas</span><strong>'+fmtBRLfront(rel.despesas)+'</strong></div>'+
-    '<div class="rel-sub"><span>Resultado do mês <span class="small muted">(receitas − despesas)</span></span><strong>'+fmtBRLfront(rel.resultadoMes)+'</strong></div>'+
-    '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(saldo em caixa + receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
-    '<div class="rel-graficos" style="margin-top:12px;">'+
+  else if(sub==='recdes'){
+    // ---- 3) Receitas x Despesas
+    h += '<h4 class="rel-h">Receitas x Despesas</h4><div class="rel-graficos">'+
       barrasComparativasHtml('Receitas x Despesas', [{label:'Receitas', valor:rel.receitas.total, cor:COR_FIN.em_dia}, {label:'Despesas', valor:rel.despesas, cor:COR_FIN.em_atraso}])+
       '<p class="small" style="margin:2px 0 8px;">'+(rel.despesas>0 ? 'As receitas cobrem <strong>'+fmtPctFront(rel.receitas.total, rel.despesas)+'</strong> das despesas.' : 'Sem despesas informadas.')+'</p>'+
       barraEmpilhadaHtml('Composição das receitas', [{label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_FIN.em_dia, txt:fmtBRLfront(rel.receitas.recebido)}, {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_FIN.em_atraso, txt:fmtBRLfront(rel.receitas.aReceber)}])+
       barraEmpilhadaHtml('Composição das despesas', [{label:'Aluguel da Quadra', valor:c.aluguel, cor:COR_FIN.aluguel, txt:fmtBRLfront(c.aluguel)}, {label:'Higienização', valor:c.higienizacao, cor:COR_FIN.higienizacao, txt:fmtBRLfront(c.higienizacao)}, {label:'Carvão', valor:c.carvao, cor:COR_FIN.carvao, txt:fmtBRLfront(c.carvao)}])+
     '</div>'+
-    '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
+    relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub')+
+    relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub')+
+    '<div class="rel-linha rel-total"><span class="rel-rot">RESULTADO DO MÊS</span><strong class="rel-val" style="color:'+(rel.resultadoMes<0?'var(--red)':'var(--green)')+';">'+fmtBRLfront(rel.resultadoMes)+'</strong></div>';
+  }
+  else if(sub==='saldo'){
+    // ---- 4) Saldo em caixa (qualquer admin atualiza)
+    h += '<h4 class="rel-h">Saldo em Caixa</h4>'+
+      '<p class="small muted">Informe o saldo atualizado da conta corrente do time. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
+      '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
+      '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>'+
+      '<div style="margin-top:12px;">'+
+        relLinhaHtml('Saldo atual em caixa', fmtBRLfront(rel.saldoCaixa), 'rel-sub')+
+        relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-sub')+
+        '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
+      '</div>';
+  }
+  else{
+    // ---- 5) Custos da quadra (só o Super Admin edita)
+    h += '<h4 class="rel-h">Custos da Quadra</h4>';
+    if(podeEditarCustos){
+      h += '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
+        '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
+        '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
+        '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
+        '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
+    }else{
+      h += relLinhaHtml('Aluguel da Quadra', fmtBRLfront(c.aluguel), 'rel-item')+relLinhaHtml('Higienização', fmtBRLfront(c.higienizacao), 'rel-item')+relLinhaHtml('Carvão', fmtBRLfront(c.carvao), 'rel-item');
+    }
+    h += '<div style="margin-top:10px;">'+relLinhaHtml('Total de custos', fmtBRLfront(rel.despesas), 'rel-total')+'</div>';
+  }
   return h;
 }
 // salva o valor da mensalidade do jogador (igual ao padrão => volta a usar o padrão)
+async function handleSalvarRifa(limpar){
+  if(!state.rifaRodadaId){ alert('Nenhuma rodada selecionada.'); return; }
+  const ganhador = limpar ? '' : document.getElementById('rifa-ganhador').value;
+  const premio = limpar ? '' : document.getElementById('rifa-premio').value;
+  try{
+    await api('/api/admin/rifas', {method:'PUT', adminAuth:true, body:{rodadaId:state.rifaRodadaId, ganhador, premio}});
+    await refreshRifas();
+    await render();
+    showToast(limpar ? 'Rifa removida' : 'Rifa salva!');
+  }catch(e){ alert(e.message); }
+}
 async function handleSalvarMensalidadeValor(id){
   let bruto = document.getElementById('mens-valor-'+id).value.trim();
   const padrao = state._mensalPadrao;
@@ -1980,7 +2104,8 @@ function startPolling(){
       await refreshRodadaAtual();
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
-      if((state.tab==='sorteio' || state.tab==='resenha' || (state.tab==='votacao' && state.votacaoAba==='votos')) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
+      if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
+      if((state.tab==='sorteio' || (state.tab==='votacao' && (state.votacaoAba==='votos' || state.votacaoAba==='historico'))) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
       render();
@@ -2046,7 +2171,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
-  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos') await irParaRodadaMaisRecente(); return render(); }
+  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; if(state.resenhaAba==='rifas') await refreshRifas(); return render(); }
+  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); return render(); }
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
   if(action==='noop') return;
@@ -2061,6 +2187,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='elenco-aba'){ state.elencoAba = el.dataset.aba; return render(); }
   if(action==='baixar-pdf') return handleBaixarPdf(el.dataset.url, el.dataset.arq);
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
+  if(action==='salvar-rifa') return handleSalvarRifa(false);
+  if(action==='limpar-rifa'){ if(confirm('Remover o ganhador e o prêmio desta rodada?')) return handleSalvarRifa(true); return; }
+  if(action==='gestao-sub'){ state.gestaoSub = el.dataset.sub; return render(); }
   if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
   if(action==='mens-editar'){ state.editandoMensId = (state.editandoMensId===el.dataset.id) ? null : el.dataset.id; return render(); }
@@ -2096,6 +2225,10 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
 document.getElementById('shell').addEventListener('change', async (e)=>{
   if(e.target.dataset.action==='mudar-rodada-visualizada'){
     await carregarRodadaVisualizada(e.target.value);
+    render();
+  }
+  if(e.target.dataset.action==='rifa-rodada'){
+    state.rifaRodadaId = e.target.value;
     render();
   }
   if(e.target.dataset.action==='salvar-mensalidade'){

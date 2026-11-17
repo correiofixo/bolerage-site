@@ -543,3 +543,40 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .zona-top10 .rank-gap{color:#8EC3FF;}
 .zona-under5 .rank-gap{color:#FF8D84;}
 .zona-meio .rank-gap{color:var(--text-muted);}
+
+/* v4.3 — sub-abas da Gestão, totais sem quebra, zonas Bola Murcha, rifas, contagem da resenha */
+.subtabs{display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:2px 0 8px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}
+.subtabs button{flex:0 0 auto;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text-muted);font-size:13px;font-weight:600;}
+.subtabs button.active{background:var(--bg-elevated-2);color:var(--gold);border-color:var(--gold-dim);}
+.tabtoggle-wrap{flex-wrap:wrap;}
+.tabtoggle-wrap button{flex:1 1 auto;padding:8px 10px;}
+.rel-h{margin:6px 0 8px;font-family:var(--font-display);font-size:17px;letter-spacing:.4px;}
+.rel-linha{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:nowrap;white-space:nowrap;}
+.rel-linha .rel-rot{min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;}
+.rel-linha .rel-val{flex:0 0 auto;font-size:clamp(13px,3.9vw,18px);}
+.rel-linha.rel-total .rel-val{font-size:clamp(15px,4.8vw,21px);}
+.rel-linha.rel-item{padding:6px 4px;border-bottom:1px solid var(--line);font-size:14px;}
+.rel-linha.rel-item .rel-val{color:var(--text);font-weight:600;}
+.rel-obs{font-size:11.5px;color:var(--text-muted);font-weight:400;}
+@media (max-width:400px){ .rel-obs{display:none;} }
+.rel-export{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+
+.zona-top5.murcha{border-color:var(--red);box-shadow:0 0 0 1px rgba(226,87,76,.25), 0 8px 24px rgba(226,87,76,.12);background:linear-gradient(180deg,rgba(226,87,76,.16),rgba(226,87,76,.03) 60%);}
+.zona-top5.murcha .rank-zona-tit{color:#FF8D84;}
+.zona-top5.murcha .rank-gap,.zona-top5.murcha .rank-pos{color:#FF8D84;}
+.zona-top10.murcha{border-color:#F0902E;background:linear-gradient(180deg,rgba(240,144,46,.14),rgba(240,144,46,.02) 60%);}
+.zona-top10.murcha .rank-zona-tit,.zona-top10.murcha .rank-gap,.zona-top10.murcha .rank-pos{color:#F5B061;}
+.chip-murcha5{color:#ffd7d3;background:rgba(226,87,76,.18);border-color:var(--red);}
+.chip-murcha10{color:#ffe2c2;background:rgba(240,144,46,.18);border-color:#F0902E;}
+
+.resenha-total{display:flex;flex-direction:column;align-items:center;margin:2px 0 10px;}
+.contagem-resenha{font-family:var(--font-display);font-size:46px;line-height:1;font-weight:800;color:var(--gold-bright);}
+.contagem-resenha.contagem-verde{color:var(--green);}
+.resenha-total-rot{font-size:12.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted);margin-top:2px;}
+
+.rifa-card{text-align:center;border:1px solid var(--gold);background:linear-gradient(180deg,rgba(201,162,39,.16),rgba(201,162,39,.03) 70%);box-shadow:0 8px 28px rgba(201,162,39,.14);}
+.rifa-trofeu{font-size:46px;line-height:1;margin-bottom:4px;}
+.rifa-ganhador{font-family:var(--font-display);font-size:30px;line-height:1.15;color:#fff;margin:6px 0 10px;overflow-wrap:anywhere;}
+.rifa-premio{display:inline-flex;flex-direction:column;align-items:center;gap:2px;padding:10px 16px;border-radius:12px;border:1px dashed var(--gold-dim);background:rgba(255,255,255,.04);max-width:100%;}
+.rifa-premio-rot{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--gold-bright);}
+.rifa-premio strong{font-size:17px;overflow-wrap:anywhere;}

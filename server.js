@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 22;
+const APP_BUILD = 23;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -174,6 +174,8 @@ try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_aluguel REAL NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
+// RIFAS: ganhador e prêmio da rifa de cada rodada (cadastrado pelo admin, exibido na aba Rifas da Resenha)
+try{ db.exec("CREATE TABLE IF NOT EXISTS rifas (rodada_id TEXT PRIMARY KEY, ganhador TEXT NOT NULL DEFAULT '', premio TEXT NOT NULL DEFAULT '', atualizado_em TEXT)"); }catch(e){}
 // saldo em caixa = saldo atual da conta corrente do time (entra no fluxo de caixa)
 try{ db.exec("ALTER TABLE config ADD COLUMN saldo_caixa REAL NOT NULL DEFAULT 0"); }catch(e){}
 // valor de mensalidade INDIVIDUAL do jogador (NULL = usa o valor do card Aluguel da quadra)
@@ -911,8 +913,11 @@ function montarRelatorioFinanceiro(){
         atrasoDesde: s.chave==='em_atraso' ? (j.atraso_desde||null) : null,
       };
     });
-    return {chave:s.chave, label:s.label, qtd:linhas.length, total:linhas.reduce((t,l)=>t+l.valor,0), linhas};
+    // "Sem status" = cadastrado no app, mas ainda não contratado em definitivo: fica FORA dos totais e gráficos
+    return {chave:s.chave, label:s.label, contabiliza: s.chave!=='sem_status', qtd:linhas.length, total:linhas.reduce((t,l)=>t+l.valor,0), linhas};
   });
+  const contratados = grupos.filter(g=>g.contabiliza);
+  const qtdSemStatus = (grupos.find(g=>g.chave==='sem_status')||{qtd:0}).qtd;
   const tot = k => (grupos.find(g=>g.chave===k)||{total:0}).total;
   const custos = {
     aluguel: Number(cfg.custo_aluguel)||0,
@@ -931,8 +936,9 @@ function montarRelatorioFinanceiro(){
     ultimoVencimento: ultimoVencimento(hojeSP()),
     aviso: valorUnit==null ? 'Defina o "Valor da mensalidade" no card Aluguel da quadra para calcular os valores.' : '',
     grupos,
-    qtd: jogadores.length,
-    totalGeral: grupos.reduce((t,g)=>t+g.total,0),
+    qtd: contratados.reduce((t,g)=>t+g.qtd,0),        // só jogadores com status (Em dia, Em atraso, Isento)
+    qtdSemStatus,
+    totalGeral: contratados.reduce((t,g)=>t+g.total,0),
     saldoCaixa, custos, despesas, receitas, resultadoMes,
     // saldo previsto = saldo em caixa (conta corrente) + receitas - despesas
     saldoPrevisto: saldoCaixa + resultadoMes,
@@ -1108,11 +1114,12 @@ function cabecalhoPdf(d, rel, subtitulo){
 // filtro (opcional) = chave de um grupo -> só aquele grupo.
 function gerarPdfRelatorio(rel, filtro){
   const d = novoPdf();
-  const grupos = filtro ? rel.grupos.filter(g=>g.chave===filtro) : rel.grupos;
+  // sem filtro: só os jogadores com status (os "sem status" não são contabilizados)
+  const grupos = filtro ? rel.grupos.filter(g=>g.chave===filtro) : rel.grupos.filter(g=>g.contabiliza);
   cabecalhoPdf(d, rel, 'Relatório Financeiro - Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
   if(!filtro){
     d.texto(d.M, d.y, 'RESUMO GR\u00C1FICO', 11, true); d.y -= 16;
-    barraEmpilhadaPdf(d, 'Jogadores por status', rel.grupos.map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
+    barraEmpilhadaPdf(d, 'Jogadores por status', rel.grupos.filter(g=>g.contabiliza).map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
     barraEmpilhadaPdf(d, 'Valor por status (R$)', rel.grupos.filter(g=>g.total>0).map(g=>({label:g.label, valor:g.total, cor:COR_PDF[g.chave], txt:fmtBRL(g.total)})));
     const prev = rel.receitas.total;
     d.texto(d.M, d.y, 'Recebido (Em dia): '+fmtBRL(rel.receitas.recebido)+'  =  '+fmtPct(rel.receitas.recebido, prev)+' do previsto ('+fmtBRL(prev)+').', 9, true); d.y -= 18;
@@ -1128,7 +1135,7 @@ function gerarPdfRelatorio(rel, filtro){
     // título do grupo
     d.faixa(d.y-5, 18, 0.80);
     d.texto(d.M+4, d.y, g.label.toUpperCase(), 11, true);
-    d.texto(d.RIGHT-4, d.y, g.qtd+' jogador'+(g.qtd===1?'':'es')+'  ('+fmtPct(g.qtd, rel.qtd)+' do elenco)', 9, false, 'right');
+    d.texto(d.RIGHT-4, d.y, g.qtd+' jogador'+(g.qtd===1?'':'es')+(g.contabiliza ? '  ('+fmtPct(g.qtd, rel.qtd)+' do elenco)' : '  (n\u00E3o contabilizado)'), 9, false, 'right');
     d.y -= 20;
     g.linhas.forEach((l,i)=>{
       d.garantir(18, ()=>{ d.texto(d.M, d.y, g.label+' (continuação)', 10, true); d.y -= 16; });
@@ -1141,7 +1148,7 @@ function gerarPdfRelatorio(rel, filtro){
     });
     if(!g.linhas.length){ d.texto(d.M+4, d.y, 'Nenhum jogador neste status.', 9, false); d.y -= 15; }
     d.linha(d.M, d.y+9, d.RIGHT, d.y+9, 0.4);
-    d.texto(d.M+28, d.y-4, 'Subtotal - '+g.label+(rel.totalGeral>0 ? '  ('+fmtPct(g.total, rel.totalGeral)+' do total)' : ''), 10, true);
+    d.texto(d.M+28, d.y-4, 'Subtotal - '+g.label+((g.contabiliza && rel.totalGeral>0) ? '  ('+fmtPct(g.total, rel.totalGeral)+' do total)' : ''), 10, true);
     d.texto(d.RIGHT-4, d.y-4, fmtBRL(g.total), 10, true, 'right');
     d.y -= 28;
   });
@@ -1149,9 +1156,13 @@ function gerarPdfRelatorio(rel, filtro){
     d.garantir(40, null);
     d.faixa(d.y-6, 20, 0.88);
     d.texto(d.M+4, d.y, 'TOTAL GERAL', 11, true);
-    d.texto(d.M+160, d.y, rel.qtd+' jogadores', 9, true);
+    d.texto(d.M+160, d.y, rel.qtd+' jogadores contratados', 9, true);
     d.texto(d.RIGHT-4, d.y, fmtBRL(rel.totalGeral), 11, true, 'right');
     d.y -= 24;
+  }
+  if(!filtro && rel.qtdSemStatus>0){
+    d.garantir(20, null);
+    d.texto(d.M, d.y, rel.qtdSemStatus+' jogador'+(rel.qtdSemStatus===1?'':'es')+' sem status (cadastrados, ainda n\u00E3o contratados) n\u00E3o entram nos totais e gr\u00E1ficos.', 8, false); d.y -= 14;
   }
   if(grupos.some(g=>g.linhas.some(l=>l.valorIndividual!=null))){
     d.garantir(20, null);
@@ -1230,6 +1241,193 @@ app.get('/api/admin/fluxo-caixa.pdf', requireAdmin, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
   logEvento('Fluxo de caixa (PDF) gerado pelo administrador — referência '+rel.referencia+'.');
   enviarPdf(res, gerarPdfFluxoCaixa(rel), 'fluxo-de-caixa-'+rel.referencia+'.pdf');
+});
+
+/* ============================================================
+   EXPORTAÇÃO PARA EXCEL (.xlsx) — escrito à mão, sem dependências
+   ============================================================ */
+const CRC_TABLE = (()=>{ const t = new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1); t[n]=c>>>0; } return t; })();
+function crc32(buf){ let c = 0xFFFFFFFF; for(let i=0;i<buf.length;i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c>>>8); return (c ^ 0xFFFFFFFF)>>>0; }
+// monta um .zip (deflate) a partir de [{nome, dados:Buffer}]
+function montarZip(arquivos){
+  const zlib = require('zlib');
+  const locais = [], centrais = [];
+  let offset = 0;
+  const dosTime = (12<<11), dosDate = ((2026-1980)<<9) | (1<<5) | 1;
+  arquivos.forEach(a=>{
+    const nome = Buffer.from(a.nome,'utf8');
+    const comp = zlib.deflateRawSync(a.dados);
+    const crc = crc32(a.dados);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50,0); lh.writeUInt16LE(20,4); lh.writeUInt16LE(0x0800,6); lh.writeUInt16LE(8,8);
+    lh.writeUInt16LE(dosTime,10); lh.writeUInt16LE(dosDate,12); lh.writeUInt32LE(crc,14);
+    lh.writeUInt32LE(comp.length,18); lh.writeUInt32LE(a.dados.length,22); lh.writeUInt16LE(nome.length,26); lh.writeUInt16LE(0,28);
+    locais.push(lh, nome, comp);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50,0); ch.writeUInt16LE(20,4); ch.writeUInt16LE(20,6); ch.writeUInt16LE(0x0800,8); ch.writeUInt16LE(8,10);
+    ch.writeUInt16LE(dosTime,12); ch.writeUInt16LE(dosDate,14); ch.writeUInt32LE(crc,16);
+    ch.writeUInt32LE(comp.length,20); ch.writeUInt32LE(a.dados.length,24); ch.writeUInt16LE(nome.length,28);
+    ch.writeUInt16LE(0,30); ch.writeUInt16LE(0,32); ch.writeUInt16LE(0,34); ch.writeUInt16LE(0,36); ch.writeUInt32LE(0,38); ch.writeUInt32LE(offset,42);
+    centrais.push(ch, nome);
+    offset += lh.length + nome.length + comp.length;
+  });
+  const cd = Buffer.concat(centrais);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50,0); eocd.writeUInt16LE(0,4); eocd.writeUInt16LE(0,6);
+  eocd.writeUInt16LE(arquivos.length,8); eocd.writeUInt16LE(arquivos.length,10);
+  eocd.writeUInt32LE(cd.length,12); eocd.writeUInt32LE(offset,16); eocd.writeUInt16LE(0,20);
+  return Buffer.concat([...locais, cd, eocd]);
+}
+const xmlEsc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'');
+// estilos: 0 normal | 1 negrito | 2 título | 3 cabeçalho | 4 R$ | 5 R$ negrito | 6 % | 7 % negrito
+const XL = {N:0, B:1, T:2, H:3, M:4, MB:5, P:6, PB:7};
+function xlsxLetra(i){ let s=''; i++; while(i>0){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+// linhas: array de arrays; célula = valor | {v, s}. Números viram células numéricas (o Excel soma/formata).
+function xlsxPlanilha(linhas, larguras){
+  let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  xml += '<cols>'+(larguras||[]).map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
+  xml += '<sheetData>';
+  linhas.forEach((cels,r)=>{
+    xml += '<row r="'+(r+1)+'">';
+    (cels||[]).forEach((c,i)=>{
+      if(c==null || c==='') return;
+      const obj = (typeof c==='object') ? c : {v:c};
+      const ref = xlsxLetra(i)+(r+1);
+      const st = obj.s ? ' s="'+obj.s+'"' : '';
+      if(typeof obj.v==='number' && Number.isFinite(obj.v)) xml += '<c r="'+ref+'"'+st+'><v>'+obj.v+'</v></c>';
+      else xml += '<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+xmlEsc(obj.v)+'</t></is></c>';
+    });
+    xml += '</row>';
+  });
+  return xml + '</sheetData></worksheet>';
+}
+function gerarXlsxRelatorio(rel){
+  const [ano, mes] = rel.referencia.split('-');
+  const g = rel.geradoEm;
+  const cab = (titulo)=>[
+    [{v:'Bolerage F.D. — '+titulo, s:XL.T}],
+    ['Referência', mes+'/'+ano],
+    ['Valor da mensalidade (padrão)', rel.valorUnitario==null ? 'não definido' : {v:rel.valorUnitario, s:XL.M}],
+    ['Gerado em', g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' '+g.slice(11,16)],
+    [],
+  ];
+  const grupo = k => rel.grupos.find(x=>x.chave===k);
+  const pct = (v,t)=> t>0 ? v/t : 0;
+
+  // 1) Demonstrativo de Resultados (fluxo de caixa)
+  const s1 = [...cab('Demonstrativo de Resultados (Fluxo de Caixa)'),
+    [{v:'Item',s:XL.H},{v:'Valor (R$)',s:XL.H}],
+    ['Saldo em caixa (conta corrente)', {v:rel.saldoCaixa,s:XL.M}],
+    ['Receitas — Em dia (recebido)', {v:rel.receitas.recebido,s:XL.M}],
+    ['Receitas — Em atraso (a receber)', {v:rel.receitas.aReceber,s:XL.M}],
+    [{v:'Total de receitas',s:XL.B}, {v:rel.receitas.total,s:XL.MB}],
+    ['Despesas — Aluguel da Quadra', {v:rel.custos.aluguel,s:XL.M}],
+    ['Despesas — Higienização', {v:rel.custos.higienizacao,s:XL.M}],
+    ['Despesas — Carvão', {v:rel.custos.carvao,s:XL.M}],
+    [{v:'Total de despesas',s:XL.B}, {v:rel.despesas,s:XL.MB}],
+    [{v:'Resultado do mês (receitas − despesas)',s:XL.B}, {v:rel.resultadoMes,s:XL.MB}],
+    [{v:'SALDO PREVISTO (saldo em caixa + receitas − despesas)',s:XL.B}, {v:rel.saldoPrevisto,s:XL.MB}],
+  ];
+
+  // 2) Jogadores por status (agrupado, com subtotais; "sem status" fora dos totais)
+  const s2 = [...cab('Jogadores por Status'), [{v:'Jogador',s:XL.H},{v:'Status',s:XL.H},{v:'Dias em atraso',s:XL.H},{v:'Valor individual?',s:XL.H},{v:'Valor (R$)',s:XL.H}]];
+  rel.grupos.filter(x=>x.contabiliza).forEach(gr=>{
+    gr.linhas.forEach(l=> s2.push([l.nome, gr.label, l.diasAtraso==null ? '' : l.diasAtraso, l.valorIndividual!=null ? 'sim' : '', {v:l.valor,s:XL.M}]));
+    s2.push([{v:'Subtotal — '+gr.label+' ('+gr.qtd+')',s:XL.B}, '', '', '', {v:gr.total,s:XL.MB}]);
+    s2.push([]);
+  });
+  s2.push([{v:'TOTAL GERAL ('+rel.qtd+' jogadores)',s:XL.B}, '', '', '', {v:rel.totalGeral,s:XL.MB}]);
+  if(rel.qtdSemStatus>0) s2.push([rel.qtdSemStatus+' jogador(es) sem status (ainda não contratados) não entram nos totais.']);
+  s2.push([]);
+  s2.push([{v:'Resumo por status',s:XL.B}]);
+  s2.push([{v:'Status',s:XL.H},{v:'Jogadores',s:XL.H},{v:'% do elenco',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'% do total',s:XL.H}]);
+  rel.grupos.filter(x=>x.contabiliza).forEach(gr=> s2.push([gr.label, gr.qtd, {v:pct(gr.qtd,rel.qtd),s:XL.P}, {v:gr.total,s:XL.M}, {v:pct(gr.total,rel.totalGeral),s:XL.P}]));
+
+  // 3) Receitas x Despesas
+  const s3 = [...cab('Receitas x Despesas'),
+    [{v:'Receitas',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'% das receitas',s:XL.H}],
+    ['Em dia (recebido)', {v:rel.receitas.recebido,s:XL.M}, {v:pct(rel.receitas.recebido,rel.receitas.total),s:XL.P}],
+    ['Em atraso (a receber)', {v:rel.receitas.aReceber,s:XL.M}, {v:pct(rel.receitas.aReceber,rel.receitas.total),s:XL.P}],
+    [{v:'Total de receitas',s:XL.B}, {v:rel.receitas.total,s:XL.MB}, {v:rel.receitas.total>0?1:0,s:XL.PB}],
+    [],
+    [{v:'Despesas',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'% das despesas',s:XL.H}],
+    ['Aluguel da Quadra', {v:rel.custos.aluguel,s:XL.M}, {v:pct(rel.custos.aluguel,rel.despesas),s:XL.P}],
+    ['Higienização', {v:rel.custos.higienizacao,s:XL.M}, {v:pct(rel.custos.higienizacao,rel.despesas),s:XL.P}],
+    ['Carvão', {v:rel.custos.carvao,s:XL.M}, {v:pct(rel.custos.carvao,rel.despesas),s:XL.P}],
+    [{v:'Total de despesas',s:XL.B}, {v:rel.despesas,s:XL.MB}, {v:rel.despesas>0?1:0,s:XL.PB}],
+    [],
+    [{v:'As receitas cobrem (% das despesas)',s:XL.B}, '', {v:rel.despesas>0 ? rel.receitas.total/rel.despesas : 0, s:XL.PB}],
+    [{v:'Resultado do mês',s:XL.B}, {v:rel.resultadoMes,s:XL.MB}],
+  ];
+
+  // 4) Saldo em caixa
+  const s4 = [...cab('Saldo em Caixa'),
+    [{v:'Item',s:XL.H},{v:'Valor (R$)',s:XL.H}],
+    ['Saldo atual em caixa (conta corrente)', {v:rel.saldoCaixa,s:XL.M}],
+    ['Resultado do mês (receitas − despesas)', {v:rel.resultadoMes,s:XL.M}],
+    [{v:'SALDO PREVISTO',s:XL.B}, {v:rel.saldoPrevisto,s:XL.MB}],
+  ];
+
+  // 5) Custos da quadra
+  const s5 = [...cab('Custos da Quadra'),
+    [{v:'Custo',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'% do total',s:XL.H}],
+    ['Aluguel da Quadra', {v:rel.custos.aluguel,s:XL.M}, {v:pct(rel.custos.aluguel,rel.despesas),s:XL.P}],
+    ['Higienização', {v:rel.custos.higienizacao,s:XL.M}, {v:pct(rel.custos.higienizacao,rel.despesas),s:XL.P}],
+    ['Carvão', {v:rel.custos.carvao,s:XL.M}, {v:pct(rel.custos.carvao,rel.despesas),s:XL.P}],
+    [{v:'Total de custos',s:XL.B}, {v:rel.despesas,s:XL.MB}],
+  ];
+
+  const abas = [
+    {nome:'Demonstrativo',         xml:xlsxPlanilha(s1,[52,18])},
+    {nome:'Jogadores por Status',  xml:xlsxPlanilha(s2,[34,16,16,18,16])},
+    {nome:'Receitas x Despesas',   xml:xlsxPlanilha(s3,[40,18,16])},
+    {nome:'Saldo em Caixa',        xml:xlsxPlanilha(s4,[44,18])},
+    {nome:'Custos da Quadra',      xml:xlsxPlanilha(s5,[34,18,14])},
+  ];
+  const H = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const arquivos = [
+    {nome:'[Content_Types].xml', dados:Buffer.from(H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+      '<Default Extension="xml" ContentType="application/xml"/>'+
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+      abas.map((a,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+      '</Types>','utf8')},
+    {nome:'_rels/.rels', dados:Buffer.from(H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>','utf8')},
+    {nome:'xl/workbook.xml', dados:Buffer.from(H+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+
+      abas.map((a,i)=>'<sheet name="'+xmlEsc(a.nome)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>','utf8')},
+    {nome:'xl/_rels/workbook.xml.rels', dados:Buffer.from(H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+      abas.map((a,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+
+      '<Relationship Id="rId'+(abas.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>','utf8')},
+    {nome:'xl/styles.xml', dados:Buffer.from(H+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+      '<numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/><numFmt numFmtId="165" formatCode="0.0%"/></numFmts>'+
+      '<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts>'+
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill></fills>'+
+      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'+
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+      '<cellXfs count="8">'+
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
+        '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+
+        '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'+
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'+
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'+
+        '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>'+
+        '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'+
+        '<xf numFmtId="165" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>'+
+      '</cellXfs>'+
+      '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>','utf8')},
+    ...abas.map((a,i)=>({nome:'xl/worksheets/sheet'+(i+1)+'.xml', dados:Buffer.from(a.xml,'utf8')})),
+  ];
+  return montarZip(arquivos);
+}
+app.get('/api/admin/relatorio-financeiro.xlsx', requireAdmin, (req,res)=>{
+  const rel = montarRelatorioFinanceiro();
+  logEvento('Relatórios financeiros exportados para Excel pelo administrador — referência '+rel.referencia+'.');
+  res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.set('Content-Disposition','attachment; filename="relatorios-financeiros-'+rel.referencia+'.xlsx"');
+  res.send(gerarXlsxRelatorio(rel));
 });
 
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
@@ -1710,6 +1908,30 @@ app.post('/api/admin/reset', requireSuper, (req,res)=>{
   });
   tx();
   logEvento('Rodadas de teste (ainda não encerradas) zeradas pelo administrador. Histórico de rodadas encerradas preservado.');
+  res.json({ok:true});
+});
+
+/* ---- rifas ---- */
+// últimas rifas com ganhador cadastrado (mais recente primeiro) — tela Resenha > Rifas
+app.get('/api/rifas', (req,res)=>{
+  const rifas = db.prepare("SELECT r.id AS rodadaId, r.data AS data, f.ganhador AS ganhador, f.premio AS premio FROM rifas f JOIN rodadas r ON r.id=f.rodada_id WHERE f.ganhador<>'' ORDER BY r.data DESC LIMIT 12").all();
+  res.json({rifas});
+});
+// cadastra/atualiza (ou limpa, se ganhador e prêmio vierem vazios) a rifa de uma rodada
+app.put('/api/admin/rifas', requirePerm('conteudo'), (req,res)=>{
+  const rodada = getRodadaPorId(String((req.body||{}).rodadaId||''));
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  const ganhador = String((req.body||{}).ganhador||'').trim().slice(0,60);
+  const premio = String((req.body||{}).premio||'').trim().slice(0,120);
+  if(!ganhador && !premio){
+    db.prepare('DELETE FROM rifas WHERE rodada_id=?').run(rodada.id);
+    logEvento('Rifa da rodada de '+rodada.data+' removida.');
+    return res.json({ok:true, removida:true});
+  }
+  if(!ganhador) return res.status(400).json({erro:'Informe o nome do ganhador.'});
+  db.prepare('INSERT INTO rifas (rodada_id, ganhador, premio, atualizado_em) VALUES (?,?,?,?) ON CONFLICT(rodada_id) DO UPDATE SET ganhador=excluded.ganhador, premio=excluded.premio, atualizado_em=excluded.atualizado_em')
+    .run(rodada.id, ganhador, premio, nowISO());
+  logEvento('Rifa da rodada de '+rodada.data+': ganhador "'+ganhador+'"'+(premio?', prêmio "'+premio+'"':'')+'.');
   res.json({ok:true});
 });
 
