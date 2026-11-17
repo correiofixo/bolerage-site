@@ -1188,15 +1188,57 @@ async function renderRanking(){
     const linhas = state.elenco.filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, media:mediaRanking(j.id), total:totalVotosDe(j.id)}));
     const comNota = linhas.filter(l=>l.media!=null).sort((a,b)=>b.media-a.media);
     const semNota = linhas.filter(l=>l.media==null);
-    html += '<div class="card">';
-    comNota.forEach((l,i)=>{
-      html += '<div class="rank-row rank-row-click" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
-        '<div class="rank-count">'+l.total+' avaliação(ões)'+textoAusencias(l.id)+'</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
-    });
-    if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes.</p>';
-    else html += '<p class="small muted" style="margin-top:8px;">Toque em um jogador para ver o gráfico de desempenho dele.</p>';
-    html += '<p class="small muted" style="margin-top:10px;">Jogadores AUSENTES perdem 10% dos pontos acumulados a cada rodada em que não estiverem presentes.</p>';
-    html += '</div>';
+    const n = comNota.length;
+    // zonas: 1º ao 5º = Top 5; 6º ao 10º = Top 10; os 5 últimos (se houver mais de 10) = Under 5
+    const zonaDe = i => i<5 ? 'top5' : i<10 ? 'top10' : (n>10 && i>=Math.max(10, n-5)) ? 'under5' : 'meio';
+    const ZONAS = {
+      top5:   {tit:'🏆 TOP 5 — JOGADORES DESTAQUES', sub:'A briga pela liderança é aqui. Cada décimo conta!'},
+      top10:  {tit:'⭐ TOP 10 — ENTRE OS MELHORES', sub:'Mais uma boa rodada e você entra no Top 5!'},
+      meio:   {tit:'⚽ NA BRIGA', sub:'A tabela vira a cada rodada — todo mundo pode subir.'},
+      under5: {tit:'⚠️ UNDER 5 — PRECISAM MELHORAR', sub:'Zona de alerta (rebaixamento só na brincadeira 😄). Uma boa rodada te tira daqui!'},
+    };
+    const d2 = v => v.toFixed(2).replace('.',',');
+    // texto de incentivo: distância para o posto acima / para sair da zona
+    const gapTxt = i => {
+      const m = comNota[i].media, z = zonaDe(i);
+      if(i===0) return n>1 ? '👑 Líder • '+d2(m-comNota[1].media)+' de vantagem sobre o 2º' : '👑 Líder';
+      if(z==='under5'){
+        const ref = comNota[Math.max(0, n-6)].media;   // 1º jogador fora da zona
+        const dif = ref - m;
+        return dif<=0.004 ? 'Empatado com a saída da zona — um voto resolve!' : 'A '+d2(dif)+' de sair da zona';
+      }
+      if(i===5){ const dif = comNota[4].media-m; return dif<0.005 ? 'Empatado com o Top 5 — falta pouco!' : 'A '+d2(dif)+' de entrar no Top 5'; }
+      if(i>=1 && (z==='top5' || z==='top10')){ const dif = comNota[i-1].media-m; return dif<0.005 ? '▲ Empatado com o posto acima' : '▲ A '+d2(dif)+' do posto acima'; }
+      if(n>10 && i===Math.max(10, n-5)-1){ const dif = m-comNota[Math.max(10,n-5)].media; return dif<0.005 ? '🔥 Colado na zona: empatado com o 1º da zona' : '🔥 Colado na zona: '+d2(dif)+' de vantagem'; }
+      return '';
+    };
+    const posHtml = i => i===0 ? '<span class="rank-medalha">🥇</span>' : i===1 ? '<span class="rank-medalha">🥈</span>' : i===2 ? '<span class="rank-medalha">🥉</span>' : String(i+1);
+    if(!n){
+      html += '<div class="card"><p class="muted small">Ainda não há avaliações suficientes.</p></div>';
+    }else{
+      html += '<div class="rank-legenda">'+
+        '<span class="rank-chip chip-top5">🏆 Top 5 Destaques</span>'+
+        '<span class="rank-chip chip-top10">⭐ Top 10 Entre os Melhores</span>'+
+        (n>10 ? '<span class="rank-chip chip-under5">⚠️ Under 5 Precisam Melhorar</span>' : '')+
+      '</div>';
+      let zonaAtual = null;
+      comNota.forEach((l,i)=>{
+        const z = zonaDe(i);
+        if(z!==zonaAtual){
+          if(zonaAtual!==null) html += '</div>';
+          html += '<div class="card rank-zona zona-'+z+'"><div class="rank-zona-tit">'+ZONAS[z].tit+'</div><div class="rank-zona-sub">'+ZONAS[z].sub+'</div>';
+          zonaAtual = z;
+        }
+        const gap = gapTxt(i);
+        html += '<div class="rank-row rank-row-click rank-z-'+z+(i===0?' rank-lider':'')+'" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+posHtml(i)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
+          '<div class="rank-count">'+l.total+' avaliação(ões)'+textoAusencias(l.id)+'</div>'+
+          (gap ? '<div class="rank-gap">'+gap+'</div>' : '')+
+          '</div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
+      });
+      html += '</div>';
+      html += '<p class="small muted" style="margin:6px 2px 0;">Toque em um jogador para ver o gráfico de desempenho dele.</p>';
+    }
+    html += '<p class="small muted" style="margin:10px 2px 0;">Jogadores AUSENTES perdem 10% dos pontos acumulados a cada rodada em que não estiverem presentes.</p>';
     if(semNota.length){
       html += '<div class="card"><h3>Ainda sem avaliações</h3>';
       semNota.forEach(l=> html += '<div class="list-row"><span>'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+'</span></div>');
@@ -1591,6 +1633,28 @@ function fmtBRLfront(n){
   const [int, dec] = Math.abs(n).toFixed(2).split('.');
   return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
 }
+const COR_FIN = {em_dia:'#3FAE58', em_atraso:'#E2574C', isenta:'#4EA1FF', sem_status:'#7A8699', aluguel:'#CCA02A', higienizacao:'#4EA1FF', carvao:'#8A8A99'};
+function fmtPctFront(v, total){ return (total>0 ? v/total*100 : 0).toFixed(1).replace('.',',')+'%'; }
+// segs: [{label, valor, cor, txt}] — barra empilhada + legenda com percentuais
+function barraEmpilhadaHtml(titulo, segs){
+  const total = segs.reduce((t,x)=>t+x.valor,0);
+  let h = '<div class="stack-bloco"><div class="stack-tit">'+titulo+'</div>';
+  if(total<=0) return h+'<p class="small muted" style="margin:4px 0;">Sem dados para exibir.</p></div>';
+  h += '<div class="stack">'+segs.filter(x=>x.valor>0).map(x=>{
+    const pct = x.valor/total*100;
+    return '<span class="stack-seg" style="flex:'+x.valor+' 1 0;background:'+x.cor+'" title="'+escapeHtml(x.label)+': '+fmtPctFront(x.valor,total)+'">'+(pct>=11?fmtPctFront(x.valor,total):'')+'</span>';
+  }).join('')+'</div><div class="stack-leg">'+segs.map(x=>
+    '<div class="stack-leg-item"><span><i style="background:'+x.cor+'"></i>'+x.label+'</span><span>'+x.txt+' <strong>'+fmtPctFront(x.valor,total)+'</strong></span></div>'
+  ).join('')+'</div></div>';
+  return h;
+}
+// duas barras (receitas x despesas) na mesma escala
+function barrasComparativasHtml(titulo, itens){
+  const max = Math.max(...itens.map(i=>Math.abs(i.valor)), 0.01);
+  return '<div class="stack-bloco"><div class="stack-tit">'+titulo+'</div>'+itens.map(i=>
+    '<div class="cmp-linha"><span class="cmp-rot">'+i.label+'</span><div class="cmp-trilho"><span class="cmp-barra" style="width:'+Math.max(2,Math.abs(i.valor)/max*100).toFixed(1)+'%;background:'+i.cor+'"></span></div><strong class="cmp-val">'+fmtBRLfront(i.valor)+'</strong></div>'
+  ).join('')+'</div>';
+}
 function inputValorBRL(n){ return n ? Number(n).toFixed(2).replace('.',',') : ''; }
 function renderRelatorioFinanceiroHtml(rel, podeEditar){
   if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
@@ -1606,6 +1670,15 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
   h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; os dias em atraso contam a partir do vencimento (2º domingo do mês). Para alterar o valor de um jogador, use o card Mensalidades; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
+  // resumo gráfico: jogadores e valores por status, com percentuais
+  h += '<div class="rel-graficos">'+
+    barraEmpilhadaHtml('Jogadores por status', rel.grupos.map(x=>({label:x.label, valor:x.qtd, cor:COR_FIN[x.chave], txt:x.qtd+' jogador'+(x.qtd===1?'':'es')})))+
+    barraEmpilhadaHtml('Valor por status (R$)', rel.grupos.filter(x=>x.total>0).map(x=>({label:x.label, valor:x.total, cor:COR_FIN[x.chave], txt:fmtBRLfront(x.total)})))+
+    '<div class="stack-bloco"><div class="stack-tit">Recebido x previsto</div>'+
+      '<div class="cmp-trilho cmp-trilho-lg"><span class="cmp-barra" style="width:'+(rel.receitas.total>0?(rel.receitas.recebido/rel.receitas.total*100).toFixed(1):0)+'%;background:'+COR_FIN.em_dia+'"></span></div>'+
+      '<div class="small" style="margin-top:4px;"><strong>'+fmtPctFront(rel.receitas.recebido, rel.receitas.total)+'</strong> do previsto já foi recebido ('+fmtBRLfront(rel.receitas.recebido)+' de '+fmtBRLfront(rel.receitas.total)+').</div></div>'+
+  '</div>';
+
   // filtros por status
   h += '<div class="filtros-fin">'+
     '<button data-action="gestao-filtro" data-f="todos" class="'+(filtro==='todos'?'active':'')+'">Todos</button>'+
@@ -1614,7 +1687,7 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
 
   // grupos por status, cada um com subtotal
   gruposVis.forEach(gr=>{
-    h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+'</span></div>';
+    h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+' • '+fmtPctFront(gr.qtd, rel.qtd)+' do elenco</span></div>';
     if(gr.linhas.length){
       gr.linhas.forEach(l=>{
         const individual = l.valorIndividual!=null;
@@ -1625,7 +1698,7 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     }else{
       h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
     }
-    h += '<div class="rel-sub"><span>Subtotal — '+gr.label+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div></div>';
+    h += '<div class="rel-sub"><span>Subtotal — '+gr.label+(rel.totalGeral>0 ? ' <span class="small muted">('+fmtPctFront(gr.total, rel.totalGeral)+' do total)</span>' : '')+'</span><strong>'+fmtBRLfront(gr.total)+'</strong></div></div>';
   });
   if(filtro==='todos'){
     h += '<div class="rel-total"><span>TOTAL GERAL <span class="small muted">('+rel.qtd+' jogadores)</span></span><strong>'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
@@ -1673,6 +1746,12 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<div class="rel-sub"><span>Total de despesas</span><strong>'+fmtBRLfront(rel.despesas)+'</strong></div>'+
     '<div class="rel-sub"><span>Resultado do mês <span class="small muted">(receitas − despesas)</span></span><strong>'+fmtBRLfront(rel.resultadoMes)+'</strong></div>'+
     '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(saldo em caixa + receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
+    '<div class="rel-graficos" style="margin-top:12px;">'+
+      barrasComparativasHtml('Receitas x Despesas', [{label:'Receitas', valor:rel.receitas.total, cor:COR_FIN.em_dia}, {label:'Despesas', valor:rel.despesas, cor:COR_FIN.em_atraso}])+
+      '<p class="small" style="margin:2px 0 8px;">'+(rel.despesas>0 ? 'As receitas cobrem <strong>'+fmtPctFront(rel.receitas.total, rel.despesas)+'</strong> das despesas.' : 'Sem despesas informadas.')+'</p>'+
+      barraEmpilhadaHtml('Composição das receitas', [{label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_FIN.em_dia, txt:fmtBRLfront(rel.receitas.recebido)}, {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_FIN.em_atraso, txt:fmtBRLfront(rel.receitas.aReceber)}])+
+      barraEmpilhadaHtml('Composição das despesas', [{label:'Aluguel da Quadra', valor:c.aluguel, cor:COR_FIN.aluguel, txt:fmtBRLfront(c.aluguel)}, {label:'Higienização', valor:c.higienizacao, cor:COR_FIN.higienizacao, txt:fmtBRLfront(c.higienizacao)}, {label:'Carvão', valor:c.carvao, cor:COR_FIN.carvao, txt:fmtBRLfront(c.carvao)}])+
+    '</div>'+
     '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
 }

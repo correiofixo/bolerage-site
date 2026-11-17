@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 21;
+const APP_BUILD = 22;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -1009,10 +1009,14 @@ function novoPdf(){
   const cur = ()=>pages[pages.length-1];
   const esc = s => String(s).replace(/[^ -ÿ]/g,'?').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
   const largura = (s,size)=>{ let w=0; for(const ch of String(s)) w += /\d/.test(ch)?0.556 : (ch===','||ch==='.'||ch===' ')?0.278 : ch==='R'?0.722 : ch==='$'?0.556 : ch==='-'?0.333 : 0.56; return w*size; };
-  doc.texto = (x,yy,s,size,bold,align)=>{
+  doc.largura = largura;
+  // cor (opcional) = [r,g,b] de 0 a 1
+  doc.texto = (x,yy,s,size,bold,align,cor)=>{
     const xx = align==='right' ? x-largura(s,size) : x;
-    cur().push('BT /'+(bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(1)+' '+yy.toFixed(1)+' Td ('+esc(s)+') Tj ET');
+    const pre = cor ? cor[0]+' '+cor[1]+' '+cor[2]+' rg ' : '';
+    cur().push('BT '+pre+'/'+(bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(1)+' '+yy.toFixed(1)+' Td ('+esc(s)+') Tj'+(cor?' 0 g':'')+' ET');
   };
+  doc.cor = (x,yy,w,h,rgb)=> cur().push(rgb[0]+' '+rgb[1]+' '+rgb[2]+' rg '+x.toFixed(1)+' '+yy.toFixed(1)+' '+w.toFixed(1)+' '+h+' re f 0 g');
   doc.linha = (x1,y1,x2,y2,g)=> cur().push((g!=null?g+' G ':'')+'0.6 w '+x1+' '+y1.toFixed(1)+' m '+x2+' '+y2.toFixed(1)+' l S 0 G');
   doc.faixa = (yy,h,g)=> cur().push(g+' g '+M+' '+yy.toFixed(1)+' '+(W-2*M)+' '+h+' re f 0 g');
   // garante espaço de h pontos; se faltar, abre nova página e executa cab() (cabeçalho opcional)
@@ -1048,6 +1052,48 @@ function novoPdf(){
   };
   return doc;
 }
+// cores por status (RGB 0-1) e percentuais
+const COR_PDF = {em_dia:[0.25,0.68,0.35], em_atraso:[0.89,0.34,0.30], isenta:[0.31,0.63,1], sem_status:[0.48,0.53,0.60],
+  aluguel:[0.80,0.62,0.15], higienizacao:[0.31,0.63,1], carvao:[0.45,0.45,0.50]};
+function fmtPct(v, total){ return (total>0 ? v/total*100 : 0).toFixed(1).replace('.',',')+'%'; }
+// barra empilhada com percentuais dentro dos segmentos + legenda embaixo
+function barraEmpilhadaPdf(d, titulo, segs){
+  d.garantir(36 + segs.length*13, null);
+  d.texto(d.M, d.y, titulo, 10, true); d.y -= 14;
+  const total = segs.reduce((t,x)=>t+x.valor,0);
+  if(total<=0){ d.texto(d.M+4, d.y, 'Sem dados para exibir.', 9, false); d.y -= 20; return; }
+  const largTot = d.RIGHT - d.M;
+  let x = d.M;
+  segs.forEach(sg=>{
+    const w = sg.valor/total*largTot;
+    if(w<=0) return;
+    d.cor(x, d.y-12, w, 16, sg.cor);
+    if(w>34){ const t = fmtPct(sg.valor,total); d.texto(x+w/2-d.largura(t,8)/2, d.y-7, t, 8, true, 'left', [1,1,1]); }
+    x += w;
+  });
+  d.y -= 26;
+  segs.forEach(sg=>{
+    d.cor(d.M+4, d.y-1, 8, 8, sg.cor);
+    d.texto(d.M+18, d.y, sg.label+': '+sg.txt+'  ('+fmtPct(sg.valor,total)+')', 9, false);
+    d.y -= 13;
+  });
+  d.y -= 6;
+}
+// duas barras comparando receitas x despesas (escala comum)
+function barrasComparativasPdf(d, titulo, itens){
+  d.garantir(30 + itens.length*26, null);
+  d.texto(d.M, d.y, titulo, 10, true); d.y -= 14;
+  const max = Math.max(...itens.map(i=>Math.abs(i.valor)), 0.01);
+  const largTot = d.RIGHT - d.M - 120;
+  itens.forEach(it=>{
+    d.texto(d.M+4, d.y-7, it.label, 9, false);
+    const w = Math.max(2, Math.abs(it.valor)/max*largTot);
+    d.cor(d.M+110, d.y-12, w, 16, it.cor);
+    d.texto(d.M+110+w+6, d.y-7, fmtBRL(it.valor), 9, true);
+    d.y -= 24;
+  });
+  d.y -= 4;
+}
 function dataHoraBR(g){ return g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16); }
 function cabecalhoPdf(d, rel, subtitulo){
   const [ano, mes] = rel.referencia.split('-');
@@ -1064,6 +1110,14 @@ function gerarPdfRelatorio(rel, filtro){
   const d = novoPdf();
   const grupos = filtro ? rel.grupos.filter(g=>g.chave===filtro) : rel.grupos;
   cabecalhoPdf(d, rel, 'Relatório Financeiro - Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
+  if(!filtro){
+    d.texto(d.M, d.y, 'RESUMO GR\u00C1FICO', 11, true); d.y -= 16;
+    barraEmpilhadaPdf(d, 'Jogadores por status', rel.grupos.map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
+    barraEmpilhadaPdf(d, 'Valor por status (R$)', rel.grupos.filter(g=>g.total>0).map(g=>({label:g.label, valor:g.total, cor:COR_PDF[g.chave], txt:fmtBRL(g.total)})));
+    const prev = rel.receitas.total;
+    d.texto(d.M, d.y, 'Recebido (Em dia): '+fmtBRL(rel.receitas.recebido)+'  =  '+fmtPct(rel.receitas.recebido, prev)+' do previsto ('+fmtBRL(prev)+').', 9, true); d.y -= 18;
+    d.linha(d.M, d.y+6, d.RIGHT, d.y+6, 0.3); d.y -= 8;
+  }
   const cabTabela = ()=>{
     d.faixa(d.y-4, 16, 0.88);
     d.texto(d.M+4, d.y, '#', 9, true); d.texto(d.M+28, d.y, 'Jogador', 9, true); d.texto(d.RIGHT-4, d.y, 'Valor', 9, true, 'right');
@@ -1074,7 +1128,7 @@ function gerarPdfRelatorio(rel, filtro){
     // título do grupo
     d.faixa(d.y-5, 18, 0.80);
     d.texto(d.M+4, d.y, g.label.toUpperCase(), 11, true);
-    d.texto(d.RIGHT-4, d.y, g.qtd+' jogador'+(g.qtd===1?'':'es'), 9, false, 'right');
+    d.texto(d.RIGHT-4, d.y, g.qtd+' jogador'+(g.qtd===1?'':'es')+'  ('+fmtPct(g.qtd, rel.qtd)+' do elenco)', 9, false, 'right');
     d.y -= 20;
     g.linhas.forEach((l,i)=>{
       d.garantir(18, ()=>{ d.texto(d.M, d.y, g.label+' (continuação)', 10, true); d.y -= 16; });
@@ -1087,7 +1141,7 @@ function gerarPdfRelatorio(rel, filtro){
     });
     if(!g.linhas.length){ d.texto(d.M+4, d.y, 'Nenhum jogador neste status.', 9, false); d.y -= 15; }
     d.linha(d.M, d.y+9, d.RIGHT, d.y+9, 0.4);
-    d.texto(d.M+28, d.y-4, 'Subtotal - '+g.label, 10, true);
+    d.texto(d.M+28, d.y-4, 'Subtotal - '+g.label+(rel.totalGeral>0 ? '  ('+fmtPct(g.total, rel.totalGeral)+' do total)' : ''), 10, true);
     d.texto(d.RIGHT-4, d.y-4, fmtBRL(g.total), 10, true, 'right');
     d.y -= 28;
   });
@@ -1140,6 +1194,22 @@ function gerarPdfFluxoCaixa(rel){
   d.texto(d.M+8, d.y, 'SALDO PREVISTO', 12, true);
   d.texto(d.RIGHT-8, d.y, fmtBRL(rel.saldoPrevisto), 14, true, 'right');
   d.y -= 36;
+  d.y -= 4;
+  d.texto(d.M, d.y, 'GR\u00C1FICOS', 11, true); d.y -= 16;
+  barrasComparativasPdf(d, 'Receitas x Despesas', [
+    {label:'Receitas', valor:rel.receitas.total, cor:COR_PDF.em_dia},
+    {label:'Despesas', valor:rel.despesas, cor:COR_PDF.em_atraso},
+  ]);
+  d.texto(d.M, d.y, rel.despesas>0 ? 'As receitas cobrem '+fmtPct(rel.receitas.total, rel.despesas)+' das despesas.' : 'Sem despesas informadas.', 9, true); d.y -= 18;
+  barraEmpilhadaPdf(d, 'Composi\u00E7\u00E3o das receitas', [
+    {label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_PDF.em_dia, txt:fmtBRL(rel.receitas.recebido)},
+    {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_PDF.em_atraso, txt:fmtBRL(rel.receitas.aReceber)},
+  ]);
+  barraEmpilhadaPdf(d, 'Composi\u00E7\u00E3o das despesas', [
+    {label:'Aluguel da Quadra', valor:rel.custos.aluguel, cor:COR_PDF.aluguel, txt:fmtBRL(rel.custos.aluguel)},
+    {label:'Higieniza\u00E7\u00E3o', valor:rel.custos.higienizacao, cor:COR_PDF.higienizacao, txt:fmtBRL(rel.custos.higienizacao)},
+    {label:'Carv\u00E3o', valor:rel.custos.carvao, cor:COR_PDF.carvao, txt:fmtBRL(rel.custos.carvao)},
+  ]);
   d.texto(d.M, d.y, 'Saldo previsto = saldo em caixa + receitas - despesas.', 8, false); d.y -= 11;
   d.texto(d.M, d.y, 'Receitas = mensalidades Em dia + Em atraso. Isentos e jogadores sem status contam R$ 0,00.', 8, false);
   if(rel.aviso){ d.y -= 12; d.texto(d.M, d.y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 8, false); }
