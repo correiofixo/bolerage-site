@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 16;
+const APP_BUILD = 17;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -174,6 +174,8 @@ try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_aluguel REAL NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEFAULT 0"); }catch(e){}
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
+// saldo em caixa = saldo atual da conta corrente do time (entra no fluxo de caixa)
+try{ db.exec("ALTER TABLE config ADD COLUMN saldo_caixa REAL NOT NULL DEFAULT 0"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -866,6 +868,8 @@ function montarRelatorioFinanceiro(){
   const despesas = custos.aluguel + custos.higienizacao + custos.carvao;
   const receitas = {recebido: tot('em_dia'), aReceber: tot('em_atraso')};
   receitas.total = receitas.recebido + receitas.aReceber;
+  const saldoCaixa = Number(cfg.saldo_caixa)||0;
+  const resultadoMes = receitas.total - despesas;
   return {
     referencia: agora.slice(0,7),
     geradoEm: agora,
@@ -874,11 +878,12 @@ function montarRelatorioFinanceiro(){
     grupos,
     qtd: jogadores.length,
     totalGeral: grupos.reduce((t,g)=>t+g.total,0),
-    custos, despesas, receitas,
-    saldoPrevisto: receitas.total - despesas,
+    saldoCaixa, custos, despesas, receitas, resultadoMes,
+    // saldo previsto = saldo em caixa (conta corrente) + receitas - despesas
+    saldoPrevisto: saldoCaixa + resultadoMes,
   };
 }
-app.get('/api/admin/relatorio-financeiro', requireSuper, (req,res)=>{
+app.get('/api/admin/relatorio-financeiro', requireAdmin, (req,res)=>{
   res.json(montarRelatorioFinanceiro());
 });
 // Custos da quadra (valores mensais informados pelo admin) para o fluxo de caixa.
@@ -899,6 +904,20 @@ app.put('/api/admin/custos', requireSuper, (req,res)=>{
   db.prepare('UPDATE config SET custo_aluguel=?, custo_higienizacao=?, custo_carvao=? WHERE id=1').run(aluguel, higienizacao, carvao);
   logEvento('Custos da quadra atualizados: aluguel '+fmtBRL(aluguel)+', higienização '+fmtBRL(higienizacao)+', carvão '+fmtBRL(carvao)+'.');
   res.json({ok:true});
+});
+
+// Saldo em caixa: valor atualizado do saldo em conta corrente do time (aceita negativo).
+app.put('/api/admin/saldo-caixa', requireSuper, (req,res)=>{
+  const bruto = String((req.body||{}).saldo==null ? '' : req.body.saldo).trim();
+  let saldo = 0;
+  if(bruto!==''){
+    const n = parseValorBR(bruto);
+    if(n==null || n>100000000) return res.status(400).json({erro:'Saldo em caixa inválido.'});
+    saldo = Math.round(((/^\s*(-|\()/.test(bruto)) ? -n : n)*100)/100;
+  }
+  db.prepare('UPDATE config SET saldo_caixa=? WHERE id=1').run(saldo);
+  logEvento('Saldo em caixa atualizado para '+fmtBRL(saldo)+'.');
+  res.json({ok:true, saldoCaixa:saldo});
 });
 
 // PDF simples escrito à mão (sem dependências): A4, Helvetica, páginas numeradas.
@@ -1012,6 +1031,9 @@ function gerarPdfFluxoCaixa(rel){
   const item = (rotulo, valor, negrito)=>{
     d.texto(d.M+10, d.y, rotulo, 10, !!negrito); d.texto(d.RIGHT-4, d.y, fmtBRL(valor), 10, !!negrito, 'right'); d.y -= 16;
   };
+  secao('SALDO EM CAIXA (conta corrente)');
+  item('Saldo atual em caixa', rel.saldoCaixa, true);
+  d.y -= 10;
   secao('RECEITAS (mensalidades)');
   const g = k => rel.grupos.find(x=>x.chave===k);
   item('Em dia ('+g('em_dia').qtd+' jogador'+(g('em_dia').qtd===1?'':'es')+') - já recebido', rel.receitas.recebido);
@@ -1025,11 +1047,14 @@ function gerarPdfFluxoCaixa(rel){
   item('Carvão', rel.custos.carvao);
   d.linha(d.M, d.y+11, d.RIGHT, d.y+11, 0.4);
   item('Total de despesas', rel.despesas, true);
-  d.y -= 14;
+  d.y -= 6;
+  item('Resultado do mês (receitas - despesas)', rel.resultadoMes, true);
+  d.y -= 10;
   d.faixa(d.y-10, 30, rel.saldoPrevisto<0 ? 0.85 : 0.88);
-  d.texto(d.M+8, d.y, 'SALDO PREVISTO (receitas - despesas)', 12, true);
+  d.texto(d.M+8, d.y, 'SALDO PREVISTO', 12, true);
   d.texto(d.RIGHT-8, d.y, fmtBRL(rel.saldoPrevisto), 14, true, 'right');
   d.y -= 36;
+  d.texto(d.M, d.y, 'Saldo previsto = saldo em caixa + receitas - despesas.', 8, false); d.y -= 11;
   d.texto(d.M, d.y, 'Receitas = mensalidades Em dia + Em atraso. Isentos e jogadores sem status contam R$ 0,00.', 8, false);
   if(rel.aviso){ d.y -= 12; d.texto(d.M, d.y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 8, false); }
   return d.build();
@@ -1039,13 +1064,13 @@ function enviarPdf(res, pdf, nome){
   res.set('Content-Disposition','attachment; filename="'+nome+'"');
   res.send(pdf);
 }
-app.get('/api/admin/relatorio-financeiro.pdf', requireSuper, (req,res)=>{
+app.get('/api/admin/relatorio-financeiro.pdf', requireAdmin, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
   const filtro = STATUS_FIN.some(s=>s.chave===req.query.status) ? String(req.query.status) : null;
   logEvento('Relatório financeiro (PDF) gerado pelo administrador — referência '+rel.referencia+(filtro?' — filtro '+filtro:'')+'.');
   enviarPdf(res, gerarPdfRelatorio(rel, filtro), 'relatorio-financeiro-'+rel.referencia+(filtro?'-'+filtro:'')+'.pdf');
 });
-app.get('/api/admin/fluxo-caixa.pdf', requireSuper, (req,res)=>{
+app.get('/api/admin/fluxo-caixa.pdf', requireAdmin, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
   logEvento('Fluxo de caixa (PDF) gerado pelo administrador — referência '+rel.referencia+'.');
   enviarPdf(res, gerarPdfFluxoCaixa(rel), 'fluxo-de-caixa-'+rel.referencia+'.pdf');

@@ -1293,6 +1293,10 @@ async function renderAdmin(){
       try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
     }
   }
+  if(!isSuper){
+    // Admin (não super) também visualiza a Gestão (relatório financeiro e fluxo de caixa)
+    try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
+  }
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
     try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
@@ -1378,7 +1382,7 @@ async function renderAdmin(){
       '<button data-action="elenco-aba" data-aba="gestao" class="'+(abaElenco==='gestao'?'active':'')+'">Gestão</button>'+
     '</div>';
   if(abaElenco==='gestao'){
-    html += renderRelatorioFinanceiroHtml(state.relatorioFin) + '</div>';
+    html += renderRelatorioFinanceiroHtml(state.relatorioFin, true) + '</div>';
   }else{
   elencoAdmin.jogadores.forEach(j=>{
     if(state.editingJogadorId===j.id){
@@ -1417,6 +1421,10 @@ async function renderAdmin(){
     '<button class="btn secondary" data-action="adicionar-jogador">Adicionar</button></div>';
   } /* fim aba Jogadores */
   } /* fim isSuper (rodada / critérios / elenco) */
+
+  if(!isSuper){
+    html += '<div class="card"><h3>Gestão</h3>'+renderRelatorioFinanceiroHtml(state.relatorioFin, false)+'</div>';
+  }
 
   if(can('conteudo')){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
@@ -1547,7 +1555,7 @@ function fmtBRLfront(n){
   return (n<0?'-':'')+'R$ '+int.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+dec;
 }
 function inputValorBRL(n){ return n ? Number(n).toFixed(2).replace('.',',') : ''; }
-function renderRelatorioFinanceiroHtml(rel){
+function renderRelatorioFinanceiroHtml(rel, podeEditar){
   if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
   const [ano, mes] = rel.referencia.split('-');
   const g = rel.geradoEm;
@@ -1587,18 +1595,35 @@ function renderRelatorioFinanceiroHtml(rel){
   }
   h += '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.pdf'+(filtro==='todos'?'':'?status='+filtro)+'" data-arq="relatorio-financeiro-'+rel.referencia+(filtro==='todos'?'':'-'+filtro)+'.pdf">📄 Gerar PDF do relatório'+(filtro==='todos'?'':' ('+gruposVis[0].label+')')+'</button>';
 
-  // custos da quadra
+  // saldo em caixa (conta corrente) e custos da quadra — só o Super Admin edita; demais admins só visualizam
   const c = rel.custos;
-  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Custos da quadra</h4>'+
-    '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
-    '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
-    '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
-    '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
-    '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
+  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Saldo em caixa</h4>';
+  if(podeEditar){
+    h += '<p class="small muted">Informe o saldo atualizado da conta corrente do time. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
+      '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
+      '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>';
+  }else{
+    h += '<div class="list-row"><span>Saldo atual em caixa</span><span class="row-right"><strong>'+fmtBRLfront(rel.saldoCaixa)+'</strong></span></div>';
+  }
 
-  // fluxo de caixa
+  h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Custos da quadra</h4>';
+  if(podeEditar){
+    h += '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
+      '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
+      '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
+      '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
+      '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
+  }else{
+    h += '<div class="list-row"><span>Aluguel da Quadra</span><span class="row-right">'+fmtBRLfront(c.aluguel)+'</span></div>'+
+      '<div class="list-row"><span>Higienização</span><span class="row-right">'+fmtBRLfront(c.higienizacao)+'</span></div>'+
+      '<div class="list-row"><span>Carvão</span><span class="row-right">'+fmtBRLfront(c.carvao)+'</span></div>';
+  }
+
+  // fluxo de caixa: saldo em caixa + receitas - despesas = saldo previsto
   const saldoCor = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
   h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Fluxo de caixa</h4>'+
+    '<div class="rel-fluxo-tit">Saldo em caixa (conta corrente)</div>'+
+    '<div class="rel-sub"><span>Saldo atual em caixa</span><strong>'+fmtBRLfront(rel.saldoCaixa)+'</strong></div>'+
     '<div class="rel-fluxo-tit">Receitas (mensalidades)</div>'+
     '<div class="list-row"><span>Em dia <span class="small muted">(já recebido)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.recebido)+'</span></div>'+
     '<div class="list-row"><span>Em atraso <span class="small muted">(a receber)</span></span><span class="row-right">'+fmtBRLfront(rel.receitas.aReceber)+'</span></div>'+
@@ -1608,9 +1633,17 @@ function renderRelatorioFinanceiroHtml(rel){
     '<div class="list-row"><span>Higienização</span><span class="row-right">'+fmtBRLfront(c.higienizacao)+'</span></div>'+
     '<div class="list-row"><span>Carvão</span><span class="row-right">'+fmtBRLfront(c.carvao)+'</span></div>'+
     '<div class="rel-sub"><span>Total de despesas</span><strong>'+fmtBRLfront(rel.despesas)+'</strong></div>'+
-    '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
+    '<div class="rel-sub"><span>Resultado do mês <span class="small muted">(receitas − despesas)</span></span><strong>'+fmtBRLfront(rel.resultadoMes)+'</strong></div>'+
+    '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(saldo em caixa + receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
     '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
+}
+async function handleSalvarSaldoCaixa(){
+  try{
+    await api('/api/admin/saldo-caixa', {method:'PUT', adminAuth:true, body:{saldo: document.getElementById('saldo-caixa').value}});
+    await render();
+    showToast('Saldo em caixa salvo!');
+  }catch(e){ alert(e.message); }
 }
 async function handleSalvarCustos(){
   const g = id => document.getElementById(id).value;
@@ -1887,6 +1920,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='baixar-pdf') return handleBaixarPdf(el.dataset.url, el.dataset.arq);
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
   if(action==='salvar-custos') return handleSalvarCustos();
+  if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
