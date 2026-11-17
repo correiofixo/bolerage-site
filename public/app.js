@@ -1162,9 +1162,13 @@ async function renderAdmin(){
     '<button class="btn secondary" data-action="salvar-sorteio-agenda">Salvar sorteio</button></div>';
 
   html += '<div class="card"><h3>Resenha — Votos dos Jogadores</h3>'+
-    '<label class="small"><input type="checkbox" id="cfg-mostrar-votos" '+(cfgA.mostrarVotos?'checked':'')+'> Exibir a aba "Votos dos Jogadores" na tela Resenha (mostra o voto que cada jogador deu aos outros)</label>'+
-    '<p class="small" style="margin-top:8px;color:'+(cfgA.mostrarVotos?'var(--green)':'var(--text-muted)')+';">Situação atual: '+(cfgA.mostrarVotos?'aba HABILITADA':'aba OCULTA')+'</p>'+
-    '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-mostrar-votos">Salvar</button></div>';
+    '<p class="small muted">Liga ou desliga a aba "Votos dos Jogadores" na tela Resenha (mostra o voto que cada jogador deu aos outros). A mudança vale na hora, sem precisar salvar.</p>'+
+    '<div class="presence-toggle-wrap">'+
+      '<button class="presence-toggle '+(cfgA.mostrarVotos?'is-on':'is-off')+'" data-action="alternar-mostrar-votos" data-atual="'+(cfgA.mostrarVotos?'sim':'nao')+'"><span class="presence-toggle-knob"></span></button>'+
+      '<div class="presence-toggle-label">'+(cfgA.mostrarVotos
+        ? '<strong style="color:var(--green)">Aba HABILITADA</strong> — os jogadores veem os votos'
+        : '<span class="muted">Aba OCULTA</span> — toque para habilitar')+'</div>'+
+    '</div></div>';
 
   html += '<div class="card"><h3>Critério para ativar a fase 2 (sorteio por nota)</h3>'+
     '<div class="field"><label>Mínimo de rodadas encerradas</label><input type="number" min="1" id="cfg-min-rodadas" value="'+elencoAdmin.config.minRodadas+'"></div>'+
@@ -1339,8 +1343,8 @@ async function handleSalvarSorteioAgenda(){
   try{ await api('/api/admin/sorteio-agenda', {method:'PUT', adminAuth:true, body:{modo, agendadoEm}}); await refreshRodadaAtual(); await render(); }
   catch(e){ alert(e.message); }
 }
-async function handleSalvarMostrarVotos(){
-  const mostrar = document.getElementById('cfg-mostrar-votos').checked;
+async function handleSalvarMostrarVotos(atual){
+  const mostrar = atual!=='sim';
   try{
     const r = await api('/api/admin/mostrar-votos', {method:'PUT', adminAuth:true, body:{mostrar}});
     await refreshRodadaAtual();
@@ -1567,7 +1571,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();
   if(action==='salvar-sorteio-agenda') return handleSalvarSorteioAgenda();
-  if(action==='salvar-mostrar-votos') return handleSalvarMostrarVotos();
+  if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
   if(action==='editar-jogador'){ state.editingJogadorId = el.dataset.id; return render(); }
   if(action==='cancelar-edicao'){ state.editingJogadorId = null; return render(); }
