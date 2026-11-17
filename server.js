@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 26;
+const APP_BUILD = 27;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -814,7 +814,7 @@ app.post('/api/trocar-pin', requireAuth, (req,res)=>{
   res.json({ok:true});
 });
 
-// Meu Perfil: todos os campos são opcionais (vazio = limpa o campo).
+// Meu Contrato (perfil): todos os campos são opcionais (vazio = limpa o campo).
 app.put('/api/me/perfil', requireAuth, (req,res)=>{
   const j = getJogadorPorId(req.jogadorId);
   if(!j) return res.status(401).json({erro:'Sessão inválida.'});
@@ -1120,7 +1120,7 @@ function gerarPdfRelatorio(rel, filtro){
   cabecalhoPdf(d, rel, 'Financeiro por Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
   if(!filtro){
     d.texto(d.M, d.y, 'RESUMO GR\u00C1FICO', 11, true); d.y -= 16;
-    pizzaPdf(d, 'Jogadores por status', rel.grupos.filter(g=>g.contabiliza).map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
+    pizzaPdf(d, 'Status por craques', rel.grupos.filter(g=>g.contabiliza).map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
     pizzaPdf(d, 'Valor por status (R$)', rel.grupos.filter(g=>g.total>0).map(g=>({label:g.label, valor:g.total, cor:COR_PDF[g.chave], txt:fmtBRL(g.total)})));
     pizzaPdf(d, 'Recebido x a receber', [
       {label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_PDF.em_dia, txt:fmtBRL(rel.receitas.recebido)},
@@ -1335,8 +1335,8 @@ function gerarXlsxRelatorio(rel){
     [{v:'SALDO PREVISTO (saldo em caixa + receitas − despesas)',s:XL.B}, {v:rel.saldoPrevisto,s:XL.MB}],
   ];
 
-  // 2) Jogadores por status (agrupado, com subtotais; "sem status" fora dos totais)
-  const s2 = [...cab('Jogadores por Status'), [{v:'Jogador',s:XL.H},{v:'Status',s:XL.H},{v:'Dias em atraso',s:XL.H},{v:'Valor individual?',s:XL.H},{v:'Valor (R$)',s:XL.H}]];
+  // 2) Status por craques (agrupado, com subtotais; "sem status" fora dos totais)
+  const s2 = [...cab('Status por Craques'), [{v:'Jogador',s:XL.H},{v:'Status',s:XL.H},{v:'Dias em atraso',s:XL.H},{v:'Valor individual?',s:XL.H},{v:'Valor (R$)',s:XL.H}]];
   rel.grupos.filter(x=>x.contabiliza).forEach(gr=>{
     gr.linhas.forEach(l=> s2.push([l.nome, gr.label, l.diasAtraso==null ? '' : l.diasAtraso, l.valorIndividual!=null ? 'sim' : '', {v:l.valor,s:XL.M}]));
     s2.push([{v:'Subtotal — '+gr.label+' ('+gr.qtd+')',s:XL.B}, '', '', '', {v:gr.total,s:XL.MB}]);
@@ -1385,7 +1385,7 @@ function gerarXlsxRelatorio(rel){
 
   const abas = [
     {nome:'DRE',                    xml:xlsxPlanilha(s1,[52,18])},
-    {nome:'Jogadores por Status',  xml:xlsxPlanilha(s2,[34,16,16,18,16])},
+    {nome:'Status por Craques',    xml:xlsxPlanilha(s2,[34,16,16,18,16])},
     {nome:'Receitas x Despesas',   xml:xlsxPlanilha(s3,[40,18,16])},
     {nome:'Saldo em Caixa',        xml:xlsxPlanilha(s4,[44,18])},
     {nome:'Custos da Quadra',      xml:xlsxPlanilha(s5,[34,18,14])},
