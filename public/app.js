@@ -148,7 +148,6 @@ const state = {
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
   gestaoFiltro: 'todos',
-  editandoFinId: null,
   relatorioFin: null,
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
@@ -1289,7 +1288,7 @@ async function renderAdmin(){
 
   let elencoAdmin=null, eventos=[], permsDisp=['conteudo','mensalidades'];
   let agenda=[], noticia={descricao:'',ativo:false}, aluguel={nome:'',chavePix:'',valorMensalidade:'',ativo:false}, gestao={presidente:'',vicePresidente:'',ativo:false};
-  let mensalPlayers=[];
+  let mensalPlayers=[], mensalMeta={valorPadrao:null, ultimoVencimento:''};
   if(isSuper){
     try{ elencoAdmin = await api('/api/admin/elenco', {adminAuth:true}); permsDisp = elencoAdmin.permsDisponiveis || permsDisp; }
     catch(e){ if(on401(e)) return; c.innerHTML='<div class="empty">Erro ao carregar o elenco.</div>'; return; }
@@ -1308,8 +1307,8 @@ async function renderAdmin(){
     try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
-  if(can('mensalidades') && !isSuper){
-    try{ mensalPlayers = (await api('/api/admin/mensalidades', {adminAuth:true})).jogadores; }catch(e){ if(on401(e)) return; }
+  if(can('mensalidades')){
+    try{ const rm = await api('/api/admin/mensalidades', {adminAuth:true}); mensalPlayers = rm.jogadores; mensalMeta = rm; }catch(e){ if(on401(e)) return; }
   }
   if(elencoAdmin) state.elencoAdmin = elencoAdmin;
 
@@ -1483,12 +1482,25 @@ async function renderAdmin(){
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-gestao">Salvar gestão</button></div>';
   } /* fim can(conteudo) */
 
-  if(can('mensalidades') && !isSuper){
+  if(can('mensalidades')){
+    const padraoTxt = mensalMeta.valorPadrao==null ? 'não definido' : fmtBRLfront(mensalMeta.valorPadrao);
     html += '<div class="card"><h3>Mensalidades</h3>'+
-      '<p class="small muted">Marque cada jogador. Aparece na tela Início de cada um como selo verde (OK) ou vermelho (Atrasada).</p>';
+      '<p class="small muted">Marque o status de cada jogador. Aparece na tela Início de cada um como selo verde (OK) ou vermelho (Atrasada).</p>'+
+      '<p class="small muted">Se o jogador paga um valor diferente, informe em <strong style="color:var(--text)">Valor (R$)</strong> e toque em Salvar. Vazio = valor padrão do card Aluguel da quadra (<strong style="color:var(--text)">'+padraoTxt+'</strong>).</p>';
     mensalPlayers.forEach(j=>{
-      html += '<div class="list-row"><span>'+escapeHtml(j.nome)+'</span>'+
-        '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></div>';
+      const atrasado = j.mensalidade==='em_atraso';
+      html += '<div class="mens-item">'+
+        '<div class="list-row" style="border:none;padding-bottom:4px;"><span>'+escapeHtml(j.nome)+
+          (atrasado && j.diasAtraso!=null ? ' <span class="atraso-dias">'+j.diasAtraso+' dia'+(j.diasAtraso===1?'':'s')+'</span>' : '')+'</span>'+
+          '<select data-action="salvar-mensalidade" data-id="'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></div>'+
+        '<div class="mens-extra">'+
+          '<label class="small">Valor (R$) <input id="mens-valor-'+j.id+'" inputmode="decimal" value="'+inputValorBRL(j.valorMensalidade)+'" placeholder="padrão"></label>'+
+          (atrasado
+            ? '<label class="small">Em atraso desde <input type="date" id="mens-desde-'+j.id+'" value="'+(j.atrasoDesde||'')+'"></label>'+
+              (mensalMeta.ultimoVencimento ? '<button type="button" class="btn secondary small" data-action="mens-usar-vencimento" data-id="'+j.id+'" data-data="'+mensalMeta.ultimoVencimento+'" title="2º domingo do mês">Vencimento '+mensalMeta.ultimoVencimento.slice(8,10)+'/'+mensalMeta.ultimoVencimento.slice(5,7)+'</button>' : '')
+            : '')+
+          '<button class="btn small" data-action="mens-salvar" data-id="'+j.id+'">Salvar</button>'+
+        '</div></div>';
     });
     html += '</div>';
   }
@@ -1574,7 +1586,7 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
-  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; os dias em atraso contam a partir do vencimento (2º domingo do mês); Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; os dias em atraso contam a partir do vencimento (2º domingo do mês). Para alterar o valor de um jogador, use o card Mensalidades; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
   // filtros por status
   h += '<div class="filtros-fin">'+
@@ -1587,24 +1599,10 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+'</span></div>';
     if(gr.linhas.length){
       gr.linhas.forEach(l=>{
-        const editando = state.editandoFinId===l.id;
         const individual = l.valorIndividual!=null;
         h += '<div class="list-row"><span>'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
           (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso</span>' : '')+'</span>'+
-          '<span class="row-right">'+fmtBRLfront(l.valor)+' <button class="btn secondary small" data-action="fin-editar" data-id="'+l.id+'">'+(editando?'fechar':'editar')+'</button></span></div>';
-        if(editando){
-          h += '<div class="fin-edit">'+
-            '<div class="field"><label>Valor da mensalidade de '+escapeHtml(l.nome)+' (R$)</label>'+
-              '<input id="fin-valor-'+l.id+'" inputmode="decimal" value="'+inputValorBRL(l.valorIndividual)+'" placeholder="vazio = valor padrão ('+(rel.valorUnitario==null?'não definido':fmtBRLfront(rel.valorUnitario))+')"></div>'+
-            (gr.chave==='em_atraso'
-              ? '<div class="field"><label>Em atraso desde (vencimento = 2º domingo do mês)</label><input type="date" id="fin-desde-'+l.id+'" value="'+(l.atrasoDesde||'')+'">'+
-                (rel.ultimoVencimento ? '<button type="button" class="btn secondary small" style="margin-top:6px;" data-action="fin-usar-vencimento" data-id="'+l.id+'" data-data="'+rel.ultimoVencimento+'">Usar último vencimento ('+rel.ultimoVencimento.slice(8,10)+'/'+rel.ultimoVencimento.slice(5,7)+')</button>' : '')+'</div>'
-              : '')+
-            '<p class="small muted">Deixe o valor vazio para usar o valor padrão do card Aluguel da quadra. O valor só é cobrado quando o status é Em dia ou Em atraso.</p>'+
-            '<div class="btn-row"><button class="btn small" data-action="fin-salvar" data-id="'+l.id+'">Salvar</button>'+
-            '<button class="btn secondary small" data-action="fin-editar" data-id="'+l.id+'">Cancelar</button></div>'+
-          '</div>';
-        }
+          '<span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
       });
     }else{
       h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
@@ -1660,15 +1658,14 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
 }
-async function handleSalvarFinanceiroJogador(id){
-  const body = {valor: document.getElementById('fin-valor-'+id).value};
-  const desde = document.getElementById('fin-desde-'+id);
+async function handleSalvarMensalidadeValor(id){
+  const body = {valor: document.getElementById('mens-valor-'+id).value};
+  const desde = document.getElementById('mens-desde-'+id);
   if(desde && desde.value) body.atrasoDesde = desde.value;
   try{
     await api('/api/admin/jogadores/'+id+'/financeiro', {method:'PUT', adminAuth:true, body});
-    state.editandoFinId = null;
     await render();
-    showToast('Salvo!');
+    showToast('Mensalidade salva!');
   }catch(e){ alert(e.message); }
 }
 async function handleSalvarSaldoCaixa(){
@@ -1775,7 +1772,7 @@ async function handleSalvarJogador(id){
   }catch(e){ alert(e.message); }
 }
 async function handleSalvarMensalidade(id, valor){
-  try{ await api('/api/admin/jogadores/'+id+'/mensalidade', {method:'PUT', adminAuth:true, body:{mensalidade:valor}}); }
+  try{ await api('/api/admin/jogadores/'+id+'/mensalidade', {method:'PUT', adminAuth:true, body:{mensalidade:valor}}); await render(); }
   catch(e){ alert(e.message); }
 }
 async function handleRemoverJogador(id){
@@ -1956,9 +1953,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
   if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
-  if(action==='fin-editar'){ state.editandoFinId = (state.editandoFinId===el.dataset.id) ? null : el.dataset.id; return render(); }
-  if(action==='fin-salvar') return handleSalvarFinanceiroJogador(el.dataset.id);
-  if(action==='fin-usar-vencimento'){ const inp = document.getElementById('fin-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
+  if(action==='mens-salvar') return handleSalvarMensalidadeValor(el.dataset.id);
+  if(action==='mens-usar-vencimento'){ const inp = document.getElementById('mens-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();

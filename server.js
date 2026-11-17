@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 19;
+const APP_BUILD = 20;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -1164,8 +1164,14 @@ app.get('/api/admin/fluxo-caixa.pdf', requireAdmin, (req,res)=>{
 
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
 app.get('/api/admin/mensalidades', requirePerm('mensalidades'), (req,res)=>{
-  const jogadores = getJogadores().filter(j=>j.ativo).map(j=>({id:j.id, nome:j.nome, mensalidade:j.mensalidade||''}));
-  res.json({jogadores});
+  const jogadores = getJogadores().filter(j=>j.ativo).map(j=>({
+    id:j.id, nome:j.nome, mensalidade:j.mensalidade||'',
+    valorMensalidade: j.valor_mensalidade==null ? '' : j.valor_mensalidade,   // '' = usa o valor padrão
+    diasAtraso: diasEmAtraso(j), atrasoDesde: j.atraso_desde || '',
+  }));
+  const a = db.prepare('SELECT valor_mensalidade FROM aluguel_quadra WHERE id=1').get();
+  const padrao = parseValorBR((a && a.valor_mensalidade) || '');
+  res.json({jogadores, valorPadrao: padrao, ultimoVencimento: ultimoVencimento(hojeSP())});
 });
 app.put('/api/admin/jogadores/:id/mensalidade', requirePerm('mensalidades'), (req,res)=>{
   const j = getJogadorPorId(req.params.id);

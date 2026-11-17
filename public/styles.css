@@ -489,3 +489,10 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .who-atraso{color:var(--red);font-weight:700;}
 .aviso-atraso{margin:6px 0 10px;padding:10px 12px;border-radius:10px;border:1px solid #B8372E;background:rgba(226,87,76,.12);font-size:14px;line-height:1.4;}
 .fin-edit{margin:2px 0 8px;padding:10px;border:1px dashed var(--gold-dim);border-radius:10px;background:rgba(201,162,39,.06);}
+
+/* v3.10 — valor individual dentro do card Mensalidades */
+.mens-item{border-bottom:1px solid var(--line);padding:6px 0 8px;}
+.mens-extra{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 10px;}
+.mens-extra label{display:flex;flex-direction:column;gap:3px;color:var(--text-muted);}
+.mens-extra input{width:112px;padding:7px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-size:14px;}
+.mens-extra input[type=date]{width:140px;}
