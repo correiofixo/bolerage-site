@@ -394,7 +394,6 @@ function renderLogin(){
   document.getElementById('content').innerHTML =
     '<div id="login-screen">'+
       '<div class="login-halo"><img src="/assets/logo.jpg" alt="Bolerage F.D." class="login-logo"></div>'+
-      (state.appVersion ? '<div class="login-versao"><span class="login-versao-rot">VERSÃO</span><span class="login-versao-num">'+escapeHtml(state.appVersion)+'</span></div>' : '')+
       '<div class="sub login-sub">Digite seu PIN de 4 dígitos</div>'+
       '<div class="pin-dots">'+dots+'</div>'+
       '<div class="keypad">'+keypad+'</div>'+
@@ -402,6 +401,8 @@ function renderLogin(){
       '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo Bolerage'+
         ' <a class="wa-link wa-link-destaque" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
+      (state.appVersion ? '<div class="login-versao"><span class="login-versao-rot">VERSÃO</span><span class="login-versao-num">'+escapeHtml(state.appVersion)+'</span></div>' : '')+
+
     '</div>';
 }
 
@@ -1313,17 +1314,25 @@ async function abrirPerformance(jogadorId){
   const pior = comVoto.reduce((a,p)=> p.media<a.media ? p : a, comVoto[0]);
   const aus = serie.length ? serie[serie.length-1].ausencias : 0;
   const fd = d => d.slice(8,10)+'/'+d.slice(5,7);
-  body.innerHTML = perfChartSvg(serie)+
-    '<div class="perf-legenda small muted">'+
-      '<span><i class="perf-key perf-key-acum"></i> Média acumulada (ranking)</span>'+
-      '<span><i class="perf-key perf-key-rod"></i> Nota da rodada</span>'+
-      '<span><b class="perf-aus">✕</b> Ausente</span>'+
-    '</div>'+
-    '<div class="list-row"><span>Média atual no ranking</span><span class="row-right">'+starsHtml(ultimo ? ultimo.acumulada : null, true)+'</span></div>'+
-    '<div class="list-row"><span>Melhor rodada</span><span class="row-right">'+melhor.media.toFixed(1)+' ★ <span class="small muted">('+fd(melhor.data)+')</span></span></div>'+
-    '<div class="list-row"><span>Pior rodada</span><span class="row-right">'+pior.media.toFixed(1)+' ★ <span class="small muted">('+fd(pior.data)+')</span></span></div>'+
-    '<div class="list-row"><span>Rodadas avaliadas</span><span class="row-right">'+comVoto.length+' de '+serie.length+'</span></div>'+
-    (aus ? '<div class="list-row"><span>Ausências acumuladas</span><span class="row-right rank-ausencia">'+aus+' (−'+Math.round((1-Math.pow(0.9,aus))*100)+'%)</span></div>' : '');
+  const pos = posicaoNoRankingGeral(jogadorId);
+  const ROT = {top5:'As Lendas', top10:'Os Craques', under5:'Zona da Degola', meio:'A briga dos Guerreiros'};
+  const KCOR = {top5:'dourado', top10:'azul', under5:'vermelho', meio:'laranja'};
+  const medalhas = ['🥇','🥈','🥉'];
+  const tiles = [];
+  tiles.push('<div class="kpi kpi-sm kpi-dourado"><div class="kpi-num">'+(ultimo && ultimo.acumulada!=null ? ultimo.acumulada.toFixed(1).replace('.',',')+' ★' : '—')+'</div><div class="kpi-rot">média atual no ranking</div></div>');
+  if(pos) tiles.push('<div class="kpi kpi-sm kpi-'+KCOR[pos.zona]+'"><div class="kpi-num">'+(pos.pos<=3 ? medalhas[pos.pos-1]+' ' : '')+pos.pos+'º</div><div class="kpi-rot">de '+pos.total+' • '+ROT[pos.zona]+'</div></div>');
+  tiles.push('<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+melhor.media.toFixed(1).replace('.',',')+' ★</div><div class="kpi-rot">melhor rodada ('+fd(melhor.data)+')</div></div>');
+  tiles.push('<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+pior.media.toFixed(1).replace('.',',')+' ★</div><div class="kpi-rot">pior rodada ('+fd(pior.data)+')</div></div>');
+  tiles.push('<div class="kpi kpi-sm kpi-roxo"><div class="kpi-num">'+comVoto.length+'<small>/'+serie.length+'</small></div><div class="kpi-rot">rodadas avaliadas</div></div>');
+  if(aus) tiles.push('<div class="kpi kpi-sm kpi-laranja"><div class="kpi-num">'+aus+'</div><div class="kpi-rot">ausência'+(aus>1?'s':'')+' (−'+Math.round((1-Math.pow(0.9,aus))*100)+'% nos pontos)</div></div>');
+  body.innerHTML = '<div class="fin-zona fz-azul perf-zona"><div class="fin-zona-tit">📈 EVOLUÇÃO POR RODADA</div>'+
+      perfChartSvg(serie)+
+      '<div class="perf-legenda small muted">'+
+        '<span><i class="perf-key perf-key-acum"></i> Média acumulada (ranking)</span>'+
+        '<span><i class="perf-key perf-key-rod"></i> Nota da rodada</span>'+
+        '<span><b class="perf-aus">✕</b> Ausente</span>'+
+      '</div></div>'+
+    '<div class="kpi-grid">'+tiles.join('')+'</div>';
 }
 
 /* ============================================================

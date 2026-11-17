@@ -866,3 +866,18 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 #phase-chip-slot .chip.red{color:#FF8D84;border-color:var(--red);background:linear-gradient(90deg,rgba(226,87,76,.24),rgba(226,87,76,.05));box-shadow:0 0 12px rgba(226,87,76,.25);}
 #phase-chip-slot .chip.muted{color:#B7C2D3;border-color:rgba(122,134,153,.7);background:linear-gradient(90deg,rgba(122,134,153,.20),rgba(122,134,153,.04));}
 @media (prefers-reduced-motion: reduce){ .brand-name .accent{animation:none;} }
+
+/* ---- login: versão agora fica embaixo do aviso do PIN ---- */
+.login-versao{margin:clamp(8px,1.6dvh,16px) 0 0;}
+.login-hint{margin-top:clamp(6px,1.4dvh,20px);}
+
+/* ---- Performance (modal do gráfico) com os efeitos visuais dos cards ---- */
+.perf-card{border:1px solid var(--gold);background:radial-gradient(ellipse at 50% 0%,rgba(201,162,39,.20),transparent 60%),linear-gradient(180deg,var(--bg-elevated),var(--bg));
+  box-shadow:0 0 0 1px rgba(201,162,39,.25),0 0 26px rgba(201,162,39,.22),0 20px 60px rgba(0,0,0,.6);}
+.perf-nome{background:linear-gradient(100deg,#FFE9A6,#fff 45%,#E4C158);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;text-shadow:none;}
+.perf-sub{display:table;margin:2px auto 10px;padding:3px 16px;border-radius:999px;border:1px solid var(--gold);background:linear-gradient(180deg,rgba(228,193,88,.28),rgba(201,162,39,.08));color:var(--gold-bright);box-shadow:0 0 12px rgba(228,193,88,.3);}
+.perf-zona{padding:8px 10px 6px;margin:6px 0 4px;}
+.kpi-sm .kpi-num{font-size:25px;}
+.kpi-sm .kpi-rot{font-size:11px;line-height:1.2;}
+.kpi-vermelho{border-color:var(--red);background:rgba(226,87,76,.14);} .kpi-vermelho .kpi-num{color:#FF8D84;}
+.kpi-laranja{border-color:#F0902E;background:rgba(240,144,46,.14);} .kpi-laranja .kpi-num{color:#F5B061;}
