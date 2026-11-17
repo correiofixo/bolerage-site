@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 18;
+const APP_BUILD = 19;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -723,17 +723,30 @@ function diasEmAtraso(j){
   if(!j || j.mensalidade!=='em_atraso' || !j.atraso_desde) return null;
   return Math.max(0, diasEntreDatas(j.atraso_desde, hojeSP()));
 }
+// Vencimento da mensalidade = 2º DOMINGO de cada mês. O atraso conta sempre a partir dele.
+function segundoDomingo(ano, mes){            // mes: 1-12 -> 'YYYY-MM-DD'
+  const dow = new Date(Date.UTC(ano, mes-1, 1)).getUTCDay();   // 0 = domingo
+  const dia = 1 + ((7 - dow) % 7) + 7;
+  return ano+'-'+pad(mes)+'-'+pad(dia);
+}
+// vencimento mais recente (2º domingo) que já passou — ou é hoje
+function ultimoVencimento(hoje){
+  const [y, m] = hoje.split('-').map(Number);
+  const deste = segundoDomingo(y, m);
+  if(deste <= hoje) return deste;
+  return m===1 ? segundoDomingo(y-1, 12) : segundoDomingo(y, m-1);
+}
 // troca o status de mensalidade mantendo a data de início do atraso coerente
 function aplicarMensalidade(jogadorId, novo){
   const j = getJogadorPorId(jogadorId);
   if(!j) return;
   let desde = null;
-  if(novo === 'em_atraso') desde = (j.mensalidade==='em_atraso' && j.atraso_desde) ? j.atraso_desde : hojeSP();
+  if(novo === 'em_atraso') desde = (j.mensalidade==='em_atraso' && j.atraso_desde) ? j.atraso_desde : ultimoVencimento(hojeSP());
   db.prepare('UPDATE jogadores SET mensalidade=?, atraso_desde=? WHERE id=?').run(novo, desde, jogadorId);
 }
-// jogadores que já estavam em atraso antes desta versão não têm data: começa a contar de hoje
+// jogadores que já estavam em atraso sem data registrada: conta a partir do último 2º domingo
 function garantirDatasDeAtraso(){
-  try{ db.prepare("UPDATE jogadores SET atraso_desde=? WHERE mensalidade='em_atraso' AND (atraso_desde IS NULL OR atraso_desde='')").run(hojeSP()); }catch(e){}
+  try{ db.prepare("UPDATE jogadores SET atraso_desde=? WHERE mensalidade='em_atraso' AND (atraso_desde IS NULL OR atraso_desde='')").run(ultimoVencimento(hojeSP())); }catch(e){}
 }
 
 function jogadorPublico(j){
@@ -915,6 +928,7 @@ function montarRelatorioFinanceiro(){
     referencia: agora.slice(0,7),
     geradoEm: agora,
     valorTexto, valorUnitario: valorUnit,
+    ultimoVencimento: ultimoVencimento(hojeSP()),
     aviso: valorUnit==null ? 'Defina o "Valor da mensalidade" no card Aluguel da quadra para calcular os valores.' : '',
     grupos,
     qtd: jogadores.length,

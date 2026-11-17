@@ -1574,7 +1574,7 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
-  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; os dias em atraso contam a partir do vencimento (2º domingo do mês); Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
   // filtros por status
   h += '<div class="filtros-fin">'+
@@ -1597,7 +1597,8 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
             '<div class="field"><label>Valor da mensalidade de '+escapeHtml(l.nome)+' (R$)</label>'+
               '<input id="fin-valor-'+l.id+'" inputmode="decimal" value="'+inputValorBRL(l.valorIndividual)+'" placeholder="vazio = valor padrão ('+(rel.valorUnitario==null?'não definido':fmtBRLfront(rel.valorUnitario))+')"></div>'+
             (gr.chave==='em_atraso'
-              ? '<div class="field"><label>Em atraso desde</label><input type="date" id="fin-desde-'+l.id+'" value="'+(l.atrasoDesde||'')+'"></div>'
+              ? '<div class="field"><label>Em atraso desde (vencimento = 2º domingo do mês)</label><input type="date" id="fin-desde-'+l.id+'" value="'+(l.atrasoDesde||'')+'">'+
+                (rel.ultimoVencimento ? '<button type="button" class="btn secondary small" style="margin-top:6px;" data-action="fin-usar-vencimento" data-id="'+l.id+'" data-data="'+rel.ultimoVencimento+'">Usar último vencimento ('+rel.ultimoVencimento.slice(8,10)+'/'+rel.ultimoVencimento.slice(5,7)+')</button>' : '')+'</div>'
               : '')+
             '<p class="small muted">Deixe o valor vazio para usar o valor padrão do card Aluguel da quadra. O valor só é cobrado quando o status é Em dia ou Em atraso.</p>'+
             '<div class="btn-row"><button class="btn small" data-action="fin-salvar" data-id="'+l.id+'">Salvar</button>'+
@@ -1957,6 +1958,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
   if(action==='fin-editar'){ state.editandoFinId = (state.editandoFinId===el.dataset.id) ? null : el.dataset.id; return render(); }
   if(action==='fin-salvar') return handleSalvarFinanceiroJogador(el.dataset.id);
+  if(action==='fin-usar-vencimento'){ const inp = document.getElementById('fin-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
