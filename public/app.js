@@ -148,7 +148,8 @@ const state = {
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
   gestaoFiltro: 'todos',
-  gestaoSub: 'demo',
+  gestaoSub: 'dre',
+  rifasAdmin: [],
   resenhaAba: 'resenha',
   rifas: [],
   rifaRodadaId: null,
@@ -558,6 +559,16 @@ function renderExtrasIniciais(){
   if(ex.noticia && ex.noticia.descricao){
     html += '<div class="card accent-gold"><h3>Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
+  // Meu Score Atual (+ Minha Saúde) fica ACIMA de Eventos; tocar nas estrelas abre a Performance da Jornada
+  if(state.currentPlayer){
+    const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
+    html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
+      '<div class="meu-score-box meu-score-click" data-action="ranking-jogador" data-id="'+state.currentPlayer.id+'" title="Toque para ver sua Performance da Jornada">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
+      '<p class="small muted" style="text-align:center;margin:6px 0 0;">Toque nas estrelas para ver sua Performance da Jornada</p>'+
+      renderMinhaPosicao()+
+      '</div>';
+    html += renderCardSaude();
+  }
   if(ex.eventos && ex.eventos.length){
     html += '<div class="card accent-green"><h3>Eventos:</h3>';
     ex.eventos.forEach(e=>{
@@ -598,14 +609,6 @@ function renderExtrasIniciais(){
       linhaG('Presidente', nomeExibicaoPorNomeReal(ex.gestao.presidente), ex.gestao.presidenteTel)+
       linhaG('Vice-Presidente', nomeExibicaoPorNomeReal(ex.gestao.vicePresidente), ex.gestao.viceTel)+
       '</div>';
-  }
-  if(state.currentPlayer){
-    const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
-    html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
-      '<div class="meu-score-box">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
-      renderMinhaPosicao()+
-      '</div>';
-    html += renderCardSaude();
   }
   return html;
 }
@@ -784,6 +787,7 @@ async function handleTogglePresenca(atual){
    RENDER: TAB RESENHA
    ============================================================ */
 // ---- RIFAS (aba da Resenha): ganhador e prêmio da rifa da rodada
+async function refreshRifasAdmin(){ try{ state.rifasAdmin = (await api('/api/admin/rifas', {adminAuth:true})).rifas || []; }catch(e){} }
 async function refreshRifas(){ try{ state.rifas = (await api('/api/rifas')).rifas || []; }catch(e){} }
 function renderRifasHtml(){
   const rifas = state.rifas || [];
@@ -1447,7 +1451,7 @@ async function renderAdmin(){
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
     try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
-    await refreshRifas(); await refreshRodadasLista();
+    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista();
     try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
@@ -1585,7 +1589,7 @@ async function renderAdmin(){
     const rodsOrd = [...(state.rodadasLista||[])].sort((a,b)=>a.data<b.data?1:-1);
     const rodSel = (rodsOrd.find(r=>r.id===state.rifaRodadaId) || (state.rodadaAtual && rodsOrd.find(r=>r.id===state.rodadaAtual.id)) || rodsOrd[0] || null);
     if(rodSel) state.rifaRodadaId = rodSel.id;
-    const rifaAtual = rodSel ? (state.rifas||[]).find(r=>r.rodadaId===rodSel.id) : null;
+    const rifaAtual = rodSel ? (state.rifasAdmin||[]).find(r=>r.rodadaId===rodSel.id) : null;
     html += '<div class="card"><h3>RIFAS</h3>'+
       '<p class="small muted">Cadastre o ganhador e o prêmio da rifa. Aparece para todos em Resenha &gt; Rifas.</p>'+
       '<div class="field"><label>Rodada</label><select data-action="rifa-rodada">'+rodsOrd.map(r=>'<option value="'+r.id+'" '+(rodSel && r.id===rodSel.id?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('')+'</select></div>'+
@@ -1593,7 +1597,15 @@ async function renderAdmin(){
         '<datalist id="rifa-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
       '<div class="field"><label>Prêmio</label><input id="rifa-premio" maxlength="120" value="'+escapeHtml(rifaAtual?rifaAtual.premio:'')+'" placeholder="Ex.: Uma garrafa de vinho 🍷"></div>'+
       '<div class="btn-row"><button class="btn" data-action="salvar-rifa">Salvar rifa</button>'+
-      '<button class="btn secondary" data-action="limpar-rifa">Limpar</button></div></div>';
+      '<button class="btn secondary" data-action="limpar-rifa">Limpar</button></div>'+
+      '<div class="divider"></div><h4 style="margin:0 0 6px;">Rifas cadastradas</h4>'+
+      ((state.rifasAdmin||[]).length
+        ? (state.rifasAdmin||[]).map(r=>'<div class="rifa-adm-item'+(rodSel && r.rodadaId===rodSel.id?' editando':'')+'">'+
+            '<div class="rifa-adm-info"><span class="badge">'+formatDataBR(r.data)+'</span> <strong>'+escapeHtml(r.ganhador)+'</strong><div class="small muted">'+escapeHtml(r.premio||'— sem prêmio —')+'</div></div>'+
+            '<div class="rifa-adm-acoes"><button class="btn secondary small" data-action="rifa-editar" data-id="'+r.rodadaId+'">editar</button> '+
+            '<button class="btn danger small" data-action="rifa-remover" data-id="'+r.rodadaId+'">remover</button></div></div>').join('')
+        : '<p class="small muted">Nenhuma rifa cadastrada ainda.</p>')+
+      '</div>';
   }
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
@@ -1751,165 +1763,191 @@ function fmtBRLfront(n){
 }
 const COR_FIN = {em_dia:'#3FAE58', em_atraso:'#E2574C', isenta:'#4EA1FF', sem_status:'#7A8699', aluguel:'#CCA02A', higienizacao:'#4EA1FF', carvao:'#8A8A99'};
 function fmtPctFront(v, total){ return (total>0 ? v/total*100 : 0).toFixed(1).replace('.',',')+'%'; }
-// segs: [{label, valor, cor, txt}] — barra empilhada + legenda com percentuais
-function barraEmpilhadaHtml(titulo, segs){
+// gráfico de PIZZA com percentuais nas fatias + legenda. segs: [{label, valor, cor, txt}]
+function pizzaHtml(titulo, segs){
   const total = segs.reduce((t,x)=>t+x.valor,0);
-  let h = '<div class="stack-bloco"><div class="stack-tit">'+titulo+'</div>';
-  if(total<=0) return h+'<p class="small muted" style="margin:4px 0;">Sem dados para exibir.</p></div>';
-  h += '<div class="stack">'+segs.filter(x=>x.valor>0).map(x=>{
-    const pct = x.valor/total*100;
-    return '<span class="stack-seg" style="flex:'+x.valor+' 1 0;background:'+x.cor+'" title="'+escapeHtml(x.label)+': '+fmtPctFront(x.valor,total)+'">'+(pct>=11?fmtPctFront(x.valor,total):'')+'</span>';
-  }).join('')+'</div><div class="stack-leg">'+segs.map(x=>
-    '<div class="stack-leg-item"><span><i style="background:'+x.cor+'"></i>'+x.label+'</span><span>'+x.txt+' <strong>'+fmtPctFront(x.valor,total)+'</strong></span></div>'
-  ).join('')+'</div></div>';
-  return h;
-}
-// duas barras (receitas x despesas) na mesma escala
-function barrasComparativasHtml(titulo, itens){
-  const max = Math.max(...itens.map(i=>Math.abs(i.valor)), 0.01);
-  return '<div class="stack-bloco"><div class="stack-tit">'+titulo+'</div>'+itens.map(i=>
-    '<div class="cmp-linha"><span class="cmp-rot">'+i.label+'</span><div class="cmp-trilho"><span class="cmp-barra" style="width:'+Math.max(2,Math.abs(i.valor)/max*100).toFixed(1)+'%;background:'+i.cor+'"></span></div><strong class="cmp-val">'+fmtBRLfront(i.valor)+'</strong></div>'
-  ).join('')+'</div>';
+  const tit = titulo ? '<div class="stack-tit">'+titulo+'</div>' : '';
+  if(total<=0) return '<div class="pizza-bloco">'+tit+'<p class="small muted" style="margin:4px 0;">Sem dados para exibir.</p></div>';
+  const R = 46, CX = 50, CY = 50;
+  const pt = a => [CX + R*Math.cos(a), CY + R*Math.sin(a)];
+  let ang = -Math.PI/2, fatias = '', rotulos = '';
+  const vis = segs.filter(x=>x.valor>0);
+  vis.forEach(x=>{
+    const frac = x.valor/total, a2 = ang + frac*2*Math.PI;
+    if(vis.length===1){
+      fatias += '<circle cx="'+CX+'" cy="'+CY+'" r="'+R+'" fill="'+x.cor+'"/>';
+    }else{
+      const [x0,y0] = pt(ang), [x1,y1] = pt(a2);
+      fatias += '<path d="M'+CX+' '+CY+' L'+x0.toFixed(2)+' '+y0.toFixed(2)+' A'+R+' '+R+' 0 '+(frac>0.5?1:0)+' 1 '+x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+x.cor+'" stroke="rgba(10,22,38,.9)" stroke-width="1"><title>'+escapeHtml(x.label)+': '+fmtPctFront(x.valor,total)+'</title></path>';
+    }
+    if(frac>=0.07){
+      const m = ang + frac*Math.PI;
+      rotulos += '<text x="'+(CX+R*0.62*Math.cos(m)).toFixed(2)+'" y="'+(CY+R*0.62*Math.sin(m)+2.4).toFixed(2)+'" text-anchor="middle" class="pizza-pct">'+fmtPctFront(x.valor,total)+'</text>';
+    }
+    ang = a2;
+  });
+  return '<div class="pizza-bloco">'+tit+'<div class="pizza-wrap"><svg viewBox="0 0 100 100" class="pizza-svg" role="img" aria-label="Gráfico de pizza">'+fatias+rotulos+'</svg>'+
+    '<div class="pizza-leg">'+segs.map(x=>
+      '<div class="pizza-leg-item"><span class="pizza-leg-rot"><i style="background:'+x.cor+'"></i>'+x.label+'</span><span class="pizza-leg-val">'+x.txt+' <strong>'+fmtPctFront(x.valor,total)+'</strong></span></div>'
+    ).join('')+'</div></div></div>';
 }
 function inputValorBRL(n){ return n ? Number(n).toFixed(2).replace('.',',') : ''; }
-// ---------- GESTÃO (Painel Admin): sub-abas ----------
+// ---------- GESTÃO (Painel Admin): sub-abas, gráficos de PIZZA e cores por zona ----------
 const GESTAO_SUBS = [
-  ['demo','Demonstrativo'],
+  ['dre','DRE'],
   ['jogadores','Jogadores por Status'],
   ['recdes','Receitas x Despesas'],
   ['saldo','Saldo em Caixa'],
   ['custos','Custos da Quadra'],
+  ['relatorios','Relatórios'],
 ];
 // linha de total sem quebra de linha: rótulo corta com "…" se faltar espaço, valor nunca quebra
 function relLinhaHtml(rotulo, valor, cls){
   return '<div class="rel-linha'+(cls?' '+cls:'')+'"><span class="rel-rot">'+rotulo+'</span><strong class="rel-val">'+valor+'</strong></div>';
 }
-function relBotoesExport(rel, filtroPdf){
-  return '<div class="rel-export">'+
-    '<button class="btn" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.pdf'+(filtroPdf?'?status='+filtroPdf:'')+'" data-arq="relatorio-financeiro-'+rel.referencia+(filtroPdf?'-'+filtroPdf:'')+'.pdf">📄 PDF do relatório</button>'+
-    (filtroPdf ? '' : '<button class="btn" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 PDF do fluxo de caixa</button>')+
-    '<button class="btn secondary" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.xlsx" data-arq="relatorios-financeiros-'+rel.referencia+'.xlsx">📊 Exportar para Excel</button>'+
-  '</div>';
+// bloco colorido (mesma linguagem visual das zonas do Ranking)
+function finZona(cor, titulo, sub, corpo){
+  return '<div class="fin-zona fz-'+cor+'"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
 }
+const FIN_ZONA_STATUS = {
+  em_dia:     {cor:'verde',    tit:'✅ EM DIA'},
+  em_atraso:  {cor:'vermelho', tit:'⚠️ EM ATRASO'},
+  isenta:     {cor:'azul',     tit:'🆓 ISENTO'},
+  sem_status: {cor:'cinza',    tit:'⏳ SEM STATUS'},
+};
 function renderRelatorioFinanceiroHtml(rel, podeEditarCustos){
   if(!rel) return '<p class="small muted">Não foi possível carregar o relatório.</p>';
-  const sub = GESTAO_SUBS.some(x=>x[0]===state.gestaoSub) ? state.gestaoSub : 'demo';
+  const sub = GESTAO_SUBS.some(x=>x[0]===state.gestaoSub) ? state.gestaoSub : 'dre';
   const [ano, mes] = rel.referencia.split('-');
   const g = rel.geradoEm;
   const contab = rel.grupos.filter(x=>x.contabiliza);
-  const badgeCls = {em_dia:'mens-ok', em_atraso:'mens-atrasada', isenta:'mens-isenta', sem_status:''};
   const c = rel.custos;
-  const saldoCor = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
+  const saldoCor = rel.saldoPrevisto < 0 ? 'vermelho' : 'verde';
+  const corSaldoTxt = rel.saldoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
 
   let h = '<div class="rel-topo">'+
     '<div><span class="small muted">Referência</span><div class="rel-destaque">'+mes+'/'+ano+'</div></div>'+
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
+  // sub-abas em grade (sem barra de rolagem)
   h += '<div class="subtabs">'+GESTAO_SUBS.map(x=>'<button data-action="gestao-sub" data-sub="'+x[0]+'" class="'+(sub===x[0]?'active':'')+'">'+x[1]+'</button>').join('')+'</div>';
-  h += '<p class="small muted" style="margin:0 0 8px;">Jogadores <strong style="color:var(--text)">sem status</strong> (cadastrados, ainda não contratados) não entram nos totais e gráficos. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<p class="small muted" style="margin:0 0 4px;">Jogadores <strong style="color:var(--text)">sem status</strong> (cadastrados, ainda não contratados) não entram nos totais e gráficos. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
-  if(sub==='demo'){
-    // ---- 1) Demonstrativo de Resultados: fluxo de caixa + relatórios
-    h += '<h4 class="rel-h">Demonstrativo de Resultados</h4>'+
-      '<div class="rel-fluxo-tit">Fluxo de caixa</div>'+
-      relLinhaHtml('Saldo em caixa (conta corrente)', fmtBRLfront(rel.saldoCaixa), 'rel-sub')+
-      relLinhaHtml('Receitas — Em dia <span class="rel-obs">(recebido)</span>', fmtBRLfront(rel.receitas.recebido), 'rel-item')+
-      relLinhaHtml('Receitas — Em atraso <span class="rel-obs">(a receber)</span>', fmtBRLfront(rel.receitas.aReceber), 'rel-item')+
-      relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub')+
-      relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub')+
-      relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-sub')+
-      '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
-      '<div class="rel-graficos" style="margin-top:12px;">'+
-        barraEmpilhadaHtml('Valor por status (R$)', contab.filter(x=>x.total>0).map(x=>({label:x.label, valor:x.total, cor:COR_FIN[x.chave], txt:fmtBRLfront(x.total)})))+
-        '<div class="stack-bloco"><div class="stack-tit">Recebido x previsto</div>'+
-          '<div class="cmp-trilho cmp-trilho-lg"><span class="cmp-barra" style="width:'+(rel.receitas.total>0?(rel.receitas.recebido/rel.receitas.total*100).toFixed(1):0)+'%;background:'+COR_FIN.em_dia+'"></span></div>'+
-          '<div class="small" style="margin-top:4px;"><strong>'+fmtPctFront(rel.receitas.recebido, rel.receitas.total)+'</strong> do previsto já foi recebido.</div></div>'+
-      '</div>'+
-      '<div class="rel-fluxo-tit">Relatórios</div>'+relBotoesExport(rel, null);
+  if(sub==='dre'){
+    // ---- DRE: demonstrativo de resultados (fluxo de caixa)
+    h += finZona('verde', '💰 RECEITAS', 'Mensalidades',
+        relLinhaHtml('Em dia <span class="rel-obs">(recebido)</span>', fmtBRLfront(rel.receitas.recebido), 'rel-item')+
+        relLinhaHtml('Em atraso <span class="rel-obs">(a receber)</span>', fmtBRLfront(rel.receitas.aReceber), 'rel-item')+
+        relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub'))+
+      finZona('vermelho', '💸 DESPESAS', 'Custos da quadra',
+        relLinhaHtml('Aluguel da Quadra', fmtBRLfront(c.aluguel), 'rel-item')+
+        relLinhaHtml('Higienização', fmtBRLfront(c.higienizacao), 'rel-item')+
+        relLinhaHtml('Carvão', fmtBRLfront(c.carvao), 'rel-item')+
+        relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub'))+
+      finZona('dourado', '🏦 SALDO EM CAIXA', 'Conta corrente do time',
+        relLinhaHtml('Saldo atual em caixa', fmtBRLfront(rel.saldoCaixa), 'rel-sub'))+
+      finZona(saldoCor, '📊 SALDO PREVISTO', 'Saldo em caixa + receitas − despesas',
+        relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-item')+
+        '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+corSaldoTxt+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>')+
+      finZona('azul', '🥧 VALOR POR STATUS', 'Participação de cada status na receita',
+        pizzaHtml('', contab.filter(x=>x.total>0).map(x=>({label:x.label, valor:x.total, cor:COR_FIN[x.chave], txt:fmtBRLfront(x.total)}))));
   }
   else if(sub==='jogadores'){
-    // ---- 2) Jogadores por status (agrupado, com subtotal)
+    // ---- Jogadores por status (agrupado, com subtotal)
     const filtro = (state.gestaoFiltro==='todos' || rel.grupos.some(x=>x.chave===state.gestaoFiltro)) ? (state.gestaoFiltro||'todos') : 'todos';
     const gruposVis = filtro==='todos' ? contab : rel.grupos.filter(x=>x.chave===filtro);
-    h += '<h4 class="rel-h">Jogadores por Status</h4>'+
-      '<div class="rel-graficos">'+barraEmpilhadaHtml('Jogadores por status', contab.map(x=>({label:x.label, valor:x.qtd, cor:COR_FIN[x.chave], txt:x.qtd+' jogador'+(x.qtd===1?'':'es')})))+'</div>'+
+    h += finZona('azul', '👥 JOGADORES POR STATUS', 'Somente jogadores contratados',
+        pizzaHtml('', contab.map(x=>({label:x.label, valor:x.qtd, cor:COR_FIN[x.chave], txt:x.qtd+' jogador'+(x.qtd===1?'':'es')}))))+
       '<div class="filtros-fin">'+
         '<button data-action="gestao-filtro" data-f="todos" class="'+(filtro==='todos'?'active':'')+'">Todos</button>'+
         rel.grupos.map(x=>'<button data-action="gestao-filtro" data-f="'+x.chave+'" class="'+(filtro===x.chave?'active':'')+'">'+x.label+' <span class="muted">('+x.qtd+')</span></button>').join('')+
       '</div>';
     gruposVis.forEach(gr=>{
-      h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+
-        (gr.contabiliza ? ' • '+fmtPctFront(gr.qtd, rel.qtd)+' do elenco' : ' • não contabilizado')+'</span></div>';
+      const z = FIN_ZONA_STATUS[gr.chave];
+      let corpo = '';
       if(gr.linhas.length){
-        gr.linhas.forEach(l=>{
+        gr.linhas.forEach((l,i)=>{
           const individual = l.valorIndividual!=null;
-          h += '<div class="list-row"><span>'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
-            (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso</span>' : '')+'</span>'+
-            '<span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
+          corpo += '<div class="fin-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
+            (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+'</span>' : '')+'</span>'+
+            '<span class="fin-valor">'+fmtBRLfront(l.valor)+'</span></div>';
         });
       }else{
-        h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
+        corpo += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
       }
-      if(gr.contabiliza) h += relLinhaHtml('Subtotal — '+gr.label+(rel.totalGeral>0 ? ' <span class="rel-obs">('+fmtPctFront(gr.total, rel.totalGeral)+')</span>' : ''), fmtBRLfront(gr.total), 'rel-sub');
-      h += '</div>';
+      if(gr.contabiliza) corpo += relLinhaHtml('Subtotal'+(rel.totalGeral>0 ? ' <span class="rel-obs">('+fmtPctFront(gr.total, rel.totalGeral)+')</span>' : ''), fmtBRLfront(gr.total), 'rel-sub');
+      h += finZona(z.cor, z.tit, gr.qtd+' jogador'+(gr.qtd===1?'':'es')+(gr.contabiliza ? ' • '+fmtPctFront(gr.qtd, rel.qtd)+' do elenco' : ' • não contabilizado'), corpo);
     });
     if(filtro==='todos'){
-      h += '<div class="rel-linha rel-total"><span class="rel-rot">TOTAL GERAL <span class="rel-obs">('+rel.qtd+' jogadores)</span></span><strong class="rel-val">'+fmtBRLfront(rel.totalGeral)+'</strong></div>';
+      h += finZona('dourado', '🏁 TOTAL GERAL', rel.qtd+' jogadores contratados',
+        '<div class="rel-linha rel-total"><span class="rel-rot">TOTAL GERAL</span><strong class="rel-val">'+fmtBRLfront(rel.totalGeral)+'</strong></div>');
       if(rel.qtdSemStatus>0) h += '<p class="small muted" style="margin:6px 2px 0;">'+rel.qtdSemStatus+' jogador'+(rel.qtdSemStatus===1?'':'es')+' sem status não contabilizado'+(rel.qtdSemStatus===1?'':'s')+' (use o filtro "Sem status" para ver).</p>';
     }else if(gruposVis[0] && gruposVis[0].contabiliza){
-      h += '<div class="rel-linha rel-total"><span class="rel-rot">SOMA — '+gruposVis[0].label.toUpperCase()+'</span><strong class="rel-val">'+fmtBRLfront(gruposVis[0].total)+'</strong></div>';
+      h += finZona('dourado', '🏁 SOMA — '+gruposVis[0].label.toUpperCase(), null,
+        '<div class="rel-linha rel-total"><span class="rel-rot">SOMA</span><strong class="rel-val">'+fmtBRLfront(gruposVis[0].total)+'</strong></div>');
     }
-    h += relBotoesExport(rel, filtro==='todos' ? null : filtro);
   }
   else if(sub==='recdes'){
-    // ---- 3) Receitas x Despesas
-    h += '<h4 class="rel-h">Receitas x Despesas</h4><div class="rel-graficos">'+
-      barrasComparativasHtml('Receitas x Despesas', [{label:'Receitas', valor:rel.receitas.total, cor:COR_FIN.em_dia}, {label:'Despesas', valor:rel.despesas, cor:COR_FIN.em_atraso}])+
-      '<p class="small" style="margin:2px 0 8px;">'+(rel.despesas>0 ? 'As receitas cobrem <strong>'+fmtPctFront(rel.receitas.total, rel.despesas)+'</strong> das despesas.' : 'Sem despesas informadas.')+'</p>'+
-      barraEmpilhadaHtml('Composição das receitas', [{label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_FIN.em_dia, txt:fmtBRLfront(rel.receitas.recebido)}, {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_FIN.em_atraso, txt:fmtBRLfront(rel.receitas.aReceber)}])+
-      barraEmpilhadaHtml('Composição das despesas', [{label:'Aluguel da Quadra', valor:c.aluguel, cor:COR_FIN.aluguel, txt:fmtBRLfront(c.aluguel)}, {label:'Higienização', valor:c.higienizacao, cor:COR_FIN.higienizacao, txt:fmtBRLfront(c.higienizacao)}, {label:'Carvão', valor:c.carvao, cor:COR_FIN.carvao, txt:fmtBRLfront(c.carvao)}])+
-    '</div>'+
-    relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub')+
-    relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub')+
-    '<div class="rel-linha rel-total"><span class="rel-rot">RESULTADO DO MÊS</span><strong class="rel-val" style="color:'+(rel.resultadoMes<0?'var(--red)':'var(--green)')+';">'+fmtBRLfront(rel.resultadoMes)+'</strong></div>';
+    // ---- Receitas x Despesas
+    h += finZona('verde', '📈 RECEITAS', 'Composição das receitas',
+        pizzaHtml('', [{label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_FIN.em_dia, txt:fmtBRLfront(rel.receitas.recebido)}, {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_FIN.em_atraso, txt:fmtBRLfront(rel.receitas.aReceber)}])+
+        relLinhaHtml('Total de receitas', fmtBRLfront(rel.receitas.total), 'rel-sub'))+
+      finZona('vermelho', '📉 DESPESAS', 'Composição das despesas',
+        pizzaHtml('', [{label:'Aluguel da Quadra', valor:c.aluguel, cor:COR_FIN.aluguel, txt:fmtBRLfront(c.aluguel)}, {label:'Higienização', valor:c.higienizacao, cor:COR_FIN.higienizacao, txt:fmtBRLfront(c.higienizacao)}, {label:'Carvão', valor:c.carvao, cor:COR_FIN.carvao, txt:fmtBRLfront(c.carvao)}])+
+        relLinhaHtml('Total de despesas', fmtBRLfront(rel.despesas), 'rel-sub'))+
+      finZona(rel.resultadoMes<0 ? 'vermelho' : 'azul', '⚖️ RECEITAS x DESPESAS', rel.despesas>0 ? 'As receitas cobrem '+fmtPctFront(rel.receitas.total, rel.despesas)+' das despesas' : 'Sem despesas informadas',
+        pizzaHtml('', [{label:'Receitas', valor:rel.receitas.total, cor:COR_FIN.em_dia, txt:fmtBRLfront(rel.receitas.total)}, {label:'Despesas', valor:rel.despesas, cor:COR_FIN.em_atraso, txt:fmtBRLfront(rel.despesas)}])+
+        '<div class="rel-linha rel-total"><span class="rel-rot">RESULTADO DO MÊS</span><strong class="rel-val" style="color:'+(rel.resultadoMes<0?'var(--red)':'var(--green)')+';">'+fmtBRLfront(rel.resultadoMes)+'</strong></div>');
   }
   else if(sub==='saldo'){
-    // ---- 4) Saldo em caixa (qualquer admin atualiza)
-    h += '<h4 class="rel-h">Saldo em Caixa</h4>'+
-      '<p class="small muted">Informe o saldo atualizado da conta corrente do time. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
-      '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
-      '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>'+
-      '<div style="margin-top:12px;">'+
-        relLinhaHtml('Saldo atual em caixa', fmtBRLfront(rel.saldoCaixa), 'rel-sub')+
-        relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-sub')+
-        '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
-      '</div>';
+    // ---- Saldo em caixa (qualquer admin atualiza)
+    h += finZona('dourado', '🏦 SALDO EM CAIXA', 'Saldo atual da conta corrente do time',
+        '<p class="small muted">Informe o saldo atualizado. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
+        '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
+        '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>'+
+        '<div style="margin-top:10px;">'+relLinhaHtml('Saldo atual em caixa', fmtBRLfront(rel.saldoCaixa), 'rel-sub')+'</div>')+
+      finZona(saldoCor, '📊 SALDO PREVISTO', 'Saldo em caixa + receitas − despesas',
+        relLinhaHtml('Resultado do mês <span class="rel-obs">(receitas − despesas)</span>', fmtBRLfront(rel.resultadoMes), 'rel-item')+
+        '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+corSaldoTxt+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>');
   }
-  else{
-    // ---- 5) Custos da quadra (só o Super Admin edita)
-    h += '<h4 class="rel-h">Custos da Quadra</h4>';
+  else if(sub==='custos'){
+    // ---- Custos da quadra (só o Super Admin edita)
+    let corpo = '';
     if(podeEditarCustos){
-      h += '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
+      corpo += '<p class="small muted">Informe os custos do mês (despesas). Aceita formatos como 1.250,50.</p>'+
         '<div class="field"><label>Aluguel da Quadra (R$)</label><input id="custo-aluguel" inputmode="decimal" value="'+inputValorBRL(c.aluguel)+'" placeholder="0,00"></div>'+
         '<div class="field"><label>Higienização (R$)</label><input id="custo-higienizacao" inputmode="decimal" value="'+inputValorBRL(c.higienizacao)+'" placeholder="0,00"></div>'+
         '<div class="field"><label>Carvão (R$)</label><input id="custo-carvao" inputmode="decimal" value="'+inputValorBRL(c.carvao)+'" placeholder="0,00"></div>'+
         '<button class="btn secondary" data-action="salvar-custos">Salvar custos</button>';
     }else{
-      h += relLinhaHtml('Aluguel da Quadra', fmtBRLfront(c.aluguel), 'rel-item')+relLinhaHtml('Higienização', fmtBRLfront(c.higienizacao), 'rel-item')+relLinhaHtml('Carvão', fmtBRLfront(c.carvao), 'rel-item');
+      corpo += relLinhaHtml('Aluguel da Quadra', fmtBRLfront(c.aluguel), 'rel-item')+relLinhaHtml('Higienização', fmtBRLfront(c.higienizacao), 'rel-item')+relLinhaHtml('Carvão', fmtBRLfront(c.carvao), 'rel-item');
     }
-    h += '<div style="margin-top:10px;">'+relLinhaHtml('Total de custos', fmtBRLfront(rel.despesas), 'rel-total')+'</div>';
+    corpo += '<div style="margin-top:10px;">'+relLinhaHtml('TOTAL DE CUSTOS', fmtBRLfront(rel.despesas), 'rel-total')+'</div>';
+    h += finZona('laranja', '🧾 CUSTOS DA QUADRA', 'Despesas do mês', corpo);
+  }
+  else{
+    // ---- Relatórios (PDF e Excel)
+    h += finZona('azul', '📄 FINANCEIRO POR MENSALIDADES', 'PDF com jogadores agrupados por status, subtotais e gráficos de pizza',
+        '<div class="field"><label>Status</label><select id="rel-pdf-status">'+
+          '<option value="todos">Todos os status</option>'+rel.grupos.map(x=>'<option value="'+x.chave+'">'+x.label+'</option>').join('')+'</select></div>'+
+        '<button class="btn" data-action="baixar-pdf-fin">📄 PDF Financeiro por Mensalidades</button>')+
+      finZona('verde', '📄 FLUXO DE CAIXA', 'PDF com saldo em caixa, receitas, despesas, saldo previsto e gráficos de pizza',
+        '<button class="btn" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 PDF Fluxo de Caixa</button>')+
+      finZona('dourado', '📊 EXCEL', 'Planilha com 5 abas: DRE, Jogadores por Status, Receitas x Despesas, Saldo em Caixa e Custos da Quadra',
+        '<button class="btn secondary" data-action="baixar-pdf" data-url="/api/admin/relatorio-financeiro.xlsx" data-arq="relatorios-financeiros-'+rel.referencia+'.xlsx">📊 Exportar para Excel</button>');
   }
   return h;
 }
 // salva o valor da mensalidade do jogador (igual ao padrão => volta a usar o padrão)
-async function handleSalvarRifa(limpar){
-  if(!state.rifaRodadaId){ alert('Nenhuma rodada selecionada.'); return; }
+async function handleSalvarRifa(limpar, rodadaId){
+  const rid = rodadaId || state.rifaRodadaId;
+  if(!rid){ alert('Nenhuma rodada selecionada.'); return; }
   const ganhador = limpar ? '' : document.getElementById('rifa-ganhador').value;
   const premio = limpar ? '' : document.getElementById('rifa-premio').value;
   try{
-    await api('/api/admin/rifas', {method:'PUT', adminAuth:true, body:{rodadaId:state.rifaRodadaId, ganhador, premio}});
-    await refreshRifas();
+    await api('/api/admin/rifas', {method:'PUT', adminAuth:true, body:{rodadaId:rid, ganhador, premio}});
+    await refreshRifas(); await refreshRifasAdmin();
     await render();
     showToast(limpar ? 'Rifa removida' : 'Rifa salva!');
   }catch(e){ alert(e.message); }
@@ -2222,8 +2260,21 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='baixar-pdf') return handleBaixarPdf(el.dataset.url, el.dataset.arq);
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
   if(action==='salvar-rifa') return handleSalvarRifa(false);
+  if(action==='rifa-editar'){
+    state.rifaRodadaId = el.dataset.id; await render();
+    const campo = document.getElementById('rifa-ganhador');
+    if(campo && campo.scrollIntoView) campo.scrollIntoView({block:'center'});
+    return;
+  }
+  if(action==='rifa-remover'){ if(confirm('Remover o ganhador e o prêmio desta rifa?')) return handleSalvarRifa(true, el.dataset.id); return; }
   if(action==='limpar-rifa'){ if(confirm('Remover o ganhador e o prêmio desta rodada?')) return handleSalvarRifa(true); return; }
   if(action==='gestao-sub'){ state.gestaoSub = el.dataset.sub; return render(); }
+  if(action==='baixar-pdf-fin'){
+    const sel = document.getElementById('rel-pdf-status');
+    const st = sel ? sel.value : 'todos';
+    const ref = (state.relatorioFin && state.relatorioFin.referencia) || 'mensalidades';
+    return handleBaixarPdf('/api/admin/relatorio-financeiro.pdf'+(st==='todos'?'':'?status='+st), 'financeiro-por-mensalidades-'+ref+(st==='todos'?'':'-'+st)+'.pdf');
+  }
   if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
   if(action==='mens-editar'){ state.editandoMensId = (state.editandoMensId===el.dataset.id) ? null : el.dataset.id; return render(); }

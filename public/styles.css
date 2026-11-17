@@ -594,3 +594,48 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .posicao-under5{border-color:var(--red);box-shadow:0 0 0 3px rgba(226,87,76,.14);}
 .posicao-under5 .meu-posicao-num{color:#FF8D84;}
 .posicao-meio .meu-posicao-num{color:var(--text);}
+
+/* v4.5 — Gestão: sub-abas em grade (sem rolagem), zonas coloridas e gráficos de pizza */
+.subtabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;overflow:visible;white-space:normal;padding:2px 0 8px;margin-bottom:4px;}
+.subtabs button{flex:none;min-height:40px;padding:6px 8px;border-radius:10px;font-size:12.5px;line-height:1.15;text-align:center;white-space:normal;}
+.pizza-bloco{margin:4px 0 8px;}
+.pizza-wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px 16px;}
+.pizza-svg{width:150px;height:150px;flex:0 0 auto;filter:drop-shadow(0 4px 10px rgba(0,0,0,.35));}
+.pizza-pct{font-size:6.2px;font-weight:700;fill:#fff;font-family:var(--font-display);paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:.6px;}
+.pizza-leg{flex:1 1 150px;min-width:0;}
+.pizza-leg-item{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0;}
+.pizza-leg-item i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+.pizza-leg-rot{min-width:0;}
+.pizza-leg-val{white-space:nowrap;}
+.pizza-leg-val strong{color:var(--gold-bright);margin-left:4px;}
+
+.fin-zona{margin:10px 0;padding:10px 12px 8px;border-radius:14px;border:1px solid var(--line);}
+.fin-zona-tit{font-family:var(--font-display);font-size:16px;letter-spacing:.6px;}
+.fin-zona-sub{font-size:12.5px;color:var(--text-muted);margin:2px 0 6px;}
+.fz-verde{border-color:var(--green);background:linear-gradient(180deg,rgba(63,174,88,.16),rgba(63,174,88,.03) 60%);box-shadow:0 0 0 1px rgba(63,174,88,.18);}
+.fz-verde .fin-zona-tit{color:#7BD991;}
+.fz-vermelho{border-color:var(--red);background:linear-gradient(180deg,rgba(226,87,76,.16),rgba(226,87,76,.03) 60%);box-shadow:0 0 0 1px rgba(226,87,76,.18);}
+.fz-vermelho .fin-zona-tit{color:#FF8D84;}
+.fz-azul{border-color:#4EA1FF;background:linear-gradient(180deg,rgba(78,161,255,.14),rgba(78,161,255,.02) 60%);box-shadow:0 0 0 1px rgba(78,161,255,.16);}
+.fz-azul .fin-zona-tit{color:#8EC3FF;}
+.fz-dourado{border-color:var(--gold);background:linear-gradient(180deg,rgba(201,162,39,.16),rgba(201,162,39,.03) 60%);box-shadow:0 0 0 1px rgba(201,162,39,.22), 0 8px 24px rgba(201,162,39,.10);}
+.fz-dourado .fin-zona-tit{color:var(--gold-bright);}
+.fz-laranja{border-color:#F0902E;background:linear-gradient(180deg,rgba(240,144,46,.15),rgba(240,144,46,.02) 60%);}
+.fz-laranja .fin-zona-tit{color:#F5B061;}
+.fz-cinza{border-color:#7A8699;background:linear-gradient(180deg,rgba(122,134,153,.14),rgba(122,134,153,.02) 60%);}
+.fz-cinza .fin-zona-tit{color:#A9B3C2;}
+.fin-zona .rel-sub{border-top:1px dashed rgba(255,255,255,.18);}
+.fin-zona .rel-linha.rel-total{background:rgba(0,0,0,.18);border-color:currentColor;}
+.fin-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.fin-pos{flex:0 0 26px;text-align:center;font-family:var(--font-display);font-size:16px;color:var(--text-muted);}
+.fz-verde .fin-pos{color:#7BD991;} .fz-vermelho .fin-pos{color:#FF8D84;} .fz-azul .fin-pos{color:#8EC3FF;} .fz-cinza .fin-pos{color:#A9B3C2;}
+.fin-nome{flex:1;min-width:0;overflow-wrap:anywhere;}
+.fin-valor{flex:0 0 auto;font-weight:700;white-space:nowrap;}
+.fz-verde .fin-valor{color:#7BD991;} .fz-vermelho .fin-valor{color:#FF8D84;} .fz-azul .fin-valor{color:#8EC3FF;}
+
+.meu-score-click{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.meu-score-click:active{transform:scale(.99);}
+.rifa-adm-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--line);border-radius:8px;}
+.rifa-adm-item.editando{background:rgba(201,162,39,.10);border-color:var(--gold-dim);}
+.rifa-adm-info{min-width:0;overflow-wrap:anywhere;}
+.rifa-adm-acoes{flex:0 0 auto;display:flex;gap:6px;}

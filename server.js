@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 24;
+const APP_BUILD = 25;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -1022,6 +1022,16 @@ function novoPdf(){
     const pre = cor ? cor[0]+' '+cor[1]+' '+cor[2]+' rg ' : '';
     cur().push('BT '+pre+'/'+(bold?'F2':'F1')+' '+size+' Tf '+xx.toFixed(1)+' '+yy.toFixed(1)+' Td ('+esc(s)+') Tj'+(cor?' 0 g':'')+' ET');
   };
+  // fatia de pizza (polígono): ângulos em radianos, a1 < a0 = sentido horário
+  doc.fatia = (cx,cy,r,a0,a1,rgb)=>{
+    const passos = Math.max(2, Math.ceil(Math.abs(a1-a0)/(Math.PI/36)));
+    let op = rgb[0]+' '+rgb[1]+' '+rgb[2]+' rg '+cx.toFixed(1)+' '+cy.toFixed(1)+' m';
+    for(let i=0;i<=passos;i++){
+      const a = a0 + (a1-a0)*i/passos;
+      op += ' '+(cx+r*Math.cos(a)).toFixed(1)+' '+(cy+r*Math.sin(a)).toFixed(1)+' l';
+    }
+    cur().push(op+' h f 0 g');
+  };
   doc.cor = (x,yy,w,h,rgb)=> cur().push(rgb[0]+' '+rgb[1]+' '+rgb[2]+' rg '+x.toFixed(1)+' '+yy.toFixed(1)+' '+w.toFixed(1)+' '+h+' re f 0 g');
   doc.linha = (x1,y1,x2,y2,g)=> cur().push((g!=null?g+' G ':'')+'0.6 w '+x1+' '+y1.toFixed(1)+' m '+x2+' '+y2.toFixed(1)+' l S 0 G');
   doc.faixa = (yy,h,g)=> cur().push(g+' g '+M+' '+yy.toFixed(1)+' '+(W-2*M)+' '+h+' re f 0 g');
@@ -1062,43 +1072,32 @@ function novoPdf(){
 const COR_PDF = {em_dia:[0.25,0.68,0.35], em_atraso:[0.89,0.34,0.30], isenta:[0.31,0.63,1], sem_status:[0.48,0.53,0.60],
   aluguel:[0.80,0.62,0.15], higienizacao:[0.31,0.63,1], carvao:[0.45,0.45,0.50]};
 function fmtPct(v, total){ return (total>0 ? v/total*100 : 0).toFixed(1).replace('.',',')+'%'; }
-// barra empilhada com percentuais dentro dos segmentos + legenda embaixo
-function barraEmpilhadaPdf(d, titulo, segs){
-  d.garantir(36 + segs.length*13, null);
-  d.texto(d.M, d.y, titulo, 10, true); d.y -= 14;
+// gráfico de PIZZA com percentuais nas fatias e legenda ao lado
+function pizzaPdf(d, titulo, segs){
+  const r = 40;
+  d.garantir(2*r + 36, null);
+  d.texto(d.M, d.y, titulo, 10, true); d.y -= 8;
   const total = segs.reduce((t,x)=>t+x.valor,0);
-  if(total<=0){ d.texto(d.M+4, d.y, 'Sem dados para exibir.', 9, false); d.y -= 20; return; }
-  const largTot = d.RIGHT - d.M;
-  let x = d.M;
+  if(total<=0){ d.texto(d.M+4, d.y-8, 'Sem dados para exibir.', 9, false); d.y -= 26; return; }
+  const cx = d.M + r + 8, cy = d.y - r - 4;
+  let ang = Math.PI/2;                                   // começa no topo, sentido horário
+  segs.filter(x=>x.valor>0).forEach(sg=>{
+    const a = sg.valor/total*2*Math.PI;
+    d.fatia(cx, cy, r, ang, ang-a, sg.cor);
+    if(sg.valor/total >= 0.08){
+      const mid = ang - a/2, t = fmtPct(sg.valor,total);
+      d.texto(cx + 0.62*r*Math.cos(mid) - d.largura(t,8)/2, cy + 0.62*r*Math.sin(mid) - 3, t, 8, true, 'left', [1,1,1]);
+    }
+    ang -= a;
+  });
+  const xLeg = d.M + 2*r + 28;
+  let ly = cy + (segs.length*14)/2 - 4;
   segs.forEach(sg=>{
-    const w = sg.valor/total*largTot;
-    if(w<=0) return;
-    d.cor(x, d.y-12, w, 16, sg.cor);
-    if(w>34){ const t = fmtPct(sg.valor,total); d.texto(x+w/2-d.largura(t,8)/2, d.y-7, t, 8, true, 'left', [1,1,1]); }
-    x += w;
+    d.cor(xLeg, ly-1, 8, 8, sg.cor);
+    d.texto(xLeg+14, ly, sg.label+': '+sg.txt+'  ('+fmtPct(sg.valor,total)+')', 9, false);
+    ly -= 14;
   });
-  d.y -= 26;
-  segs.forEach(sg=>{
-    d.cor(d.M+4, d.y-1, 8, 8, sg.cor);
-    d.texto(d.M+18, d.y, sg.label+': '+sg.txt+'  ('+fmtPct(sg.valor,total)+')', 9, false);
-    d.y -= 13;
-  });
-  d.y -= 6;
-}
-// duas barras comparando receitas x despesas (escala comum)
-function barrasComparativasPdf(d, titulo, itens){
-  d.garantir(30 + itens.length*26, null);
-  d.texto(d.M, d.y, titulo, 10, true); d.y -= 14;
-  const max = Math.max(...itens.map(i=>Math.abs(i.valor)), 0.01);
-  const largTot = d.RIGHT - d.M - 120;
-  itens.forEach(it=>{
-    d.texto(d.M+4, d.y-7, it.label, 9, false);
-    const w = Math.max(2, Math.abs(it.valor)/max*largTot);
-    d.cor(d.M+110, d.y-12, w, 16, it.cor);
-    d.texto(d.M+110+w+6, d.y-7, fmtBRL(it.valor), 9, true);
-    d.y -= 24;
-  });
-  d.y -= 4;
+  d.y = cy - r - 14;
 }
 function dataHoraBR(g){ return g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16); }
 function cabecalhoPdf(d, rel, subtitulo){
@@ -1116,11 +1115,15 @@ function gerarPdfRelatorio(rel, filtro){
   const d = novoPdf();
   // sem filtro: só os jogadores com status (os "sem status" não são contabilizados)
   const grupos = filtro ? rel.grupos.filter(g=>g.chave===filtro) : rel.grupos.filter(g=>g.contabiliza);
-  cabecalhoPdf(d, rel, 'Relatório Financeiro - Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
+  cabecalhoPdf(d, rel, 'Financeiro por Mensalidades'+(filtro && grupos[0] ? ' ('+grupos[0].label+')' : ''));
   if(!filtro){
     d.texto(d.M, d.y, 'RESUMO GR\u00C1FICO', 11, true); d.y -= 16;
-    barraEmpilhadaPdf(d, 'Jogadores por status', rel.grupos.filter(g=>g.contabiliza).map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
-    barraEmpilhadaPdf(d, 'Valor por status (R$)', rel.grupos.filter(g=>g.total>0).map(g=>({label:g.label, valor:g.total, cor:COR_PDF[g.chave], txt:fmtBRL(g.total)})));
+    pizzaPdf(d, 'Jogadores por status', rel.grupos.filter(g=>g.contabiliza).map(g=>({label:g.label, valor:g.qtd, cor:COR_PDF[g.chave], txt:g.qtd+' jogador'+(g.qtd===1?'':'es')})));
+    pizzaPdf(d, 'Valor por status (R$)', rel.grupos.filter(g=>g.total>0).map(g=>({label:g.label, valor:g.total, cor:COR_PDF[g.chave], txt:fmtBRL(g.total)})));
+    pizzaPdf(d, 'Recebido x a receber', [
+      {label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_PDF.em_dia, txt:fmtBRL(rel.receitas.recebido)},
+      {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_PDF.em_atraso, txt:fmtBRL(rel.receitas.aReceber)},
+    ]);
     const prev = rel.receitas.total;
     d.texto(d.M, d.y, 'Recebido (Em dia): '+fmtBRL(rel.receitas.recebido)+'  =  '+fmtPct(rel.receitas.recebido, prev)+' do previsto ('+fmtBRL(prev)+').', 9, true); d.y -= 18;
     d.linha(d.M, d.y+6, d.RIGHT, d.y+6, 0.3); d.y -= 8;
@@ -1207,16 +1210,16 @@ function gerarPdfFluxoCaixa(rel){
   d.y -= 36;
   d.y -= 4;
   d.texto(d.M, d.y, 'GR\u00C1FICOS', 11, true); d.y -= 16;
-  barrasComparativasPdf(d, 'Receitas x Despesas', [
-    {label:'Receitas', valor:rel.receitas.total, cor:COR_PDF.em_dia},
-    {label:'Despesas', valor:rel.despesas, cor:COR_PDF.em_atraso},
+  pizzaPdf(d, 'Receitas x Despesas', [
+    {label:'Receitas', valor:rel.receitas.total, cor:COR_PDF.em_dia, txt:fmtBRL(rel.receitas.total)},
+    {label:'Despesas', valor:rel.despesas, cor:COR_PDF.em_atraso, txt:fmtBRL(rel.despesas)},
   ]);
   d.texto(d.M, d.y, rel.despesas>0 ? 'As receitas cobrem '+fmtPct(rel.receitas.total, rel.despesas)+' das despesas.' : 'Sem despesas informadas.', 9, true); d.y -= 18;
-  barraEmpilhadaPdf(d, 'Composi\u00E7\u00E3o das receitas', [
+  pizzaPdf(d, 'Composi\u00E7\u00E3o das receitas', [
     {label:'Em dia (recebido)', valor:rel.receitas.recebido, cor:COR_PDF.em_dia, txt:fmtBRL(rel.receitas.recebido)},
     {label:'Em atraso (a receber)', valor:rel.receitas.aReceber, cor:COR_PDF.em_atraso, txt:fmtBRL(rel.receitas.aReceber)},
   ]);
-  barraEmpilhadaPdf(d, 'Composi\u00E7\u00E3o das despesas', [
+  pizzaPdf(d, 'Composi\u00E7\u00E3o das despesas', [
     {label:'Aluguel da Quadra', valor:rel.custos.aluguel, cor:COR_PDF.aluguel, txt:fmtBRL(rel.custos.aluguel)},
     {label:'Higieniza\u00E7\u00E3o', valor:rel.custos.higienizacao, cor:COR_PDF.higienizacao, txt:fmtBRL(rel.custos.higienizacao)},
     {label:'Carv\u00E3o', valor:rel.custos.carvao, cor:COR_PDF.carvao, txt:fmtBRL(rel.custos.carvao)},
@@ -1235,7 +1238,7 @@ app.get('/api/admin/relatorio-financeiro.pdf', requireAdmin, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
   const filtro = STATUS_FIN.some(s=>s.chave===req.query.status) ? String(req.query.status) : null;
   logEvento('Relatório financeiro (PDF) gerado pelo administrador — referência '+rel.referencia+(filtro?' — filtro '+filtro:'')+'.');
-  enviarPdf(res, gerarPdfRelatorio(rel, filtro), 'relatorio-financeiro-'+rel.referencia+(filtro?'-'+filtro:'')+'.pdf');
+  enviarPdf(res, gerarPdfRelatorio(rel, filtro), 'financeiro-por-mensalidades-'+rel.referencia+(filtro?'-'+filtro:'')+'.pdf');
 });
 app.get('/api/admin/fluxo-caixa.pdf', requireAdmin, (req,res)=>{
   const rel = montarRelatorioFinanceiro();
@@ -1315,8 +1318,8 @@ function gerarXlsxRelatorio(rel){
   const grupo = k => rel.grupos.find(x=>x.chave===k);
   const pct = (v,t)=> t>0 ? v/t : 0;
 
-  // 1) Demonstrativo de Resultados (fluxo de caixa)
-  const s1 = [...cab('Demonstrativo de Resultados (Fluxo de Caixa)'),
+  // 1) DRE — Demonstrativo de Resultados (fluxo de caixa)
+  const s1 = [...cab('DRE — Demonstrativo de Resultados (Fluxo de Caixa)'),
     [{v:'Item',s:XL.H},{v:'Valor (R$)',s:XL.H}],
     ['Saldo em caixa (conta corrente)', {v:rel.saldoCaixa,s:XL.M}],
     ['Receitas — Em dia (recebido)', {v:rel.receitas.recebido,s:XL.M}],
@@ -1379,7 +1382,7 @@ function gerarXlsxRelatorio(rel){
   ];
 
   const abas = [
-    {nome:'Demonstrativo',         xml:xlsxPlanilha(s1,[52,18])},
+    {nome:'DRE',                    xml:xlsxPlanilha(s1,[52,18])},
     {nome:'Jogadores por Status',  xml:xlsxPlanilha(s2,[34,16,16,18,16])},
     {nome:'Receitas x Despesas',   xml:xlsxPlanilha(s3,[40,18,16])},
     {nome:'Saldo em Caixa',        xml:xlsxPlanilha(s4,[44,18])},
@@ -1915,6 +1918,11 @@ app.post('/api/admin/reset', requireSuper, (req,res)=>{
 // últimas rifas com ganhador cadastrado (mais recente primeiro) — tela Resenha > Rifas
 app.get('/api/rifas', (req,res)=>{
   const rifas = db.prepare("SELECT r.id AS rodadaId, r.data AS data, f.ganhador AS ganhador, f.premio AS premio FROM rifas f JOIN rodadas r ON r.id=f.rodada_id WHERE f.ganhador<>'' ORDER BY r.data DESC LIMIT 12").all();
+  res.json({rifas});
+});
+// todas as rifas cadastradas (admin) — para editar/remover por data
+app.get('/api/admin/rifas', requirePerm('conteudo'), (req,res)=>{
+  const rifas = db.prepare("SELECT r.id AS rodadaId, r.data AS data, f.ganhador AS ganhador, f.premio AS premio FROM rifas f JOIN rodadas r ON r.id=f.rodada_id ORDER BY r.data DESC").all();
   res.json({rifas});
 });
 // cadastra/atualiza (ou limpa, se ganhador e prêmio vierem vazios) a rifa de uma rodada
