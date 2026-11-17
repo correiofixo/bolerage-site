@@ -450,3 +450,19 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .perf-key-acum{background:var(--gold-bright);}
 .perf-key-rod{background:#4EA1FF;}
 .corneta-btn{background:linear-gradient(180deg,#34C759,#1FA64A);color:#fff;border:none;text-decoration:none;white-space:nowrap;}
+
+/* v3.4 — Saúde do Craque (IMC), nome do votante e da performance em destaque */
+.voter-name{margin:0;font-family:var(--font-display);font-size:21px;line-height:1.15;letter-spacing:.2px;color:var(--gold-bright);}
+.perf-nome{margin:0 28px 2px;text-align:center;font-family:var(--font-display);font-size:26px;line-height:1.15;color:#fff;letter-spacing:.3px;}
+.perf-sub{margin:0 0 8px;text-align:center;font-family:var(--font-display);font-size:15px;letter-spacing:.8px;text-transform:uppercase;color:var(--gold-bright);}
+.imc-box{text-align:center;padding:4px 0 2px;}
+.imc-linha{display:flex;align-items:baseline;justify-content:center;gap:10px;}
+.imc-sigla{font-family:var(--font-display);font-size:16px;letter-spacing:1.5px;color:var(--text-muted);}
+.imc-valor{font-family:var(--font-display);font-size:44px;font-weight:700;line-height:1;}
+.imc-class{font-weight:700;font-size:15px;margin:4px 0 10px;}
+.imc-bar{position:relative;height:10px;border-radius:999px;margin:0 6px;
+  background:linear-gradient(90deg,#4EA1FF 0%,#4EA1FF 14%,#3FAE58 14%,#3FAE58 40%,#E4C158 40%,#E4C158 60%,#F0902E 60%,#F0902E 80%,#E2574C 80%,#C93A3A 100%);}
+.imc-marker{position:absolute;top:-4px;width:4px;height:18px;margin-left:-2px;border-radius:2px;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.45);}
+.imc-escala{position:relative;height:16px;margin:4px 6px 0;font-size:11px;}
+.imc-escala span{position:absolute;top:0;transform:translateX(-50%);}
+.perfil-check{display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--text);}

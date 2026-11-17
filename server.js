@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 13;
+const APP_BUILD = 14;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -165,6 +165,8 @@ try{ db.exec("ALTER TABLE jogadores ADD COLUMN apelido TEXT NOT NULL DEFAULT ''"
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN idade INTEGER"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN peso REAL"); }catch(e){}
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN altura INTEGER"); }catch(e){}
+// 1 = o jogador quer que o APELIDO seja exibido no lugar do nome em todo o app
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN usar_apelido INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 // mês (YYYY-MM) em que a mensalidade foi zerada pela última vez
 try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
 
@@ -710,6 +712,7 @@ function jogadorPublico(j){
     deptoMedico: !!j.depto_medico,
     telefone: j.telefone || '',
     apelido: j.apelido || '',
+    usarApelido: !!(j.usar_apelido && j.apelido),
     idade: j.idade==null ? '' : j.idade,
     peso: j.peso==null ? '' : j.peso,
     altura: j.altura==null ? '' : j.altura,
@@ -781,14 +784,17 @@ app.put('/api/me/perfil', requireAuth, (req,res)=>{
     peso   = b.peso===undefined   ? j.peso   : numOuNull(b.peso, 20, 250, 'Peso', false);
     altura = b.altura===undefined ? j.altura : numOuNull(b.altura, 100, 230, 'Altura', true);
   }catch(e){ return res.status(400).json({erro:e.message}); }
-  db.prepare('UPDATE jogadores SET telefone=?, time_coracao=?, apelido=?, idade=?, peso=?, altura=? WHERE id=?')
-    .run(telefone, timeCoracao, apelido, idade, peso, altura, j.id);
+  // só dá para exibir o apelido se ele existir
+  const usarApelido = apelido && (b.usarApelido===undefined ? !!j.usar_apelido : !!b.usarApelido) ? 1 : 0;
+  db.prepare('UPDATE jogadores SET telefone=?, time_coracao=?, apelido=?, idade=?, peso=?, altura=?, usar_apelido=? WHERE id=?')
+    .run(telefone, timeCoracao, apelido, idade, peso, altura, usarApelido, j.id);
   res.json({ok:true, jogador: jogadorPublico(getJogadorPorId(j.id))});
 });
 
 /* ---- elenco ---- */
 app.get('/api/elenco', (req,res)=>{
-  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, timeCoracao:j.time_coracao||'', corneta:!!j.corneta}));
+  // 'nome' = nome de EXIBIÇÃO (apelido, se o jogador escolheu usar); 'nomeReal' = cadastro (PIN)
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:(j.usar_apelido && j.apelido) ? j.apelido : j.nome, nomeReal:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, timeCoracao:j.time_coracao||'', corneta:!!j.corneta}));
   res.json({jogadores});
 });
 app.get('/api/admin/elenco', requireSuper, (req,res)=>{

@@ -152,6 +152,53 @@ const state = {
   inatividadeTimer: null,
 };
 
+// nome de EXIBIÇÃO do jogador logado (apelido, se ele escolheu usar no Meu Perfil)
+function nomeExibicaoMeu(){
+  const p = state.currentPlayer || {};
+  return (p.usarApelido && p.apelido) ? p.apelido : p.nome;
+}
+// nome de cadastro (texto salvo em Gestão/Eventos) -> nome de exibição atual
+function nomeExibicaoPorNomeReal(nomeReal){
+  const j = (state.elenco||[]).find(x=>x.nomeReal===nomeReal);
+  return j ? j.nome : nomeReal;
+}
+// IMC = peso / altura². Classificação OMS para adultos (18+).
+function calcIMC(peso, alturaCm){
+  const p = Number(peso), a = Number(alturaCm)/100;
+  if(!p || !a) return null;
+  return p/(a*a);
+}
+function classificarIMC(imc){
+  if(imc < 18.5) return {rotulo:'Abaixo do peso', cor:'#4EA1FF'};
+  if(imc < 25)   return {rotulo:'Peso normal', cor:'#3FAE58'};
+  if(imc < 30)   return {rotulo:'Sobrepeso', cor:'#E4C158'};
+  if(imc < 35)   return {rotulo:'Obesidade grau I', cor:'#F0902E'};
+  if(imc < 40)   return {rotulo:'Obesidade grau II', cor:'#E2574C'};
+  return {rotulo:'Obesidade grau III', cor:'#C93A3A'};
+}
+// card "Saúde do Craque": só aparece quando idade, peso e altura estão preenchidos no perfil
+function renderCardSaude(){
+  const p = state.currentPlayer;
+  if(!p || !p.idade || !p.peso || !p.altura) return '';
+  const imc = calcIMC(p.peso, p.altura);
+  if(imc==null) return '';
+  const menor = Number(p.idade) < 18;
+  const cl = classificarIMC(imc);
+  const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
+  const valorFmt = imc.toFixed(1).replace('.',',');
+  return '<div class="card accent-green"><h3>Saúde do Craque:</h3>'+
+    '<div class="imc-box">'+
+      '<div class="imc-linha"><span class="imc-sigla">IMC</span><span class="imc-valor"'+(menor?'':' style="color:'+cl.cor+'"')+'>'+valorFmt+'</span></div>'+
+      (menor
+        ? '<div class="imc-class muted">Classificação por idade (menores de 18 anos) deve ser feita por um profissional</div>'
+        : '<div class="imc-class" style="color:'+cl.cor+'">'+cl.rotulo+'</div>')+
+      '<div class="imc-bar"><span class="imc-marker" style="left:'+pct.toFixed(1)+'%"></span></div>'+
+      '<div class="imc-escala small muted"><span style="left:0">15</span><span style="left:14%">18,5</span><span style="left:40%">25</span><span style="left:60%">30</span><span style="left:80%">35</span><span style="left:100%">40</span></div>'+
+    '</div>'+
+    '<p class="small muted" style="margin-top:8px;">'+Number(p.idade)+' anos • '+String(p.peso).replace('.',',')+' kg • '+p.altura+' cm. IMC = peso ÷ altura². Referência geral da OMS — não substitui avaliação médica.</p>'+
+  '</div>';
+}
+
 function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
 // "2026-11-15T08:05" -> "15/11/2026 às 08:05"
 function formatAgendamento(str){
@@ -270,7 +317,7 @@ function renderTopbar(){
     ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
     : '';
   const whoHtml = '<div class="who-row1">'+
-      '<span class="who-name">'+saudacao()+', '+escapeHtml(state.currentPlayer.nome)+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
+      '<span class="who-name">'+saudacao()+', '+escapeHtml(nomeExibicaoMeu())+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
         (state.currentPlayer.deptoMedico ? ' 🚑' : '')+'</span>'+
     '</div>'+
     mensLine;
@@ -379,6 +426,8 @@ function renderTrocarPin(){
     '<div class="card"><h2>Meu Perfil</h2>'+
     '<p class="small muted">Todos os campos são opcionais — preencha só o que quiser.</p>'+
     '<div class="field"><label>Apelido</label><input id="perfil-apelido" maxlength="30" value="'+v(p.apelido)+'" placeholder="Como o pessoal te chama"></div>'+
+    '<label class="small perfil-check"><input type="checkbox" id="perfil-usar-apelido" '+(p.usarApelido?'checked':'')+'> Exibir meu APELIDO em todo o app (no lugar do meu nome)</label>'+
+    '<p class="small muted" style="margin:2px 0 10px;">Seu nome de cadastro'+(p.nome?' (<strong style="color:var(--text)">'+v(p.nome)+'</strong>)':'')+' continua ligado ao seu PIN e não pode ser alterado. Só vale se você preencher o apelido.</p>'+
     '<div class="field"><label>Celular (WhatsApp, com DDD)</label><input id="perfil-telefone" type="tel" inputmode="tel" maxlength="30" value="'+v(p.telefone)+'" placeholder="(11) 91234-5678"></div>'+
     '<div class="field"><label>Time do coração</label><select id="perfil-time">'+timeCoracaoOptionsHtml(p.timeCoracao)+'</select></div>'+
     '<div class="field"><label>Idade</label><input id="perfil-idade" type="number" inputmode="numeric" min="5" max="99" value="'+v(p.idade)+'"></div>'+
@@ -404,11 +453,14 @@ async function handleSalvarPerfil(){
     const r = await api('/api/me/perfil', {method:'PUT', auth:true, body:{
       apelido: g('perfil-apelido'), telefone: g('perfil-telefone'), timeCoracao: g('perfil-time'),
       idade: g('perfil-idade'), peso: g('perfil-peso'), altura: g('perfil-altura'),
+      usarApelido: document.getElementById('perfil-usar-apelido').checked,
     }});
     state.currentPlayer = Object.assign({}, state.currentPlayer, r.jogador);
     localStorage.setItem('bolerage_player', JSON.stringify(state.currentPlayer));
     state._lastWhoHtml = null;
+    await refreshElenco();
     renderTopbar();
+    renderTrocarPin();
     showToast('Perfil salvo!');
   }catch(e){ if(msg) msg.textContent = e.message; }
 }
@@ -471,7 +523,7 @@ function renderExtrasIniciais(){
         html += '<details class="evento-item" data-evento-id="'+e.id+'"'+(aberto?' open':'')+'>'+
           '<summary><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></summary>'+
           (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
-          (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(resp)+
+          (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(nomeExibicaoPorNomeReal(resp))+
             (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</span></div>' : '')+
         '</details>';
       }else{
@@ -497,8 +549,8 @@ function renderExtrasIniciais(){
       '</span></div>';
     };
     html += '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
-      linhaG('Presidente', ex.gestao.presidente, ex.gestao.presidenteTel)+
-      linhaG('Vice-Presidente', ex.gestao.vicePresidente, ex.gestao.viceTel)+
+      linhaG('Presidente', nomeExibicaoPorNomeReal(ex.gestao.presidente), ex.gestao.presidenteTel)+
+      linhaG('Vice-Presidente', nomeExibicaoPorNomeReal(ex.gestao.vicePresidente), ex.gestao.viceTel)+
       '</div>';
   }
   if(state.currentPlayer){
@@ -506,6 +558,7 @@ function renderExtrasIniciais(){
     html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
       '<div class="meu-score-box">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
       '</div>';
+    html += renderCardSaude();
   }
   return html;
 }
@@ -729,9 +782,10 @@ function renderResenha(){
         const tel = (rodV.telefonesVotantes||{})[idAv];
         const primeiroNome = nomeJ(idAv).split(' ')[0];
         const btnCorneta = tel
-          ? '<a class="btn small corneta-btn" href="https://wa.me/'+tel+'?text='+encodeURIComponent('🎺 Opa, '+primeiroNome+'! Vi seus votos no Bolerage F.D. 😄')+'" target="_blank" rel="noopener">🎺 CORNETA</a>'
+          ? '<a class="btn small corneta-btn" href="https://wa.me/'+tel+'?text='+encodeURIComponent('Opa, '+primeiroNome+' !!! Notei seu voto no BolerApp e gostaria de falar sobre o assunto, craque !!! :)')+'" target="_blank" rel="noopener">🎺 CORNETA</a>'
           : '';
-        h += '<div class="card"><div class="list-row" style="border:none;padding:0 0 6px 0;"><h3 style="margin:0;">'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+' <span class="small muted">votou em '+lista.length+'</span></h3>'+btnCorneta+'</div>';
+        h += '<div class="card"><div class="list-row" style="border:none;padding:0 0 6px 0;"><h3 class="voter-name">'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+'</h3>'+btnCorneta+'</div>'+
+          '<p class="small muted" style="margin:0 0 6px;">votou em '+lista.length+' jogador'+(lista.length>1?'es':'')+'</p>';
         lista.forEach(v=>{
           h += '<div class="list-row"><span>'+escapeHtml(nomeJ(v.avaliadoId))+timeCoracaoSuffixDoId(v.avaliadoId)+'</span><span class="row-right">'+starsHtml(v.nota)+'</span></div>';
         });
@@ -1049,8 +1103,8 @@ async function abrirPerformance(jogadorId){
   m.setAttribute('data-action','fechar-performance');
   m.innerHTML = '<div class="perf-card" role="dialog" aria-modal="true" data-action="noop">'+
     '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
-    '<h3 class="titulo-centralizado" style="margin:0 24px 2px;">'+escapeHtml(nome)+timeCoracaoSuffixDoId(jogadorId)+'</h3>'+
-    '<p class="rodada-sub">Desempenho ao longo do tempo</p>'+
+    '<h2 class="perf-nome">'+escapeHtml(nome)+timeCoracaoSuffixDoId(jogadorId)+'</h2>'+
+    '<p class="perf-sub">Performance da Jornada</p>'+
     '<div id="perf-body"><div class="empty">Carregando…</div></div></div>';
   document.getElementById('shell').appendChild(m);
   let data;
@@ -1348,7 +1402,7 @@ async function renderAdmin(){
 
   if(can('conteudo')){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
-    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nome)+'" '+(j.nome===sel?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
+    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
@@ -1387,7 +1441,7 @@ async function renderAdmin(){
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-aluguel">Salvar aluguel</button></div>';
 
   const gestaoOpc = sel => '<option value="">—</option>'+
-    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nome)+'" '+(j.nome===sel?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
+    state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   html += '<div class="card"><h3>Gestão (tela inicial)</h3>'+
     '<p class="small muted">O telefone do WhatsApp vem do cadastro do jogador (aba Elenco).</p>'+
     '<div class="field"><label>Presidente</label><select id="gestao-presidente">'+gestaoOpc(gestao.presidente)+'</select></div>'+
