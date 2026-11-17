@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 17;
+const APP_BUILD = 18;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -176,6 +176,10 @@ try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEF
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
 // saldo em caixa = saldo atual da conta corrente do time (entra no fluxo de caixa)
 try{ db.exec("ALTER TABLE config ADD COLUMN saldo_caixa REAL NOT NULL DEFAULT 0"); }catch(e){}
+// valor de mensalidade INDIVIDUAL do jogador (NULL = usa o valor do card Aluguel da quadra)
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN valor_mensalidade REAL"); }catch(e){}
+// data (YYYY-MM-DD) em que o jogador passou a estar EM ATRASO (para contar os dias)
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN atraso_desde TEXT"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -708,12 +712,37 @@ app.post('/api/login', loginLimiter, (req,res)=>{
   res.json({token, jogador:jogadorPublico(jogador)});
 });
 
+/* ---- mensalidade: valor individual e dias em atraso ---- */
+function hojeSP(){ return spWallClockNow().slice(0,10); }
+function diasEntreDatas(de, ate){
+  const [y1,m1,d1] = de.split('-').map(Number), [y2,m2,d2] = ate.split('-').map(Number);
+  return Math.round((Date.UTC(y2,m2-1,d2) - Date.UTC(y1,m1-1,d1)) / 86400000);
+}
+// dias em atraso (só para quem está EM ATRASO e tem a data de início registrada)
+function diasEmAtraso(j){
+  if(!j || j.mensalidade!=='em_atraso' || !j.atraso_desde) return null;
+  return Math.max(0, diasEntreDatas(j.atraso_desde, hojeSP()));
+}
+// troca o status de mensalidade mantendo a data de início do atraso coerente
+function aplicarMensalidade(jogadorId, novo){
+  const j = getJogadorPorId(jogadorId);
+  if(!j) return;
+  let desde = null;
+  if(novo === 'em_atraso') desde = (j.mensalidade==='em_atraso' && j.atraso_desde) ? j.atraso_desde : hojeSP();
+  db.prepare('UPDATE jogadores SET mensalidade=?, atraso_desde=? WHERE id=?').run(novo, desde, jogadorId);
+}
+// jogadores que já estavam em atraso antes desta versão não têm data: começa a contar de hoje
+function garantirDatasDeAtraso(){
+  try{ db.prepare("UPDATE jogadores SET atraso_desde=? WHERE mensalidade='em_atraso' AND (atraso_desde IS NULL OR atraso_desde='')").run(hojeSP()); }catch(e){}
+}
+
 function jogadorPublico(j){
   return {
     id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao,
     admin:!!j.admin, superAdmin:!!j.super_admin,
     perms: (j.admin_perms||'').split(',').filter(Boolean),
     mensalidade: j.mensalidade || '',
+    diasAtraso: diasEmAtraso(j),
     corneta: !!j.corneta,
     timeCoracao: j.time_coracao || '',
     deptoMedico: !!j.depto_medico,
@@ -813,6 +842,8 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     admin:!!j.admin, superAdmin:!!j.super_admin,
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
     mensalidade:j.mensalidade||'', telefone:j.telefone||'',
+    valorMensalidade: j.valor_mensalidade==null ? '' : j.valor_mensalidade,
+    diasAtraso: diasEmAtraso(j),
     corneta:!!j.corneta, timeCoracao:j.time_coracao||'',
     deptoMedico:!!j.depto_medico,
   }));
@@ -856,7 +887,17 @@ function montarRelatorioFinanceiro(){
     const linhas = jogadores.filter(j=>{
       const st = ['em_dia','em_atraso','isenta'].includes(j.mensalidade) ? j.mensalidade : '';
       return st === s.campo;
-    }).map(j=>({id:j.id, nome:j.nome, valor: (s.chave==='em_dia'||s.chave==='em_atraso') ? (valorUnit||0) : 0}));
+    }).map(j=>{
+      const cobra = (s.chave==='em_dia' || s.chave==='em_atraso');
+      const individual = j.valor_mensalidade!=null;
+      return {
+        id:j.id, nome:j.nome,
+        valor: cobra ? (individual ? j.valor_mensalidade : (valorUnit||0)) : 0,
+        valorIndividual: individual ? j.valor_mensalidade : null,   // valor cadastrado no jogador (ou null = padrão)
+        diasAtraso: s.chave==='em_atraso' ? diasEmAtraso(j) : null,
+        atrasoDesde: s.chave==='em_atraso' ? (j.atraso_desde||null) : null,
+      };
+    });
     return {chave:s.chave, label:s.label, qtd:linhas.length, total:linhas.reduce((t,l)=>t+l.valor,0), linhas};
   });
   const tot = k => (grupos.find(g=>g.chave===k)||{total:0}).total;
@@ -906,8 +947,34 @@ app.put('/api/admin/custos', requireSuper, (req,res)=>{
   res.json({ok:true});
 });
 
+// Gestão: valor de mensalidade individual e (se EM ATRASO) a data de início do atraso.
+// Disponível para qualquer usuário com status ADMIN.
+app.put('/api/admin/jogadores/:id/financeiro', requireAdmin, (req,res)=>{
+  const j = getJogadorPorId(req.params.id);
+  if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
+  const b = req.body || {};
+  if(b.valor !== undefined){
+    const bruto = String(b.valor==null ? '' : b.valor).trim();
+    let v = null;
+    if(bruto !== ''){
+      const n = parseValorBR(bruto);
+      if(n==null || n<0 || n>100000) return res.status(400).json({erro:'Valor de mensalidade inválido.'});
+      v = Math.round(n*100)/100;
+    }
+    db.prepare('UPDATE jogadores SET valor_mensalidade=? WHERE id=?').run(v, j.id);
+  }
+  if(b.atrasoDesde !== undefined && j.mensalidade === 'em_atraso'){
+    const d = String(b.atrasoDesde||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({erro:'Data de início do atraso inválida.'});
+    if(d > hojeSP()) return res.status(400).json({erro:'A data de início do atraso não pode ser futura.'});
+    db.prepare('UPDATE jogadores SET atraso_desde=? WHERE id=?').run(d, j.id);
+  }
+  logEvento('Financeiro do jogador "'+j.nome+'" atualizado (valor individual / início do atraso).');
+  res.json({ok:true});
+});
+
 // Saldo em caixa: valor atualizado do saldo em conta corrente do time (aceita negativo).
-app.put('/api/admin/saldo-caixa', requireSuper, (req,res)=>{
+app.put('/api/admin/saldo-caixa', requireAdmin, (req,res)=>{
   const bruto = String((req.body||{}).saldo==null ? '' : req.body.saldo).trim();
   let saldo = 0;
   if(bruto!==''){
@@ -999,7 +1066,8 @@ function gerarPdfRelatorio(rel, filtro){
       d.garantir(18, ()=>{ d.texto(d.M, d.y, g.label+' (continuação)', 10, true); d.y -= 16; });
       if(i%2===1) d.faixa(d.y-4, 15, 0.96);
       d.texto(d.M+4, d.y, String(i+1), 9, false);
-      d.texto(d.M+28, d.y, l.nome, 10, false);
+      d.texto(d.M+28, d.y, l.nome + (l.valorIndividual!=null ? ' *' : ''), 10, false);
+      if(g.chave==='em_atraso' && l.diasAtraso!=null) d.texto(330, d.y, l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso', 9, false);
       d.texto(d.RIGHT-4, d.y, fmtBRL(l.valor), 10, false, 'right');
       d.y -= 15;
     });
@@ -1016,6 +1084,10 @@ function gerarPdfRelatorio(rel, filtro){
     d.texto(d.M+160, d.y, rel.qtd+' jogadores', 9, true);
     d.texto(d.RIGHT-4, d.y, fmtBRL(rel.totalGeral), 11, true, 'right');
     d.y -= 24;
+  }
+  if(grupos.some(g=>g.linhas.some(l=>l.valorIndividual!=null))){
+    d.garantir(20, null);
+    d.texto(d.M, d.y, '* valor de mensalidade individual do jogador (os demais usam o valor padr\u00E3o).', 8, false); d.y -= 14;
   }
   if(rel.aviso){ d.garantir(20, null); d.texto(d.M, d.y, 'Atenção: defina o valor da mensalidade no card Aluguel da quadra.', 9, false); }
   return d.build();
@@ -1086,7 +1158,7 @@ app.put('/api/admin/jogadores/:id/mensalidade', requirePerm('mensalidades'), (re
   if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
   const val = String(req.body.mensalidade||'');
   if(!MENSALIDADE_VALORES.includes(val)) return res.status(400).json({erro:'Valor de mensalidade inválido.'});
-  db.prepare('UPDATE jogadores SET mensalidade=? WHERE id=?').run(val, j.id);
+  aplicarMensalidade(j.id, val);
   res.json({ok:true});
 });
 app.post('/api/admin/jogadores', requireSuper, (req,res)=>{
@@ -1131,8 +1203,20 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
     timeCoracao = String(req.body.timeCoracao);
   }
   const deptoMedico = req.body.deptoMedico!=null ? (req.body.deptoMedico?1:0) : (j.depto_medico||0);
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,mensalidade=?,telefone=?,corneta=?,time_coracao=?,depto_medico=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,mensalidade,telefone,corneta,timeCoracao,deptoMedico,j.id);
+  // valor de mensalidade individual ('' = volta ao valor padrão do card Aluguel da quadra)
+  let valorMens = j.valor_mensalidade==null ? null : j.valor_mensalidade;
+  if(req.body.valorMensalidade!==undefined){
+    const bruto = String(req.body.valorMensalidade==null ? '' : req.body.valorMensalidade).trim();
+    if(bruto===''){ valorMens = null; }
+    else{
+      const n = parseValorBR(bruto);
+      if(n==null || n<0 || n>100000) return res.status(400).json({erro:'Valor de mensalidade inválido.'});
+      valorMens = Math.round(n*100)/100;
+    }
+  }
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,telefone=?,corneta=?,time_coracao=?,depto_medico=?,valor_mensalidade=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,telefone,corneta,timeCoracao,deptoMedico,valorMens,j.id);
+  aplicarMensalidade(j.id, mensalidade);
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
@@ -1678,6 +1762,7 @@ function resetMensalidadeMensalSeNecessario(){
 }
 setInterval(resetMensalidadeMensalSeNecessario, 60*1000);
 resetMensalidadeMensalSeNecessario();
+garantirDatasDeAtraso();
 
 app.listen(PORT, ()=>{
   console.log('Bolerage F.D. rodando na porta ' + PORT);

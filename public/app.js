@@ -148,6 +148,7 @@ const state = {
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
   gestaoFiltro: 'todos',
+  editandoFinId: null,
   relatorioFin: null,
   homeExtras: null,
   eventoAbertoId: null,  // id do evento (card "Eventos") aberto agora, sobrevive aos re-renders do polling
@@ -317,7 +318,8 @@ function renderTopbar(){
     '<button data-action="logout">Sair</button>';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
-    ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span></div>'
+    ? '<div class="who-mens-line">Craque, sua mensalidade está&nbsp;&nbsp;<span class="who-mens '+m.cls+'">'+m.lbl+' '+m.emoji+'</span>'+
+        ((state.currentPlayer.mensalidade==='em_atraso' && state.currentPlayer.diasAtraso!=null) ? '<span class="who-atraso">&nbsp;('+state.currentPlayer.diasAtraso+' dia'+(state.currentPlayer.diasAtraso===1?'':'s')+')</span>' : '')+'</div>'
     : '';
   const whoHtml = '<div class="who-row1">'+
       '<span class="who-name">'+saudacao()+', '+escapeHtml(nomeExibicaoMeu())+' !'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
@@ -427,6 +429,9 @@ function renderTrocarPin(){
   const v = x => escapeHtml(x==null ? '' : String(x));
   document.getElementById('content').innerHTML =
     '<div class="card"><h2>Meu Perfil</h2>'+
+    (p.mensalidade==='em_atraso'
+      ? '<div class="aviso-atraso">⚠️ Sua mensalidade está <strong>EM ATRASO</strong>'+(p.diasAtraso!=null ? ' há <strong>'+p.diasAtraso+' dia'+(p.diasAtraso===1?'':'s')+'</strong>' : '')+'. Procure o administrador para regularizar.</div>'
+      : '')+
     '<p class="small muted">Todos os campos são opcionais — preencha só o que quiser.</p>'+
     '<div class="field"><label>Apelido</label><input id="perfil-apelido" maxlength="30" value="'+v(p.apelido)+'" placeholder="Como o pessoal te chama"></div>'+
     '<label class="small perfil-check"><input type="checkbox" id="perfil-usar-apelido" '+(p.usarApelido?'checked':'')+'> Exibir meu APELIDO em todo o app (no lugar do meu nome)</label>'+
@@ -1400,6 +1405,7 @@ async function renderAdmin(){
             '<div class="small muted" style="margin-top:2px;">Áreas do acesso admin:</div>'+
             permsDisp.map(p=>'<label class="small" style="margin-left:12px;"><input type="checkbox" id="edit-perm-'+p+'-'+j.id+'" '+((j.adminPerms||[]).includes(p)?'checked':'')+'> '+permLabel(p)+'</label>').join(''))+
         '<label class="small">Mensalidade: <select id="edit-mens-'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></label>'+
+        '<label class="small">Valor da mensalidade deste jogador (R$): <input id="edit-valor-'+j.id+'" inputmode="decimal" value="'+inputValorBRL(j.valorMensalidade)+'" placeholder="vazio = valor padrão (Aluguel da quadra)"></label>'+
         '<label class="small">Time do coração: <select id="edit-time-'+j.id+'">'+timeCoracaoOptionsHtml(j.timeCoracao)+'</select></label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-jogador" data-id="'+j.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao">Cancelar</button></div></div>';
@@ -1408,7 +1414,8 @@ async function renderAdmin(){
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
         (j.corneta?' <span class="badge">🎺🥜 corneta</span>':'')+
         (j.deptoMedico?' <span class="badge">🚑 depto. médico</span>':'')+
-        (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+'</span>':'')+
+        (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+((j.mensalidade==='em_atraso' && j.diasAtraso!=null)?' • '+j.diasAtraso+' dia'+(j.diasAtraso===1?'':'s'):'')+'</span>':'')+
+        (j.valorMensalidade!==''?' <span class="badge">'+fmtBRLfront(Number(j.valorMensalidade))+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
         (j.superAdmin?'':'<button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button>')+'</span></div>';
@@ -1567,7 +1574,7 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<div style="text-align:right;"><span class="small muted">Valor da mensalidade</span><div class="rel-destaque">'+(rel.valorUnitario==null?'—':fmtBRLfront(rel.valorUnitario))+'</div></div>'+
   '</div>';
   if(rel.aviso) h += '<p class="small" style="color:var(--gold);">⚠️ '+escapeHtml(rel.aviso)+'</p>';
-  h += '<p class="small muted" style="margin:0 0 8px;">O valor vem do card Aluguel da quadra. Só jogadores Em dia e Em atraso têm valor; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
+  h += '<p class="small muted" style="margin:0 0 8px;">O valor padrão vem do card Aluguel da quadra; jogadores com valor individual usam o próprio valor. Só Em dia e Em atraso têm valor; Isento e Sem status contam R$ 0,00. Gerado em '+g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' às '+g.slice(11,16)+'.</p>';
 
   // filtros por status
   h += '<div class="filtros-fin">'+
@@ -1580,7 +1587,23 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     h += '<div class="rel-grupo"><div class="rel-grupo-tit"><span class="badge '+badgeCls[gr.chave]+'">'+gr.label+'</span><span class="small muted">'+gr.qtd+' jogador'+(gr.qtd===1?'':'es')+'</span></div>';
     if(gr.linhas.length){
       gr.linhas.forEach(l=>{
-        h += '<div class="list-row"><span>'+escapeHtml(l.nome)+'</span><span class="row-right">'+fmtBRLfront(l.valor)+'</span></div>';
+        const editando = state.editandoFinId===l.id;
+        const individual = l.valorIndividual!=null;
+        h += '<div class="list-row"><span>'+escapeHtml(l.nome)+(individual?' <span class="badge" title="Valor de mensalidade individual">individual</span>':'')+
+          (gr.chave==='em_atraso' && l.diasAtraso!=null ? ' <span class="atraso-dias">'+l.diasAtraso+' dia'+(l.diasAtraso===1?'':'s')+' em atraso</span>' : '')+'</span>'+
+          '<span class="row-right">'+fmtBRLfront(l.valor)+' <button class="btn secondary small" data-action="fin-editar" data-id="'+l.id+'">'+(editando?'fechar':'editar')+'</button></span></div>';
+        if(editando){
+          h += '<div class="fin-edit">'+
+            '<div class="field"><label>Valor da mensalidade de '+escapeHtml(l.nome)+' (R$)</label>'+
+              '<input id="fin-valor-'+l.id+'" inputmode="decimal" value="'+inputValorBRL(l.valorIndividual)+'" placeholder="vazio = valor padrão ('+(rel.valorUnitario==null?'não definido':fmtBRLfront(rel.valorUnitario))+')"></div>'+
+            (gr.chave==='em_atraso'
+              ? '<div class="field"><label>Em atraso desde</label><input type="date" id="fin-desde-'+l.id+'" value="'+(l.atrasoDesde||'')+'"></div>'
+              : '')+
+            '<p class="small muted">Deixe o valor vazio para usar o valor padrão do card Aluguel da quadra. O valor só é cobrado quando o status é Em dia ou Em atraso.</p>'+
+            '<div class="btn-row"><button class="btn small" data-action="fin-salvar" data-id="'+l.id+'">Salvar</button>'+
+            '<button class="btn secondary small" data-action="fin-editar" data-id="'+l.id+'">Cancelar</button></div>'+
+          '</div>';
+        }
       });
     }else{
       h += '<p class="small muted" style="margin:6px 0;">Nenhum jogador neste status.</p>';
@@ -1598,12 +1621,10 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
   // saldo em caixa (conta corrente) e custos da quadra — só o Super Admin edita; demais admins só visualizam
   const c = rel.custos;
   h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Saldo em caixa</h4>';
-  if(podeEditar){
+  {
     h += '<p class="small muted">Informe o saldo atualizado da conta corrente do time. Ele entra no cálculo do fluxo de caixa. Aceita negativo (ex.: -150,00).</p>'+
       '<div class="field"><label>Saldo em caixa (R$)</label><input id="saldo-caixa" inputmode="decimal" value="'+inputValorBRL(rel.saldoCaixa)+'" placeholder="0,00"></div>'+
       '<button class="btn secondary" data-action="salvar-saldo-caixa">Salvar saldo em caixa</button>';
-  }else{
-    h += '<div class="list-row"><span>Saldo atual em caixa</span><span class="row-right"><strong>'+fmtBRLfront(rel.saldoCaixa)+'</strong></span></div>';
   }
 
   h += '<div class="divider"></div><h4 style="margin:0 0 6px;">Custos da quadra</h4>';
@@ -1637,6 +1658,17 @@ function renderRelatorioFinanceiroHtml(rel, podeEditar){
     '<div class="rel-total"><span>SALDO PREVISTO <span class="small muted">(saldo em caixa + receitas − despesas)</span></span><strong style="color:'+saldoCor+';">'+fmtBRLfront(rel.saldoPrevisto)+'</strong></div>'+
     '<button class="btn" style="margin-top:12px;" data-action="baixar-pdf" data-url="/api/admin/fluxo-caixa.pdf" data-arq="fluxo-de-caixa-'+rel.referencia+'.pdf">📄 Gerar PDF do fluxo de caixa</button>';
   return h;
+}
+async function handleSalvarFinanceiroJogador(id){
+  const body = {valor: document.getElementById('fin-valor-'+id).value};
+  const desde = document.getElementById('fin-desde-'+id);
+  if(desde && desde.value) body.atrasoDesde = desde.value;
+  try{
+    await api('/api/admin/jogadores/'+id+'/financeiro', {method:'PUT', adminAuth:true, body});
+    state.editandoFinId = null;
+    await render();
+    showToast('Salvo!');
+  }catch(e){ alert(e.message); }
 }
 async function handleSalvarSaldoCaixa(){
   try{
@@ -1718,6 +1750,8 @@ async function handleSalvarJogador(id){
   const corneta = document.getElementById('edit-corneta-'+id).checked;
   const deptoMedico = document.getElementById('edit-depto-medico-'+id).checked;
   const body = {nome,pin,posicaoPadrao,ativo,corneta,deptoMedico};
+  const valorEl = document.getElementById('edit-valor-'+id);
+  if(valorEl) body.valorMensalidade = valorEl.value;
   const adminEl = document.getElementById('edit-admin-'+id);
   if(adminEl){
     body.admin = adminEl.checked;
@@ -1921,6 +1955,8 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
   if(action==='salvar-custos') return handleSalvarCustos();
   if(action==='salvar-saldo-caixa') return handleSalvarSaldoCaixa();
+  if(action==='fin-editar'){ state.editandoFinId = (state.editandoFinId===el.dataset.id) ? null : el.dataset.id; return render(); }
+  if(action==='fin-salvar') return handleSalvarFinanceiroJogador(el.dataset.id);
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
