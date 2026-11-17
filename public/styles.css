@@ -881,3 +881,6 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .kpi-sm .kpi-rot{font-size:11px;line-height:1.2;}
 .kpi-vermelho{border-color:var(--red);background:rgba(226,87,76,.14);} .kpi-vermelho .kpi-num{color:#FF8D84;}
 .kpi-laranja{border-color:#F0902E;background:rgba(240,144,46,.14);} .kpi-laranja .kpi-num{color:#F5B061;}
+/* login: respiro entre o logo e "Digite seu PIN" */
+.login-halo{margin-bottom:clamp(16px,3.4dvh,32px);}
+.login-logo{width:clamp(76px,16dvh,180px);height:clamp(76px,16dvh,180px);}
