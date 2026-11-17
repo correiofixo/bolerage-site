@@ -208,7 +208,7 @@ function renderCardSaude(){
   const cl = classificarIMC(imc);
   const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
   const valorFmt = imc.toFixed(1).replace('.',',');
-  return '<div class="card accent-green"><h3>Minha Saúde:</h3>'+
+  return '<div class="card accent-green"><h3>Departamento Médico:</h3>'+
     '<div class="imc-box">'+
       '<div class="imc-linha"><span class="imc-sigla">IMC</span><span class="imc-valor"'+(menor?'':' style="color:'+cl.cor+'"')+'>'+valorFmt+'</span></div>'+
       (menor
@@ -552,25 +552,38 @@ function posicaoNoRankingGeral(jogadorId){
   const zona = i<5 ? 'top5' : i<10 ? 'top10' : (n>10 && i>=Math.max(10, n-5)) ? 'under5' : 'meio';
   return {pos:i+1, total:n, zona};
 }
+// cada card da tela inicial é uma "parte"; a ordem de exibição é escolhida pelo admin
+const ORDEM_INICIO_PADRAO = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
+const NOMES_CARDS_INICIO = {
+  rodada:'Rodada do Próximo Domingão', status_carreira:'Status da Carreira', se_liga:'Se Liga - Craque',
+  departamento_medico:'Departamento Médico', eventos:'Eventos', pagamento:'Dados para Pagamento (Aluguel da Quadra)', gestao:'Gestão Atual',
+};
+function ordemCardsInicio(){
+  const salva = (state.homeExtras && state.homeExtras.ordem) || [];
+  const out = [];
+  salva.forEach(k=>{ if(ORDEM_INICIO_PADRAO.includes(k) && !out.includes(k)) out.push(k); });
+  ORDEM_INICIO_PADRAO.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+  return out;
+}
+function montarCardsInicio(partes){ return ordemCardsInicio().map(k=>partes[k]||'').join(''); }
 function renderExtrasIniciais(){
-  const ex = state.homeExtras;
-  if(!ex) return '';
-  let html = '';
+  const ex = state.homeExtras || {};
+  const p = {};
   if(ex.noticia && ex.noticia.descricao){
-    html += '<div class="card accent-gold"><h3>Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
+    p.se_liga = '<div class="card accent-gold"><h3>Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
-  // Meu Score Atual (+ Minha Saúde) fica ACIMA de Eventos; tocar nas estrelas abre a Performance da Jornada
+  // Status da Carreira (tocar nas estrelas abre a Performance) e Departamento Médico
   if(state.currentPlayer){
     const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
-    html += '<div class="card accent-gold"><h3>Meu Score Atual:</h3>'+
-      '<div class="meu-score-box meu-score-click" data-action="ranking-jogador" data-id="'+state.currentPlayer.id+'" title="Toque para ver sua Performance da Jornada">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
-      '<p class="small muted" style="text-align:center;margin:6px 0 0;">Toque nas estrelas para ver sua Performance da Jornada</p>'+
+    p.status_carreira = '<div class="card accent-gold"><h3>Status da Carreira:</h3>'+
+      '<div class="meu-score-box meu-score-click" data-action="ranking-jogador" data-id="'+state.currentPlayer.id+'" title="Toque para ver sua Performance">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
+      '<p class="small muted" style="text-align:center;margin:6px 0 0;">Toque nas estrelas para ver sua Performance</p>'+
       renderMinhaPosicao()+
       '</div>';
-    html += renderCardSaude();
+    p.departamento_medico = renderCardSaude();
   }
   if(ex.eventos && ex.eventos.length){
-    html += '<div class="card accent-green"><h3>Eventos:</h3>';
+    let html = '<div class="card accent-green"><h3>Eventos:</h3>';
     ex.eventos.forEach(e=>{
       const desc = (e.descricao||'').trim();
       const resp = (e.responsavel||'').trim();
@@ -588,9 +601,10 @@ function renderExtrasIniciais(){
       }
     });
     html += '</div>';
+    p.eventos = html;
   }
   if(ex.aluguel){
-    html += '<div class="card accent-orange"><h3>Dados para Pagamento - (Aluguel da Quadra):</h3>'+
+    p.pagamento = '<div class="card accent-orange"><h3>Dados para Pagamento - (Aluguel da Quadra):</h3>'+
       '<div class="list-row"><span>Nome</span><span>'+escapeHtml(ex.aluguel.nome)+'</span></div>'+
       '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(ex.aluguel.chavePix)+'</span>'+
         (ex.aluguel.chavePix ? '<button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(ex.aluguel.chavePix)+'">Copiar</button>' : '')+
@@ -605,12 +619,12 @@ function renderExtrasIniciais(){
         (link ? '<a class="wa-link" href="'+link+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+
       '</span></div>';
     };
-    html += '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
+    p.gestao = '<div class="card accent-cyan"><h3>Gestão Atual:</h3>'+
       linhaG('Presidente', nomeExibicaoPorNomeReal(ex.gestao.presidente), ex.gestao.presidenteTel)+
       linhaG('Vice-Presidente', nomeExibicaoPorNomeReal(ex.gestao.vicePresidente), ex.gestao.viceTel)+
       '</div>';
   }
-  return html;
+  return p;
 }
 
 function linhaListaPresenca(j, ehConvidado){
@@ -628,9 +642,10 @@ function renderInicio(){
     dica = '<div class="info-box">Dica: em "Meu Perfil" (no topo da tela) você troca seu PIN e completa seus dados: celular, time do coração, apelido, idade, peso e altura.</div>';
     state.mostrouDicaPin = true;
   }
-  const extrasHtml = renderExtrasIniciais();
+  const partes = renderExtrasIniciais();
   if(!rodada){
-    c.innerHTML = dica+'<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>'+extrasHtml;
+    partes.rodada = '<div class="empty">Nenhuma rodada agendada ainda.<br>Peça para o administrador criar a próxima rodada.</div>';
+    c.innerHTML = dica + montarCardsInicio(partes);
     return;
   }
   const fase = rodada.fase;
@@ -714,7 +729,8 @@ function renderInicio(){
     }
   }
   html += '</div>';
-  c.innerHTML = dica + html + extrasHtml;
+  partes.rodada = html;
+  c.innerHTML = dica + montarCardsInicio(partes);
 }
 
 function renderTogglePresenca(meuStatus, souCorneta){
@@ -802,9 +818,16 @@ function renderRifasHtml(){
     (atual.premio ? '<div class="rifa-premio"><span class="rifa-premio-rot">🎁 Prêmio</span><strong>'+escapeHtml(atual.premio)+'</strong></div>' : '')+
   '</div>';
   if(rifas.length>1){
-    h += '<div class="card"><h3 class="titulo-centralizado">Ganhadores anteriores</h3>';
+    // Hall da Fama: destaque dourado + selo "🔥 N× ganhador" para quem ganhou mais de uma vez
+    const vit = {};
+    rifas.forEach(r=>{ const k = String(r.ganhador).trim().toLowerCase(); vit[k] = (vit[k]||0)+1; });
+    h += '<div class="rifa-hall"><div class="rifa-hall-tit">🏅 HALL DA FAMA</div><div class="rifa-hall-sub">Ganhadores anteriores</div>';
     rifas.slice(1).forEach(r=>{
-      h += '<div class="list-row"><span><strong>'+escapeHtml(nomeExibicaoPorNomeReal(r.ganhador))+'</strong><br><span class="small muted">'+escapeHtml(r.premio||'—')+'</span></span><span class="badge">'+formatDataBR(r.data)+'</span></div>';
+      const n = vit[String(r.ganhador).trim().toLowerCase()];
+      h += '<div class="rifa-hall-item'+(n>1?' rifa-hall-repete':'')+'"><div class="rifa-hall-trofeu">'+(n>1?'👑':'🏆')+'</div>'+
+        '<div class="rifa-hall-info"><div class="rifa-hall-nome">'+escapeHtml(nomeExibicaoPorNomeReal(r.ganhador))+(n>1?' <span class="rifa-hall-x">🔥 '+n+'× ganhador</span>':'')+'</div>'+
+        '<div class="rifa-hall-premio">🎁 '+escapeHtml(r.premio||'sem prêmio informado')+'</div></div>'+
+        '<span class="rifa-hall-data">'+formatDataBR(r.data)+'</span></div>';
     });
     h += '</div>';
   }
@@ -1188,7 +1211,7 @@ async function abrirPerformance(jogadorId){
   m.innerHTML = '<div class="perf-card" role="dialog" aria-modal="true" data-action="noop">'+
     '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
     '<h2 class="perf-nome">'+escapeHtml(nome)+timeCoracaoSuffixDoId(jogadorId)+'</h2>'+
-    '<p class="perf-sub">Performance da Jornada</p>'+
+    '<p class="perf-sub">Performance</p>'+
     '<div id="perf-body"><div class="empty">Carregando…</div></div></div>';
   document.getElementById('shell').appendChild(m);
   let data;
@@ -1451,7 +1474,7 @@ async function renderAdmin(){
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
     try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
-    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista();
+    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista(); await refreshHomeExtras();
     try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
@@ -1584,6 +1607,16 @@ async function renderAdmin(){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
     state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
+  // card ORDEM: escolhe a sequência dos cards da tela inicial
+  {
+    const ordem = ordemCardsInicio();
+    html += '<div class="card"><h3>Ordem dos cards da tela inicial</h3>'+
+      '<p class="small muted">Use as setas para escolher a sequência em que os cards aparecem na tela inicial de todos os jogadores. A mudança vale na hora.</p>'+
+      ordem.map((k,i)=>'<div class="ordem-item"><span class="ordem-num">'+(i+1)+'</span><span class="ordem-nome">'+escapeHtml(NOMES_CARDS_INICIO[k]||k)+'</span>'+
+        '<span class="ordem-btns"><button class="btn secondary small" data-action="home-ordem-subir" data-k="'+k+'" '+(i===0?'disabled':'')+' aria-label="Subir">▲</button>'+
+        '<button class="btn secondary small" data-action="home-ordem-descer" data-k="'+k+'" '+(i===ordem.length-1?'disabled':'')+' aria-label="Descer">▼</button></span></div>').join('')+
+      '<button class="btn secondary" style="margin-top:10px;" data-action="home-ordem-padrao">Restaurar ordem padrão</button></div>';
+  }
   // card RIFAS: cadastra o ganhador e o prêmio da rifa de uma rodada (aparece em Resenha > Rifas)
   {
     const rodsOrd = [...(state.rodadasLista||[])].sort((a,b)=>a.data<b.data?1:-1);
@@ -1940,6 +1973,22 @@ function renderRelatorioFinanceiroHtml(rel, podeEditarCustos){
   return h;
 }
 // salva o valor da mensalidade do jogador (igual ao padrão => volta a usar o padrão)
+async function handleMoverCardInicio(chave, delta){
+  const ordem = ordemCardsInicio();
+  const i = ordem.indexOf(chave), j = i + delta;
+  if(i<0 || j<0 || j>=ordem.length) return;
+  [ordem[i], ordem[j]] = [ordem[j], ordem[i]];
+  try{
+    await api('/api/admin/home-ordem', {method:'PUT', adminAuth:true, body:{ordem}});
+    await refreshHomeExtras(); await render();
+  }catch(e){ alert(e.message); }
+}
+async function handleOrdemPadraoInicio(){
+  try{
+    await api('/api/admin/home-ordem', {method:'PUT', adminAuth:true, body:{padrao:true}});
+    await refreshHomeExtras(); await render(); showToast('Ordem padrão restaurada');
+  }catch(e){ alert(e.message); }
+}
 async function handleSalvarRifa(limpar, rodadaId){
   const rid = rodadaId || state.rifaRodadaId;
   if(!rid){ alert('Nenhuma rodada selecionada.'); return; }
@@ -2259,6 +2308,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='elenco-aba'){ state.elencoAba = el.dataset.aba; return render(); }
   if(action==='baixar-pdf') return handleBaixarPdf(el.dataset.url, el.dataset.arq);
   if(action==='gestao-filtro'){ state.gestaoFiltro = el.dataset.f; return render(); }
+  if(action==='home-ordem-subir') return handleMoverCardInicio(el.dataset.k, -1);
+  if(action==='home-ordem-descer') return handleMoverCardInicio(el.dataset.k, 1);
+  if(action==='home-ordem-padrao') return handleOrdemPadraoInicio();
   if(action==='salvar-rifa') return handleSalvarRifa(false);
   if(action==='rifa-editar'){
     state.rifaRodadaId = el.dataset.id; await render();

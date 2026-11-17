@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 25;
+const APP_BUILD = 26;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -176,6 +176,8 @@ try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEF
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
 // RIFAS: ganhador e prêmio da rifa de cada rodada (cadastrado pelo admin, exibido na aba Rifas da Resenha)
 try{ db.exec("CREATE TABLE IF NOT EXISTS rifas (rodada_id TEXT PRIMARY KEY, ganhador TEXT NOT NULL DEFAULT '', premio TEXT NOT NULL DEFAULT '', atualizado_em TEXT)"); }catch(e){}
+// ordem dos cards da tela inicial (chaves separadas por vírgula; vazio = ordem padrão)
+try{ db.exec("ALTER TABLE config ADD COLUMN home_ordem TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // saldo em caixa = saldo atual da conta corrente do time (entra no fluxo de caixa)
 try{ db.exec("ALTER TABLE config ADD COLUMN saldo_caixa REAL NOT NULL DEFAULT 0"); }catch(e){}
 // valor de mensalidade INDIVIDUAL do jogador (NULL = usa o valor do card Aluguel da quadra)
@@ -1943,6 +1945,23 @@ app.put('/api/admin/rifas', requirePerm('conteudo'), (req,res)=>{
   res.json({ok:true});
 });
 
+/* ---- ordem dos cards da tela inicial ---- */
+const HOME_CARDS = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
+// usa só chaves conhecidas, sem repetir, e acrescenta no fim as que faltarem
+function normalizarOrdemHome(lista){
+  const out = [];
+  (Array.isArray(lista) ? lista : String(lista||'').split(',')).map(x=>String(x).trim()).forEach(k=>{ if(HOME_CARDS.includes(k) && !out.includes(k)) out.push(k); });
+  HOME_CARDS.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+  return out;
+}
+app.put('/api/admin/home-ordem', requirePerm('conteudo'), (req,res)=>{
+  const b = req.body || {};
+  const ordem = b.padrao ? [...HOME_CARDS] : normalizarOrdemHome(b.ordem);
+  db.prepare('UPDATE config SET home_ordem=? WHERE id=1').run(b.padrao ? '' : ordem.join(','));
+  logEvento('Ordem dos cards da tela inicial '+(b.padrao ? 'restaurada ao padrão' : 'atualizada')+'.');
+  res.json({ok:true, ordem});
+});
+
 /* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
 app.get('/api/home-extras', (req,res)=>{
   const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
@@ -1956,6 +1975,7 @@ app.get('/api/home-extras', (req,res)=>{
     noticia: (noticiaRow && noticiaRow.ativo) ? {descricao: noticiaRow.descricao} : null,
     aluguel: (aluguelRow && aluguelRow.ativo) ? {nome:aluguelRow.nome, chavePix:aluguelRow.chave_pix, valorMensalidade:aluguelRow.valor_mensalidade} : null,
     gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente, presidenteTel:telDoNome(gestaoRow.presidente), viceTel:telDoNome(gestaoRow.vice_presidente)} : null,
+    ordem: normalizarOrdemHome((getConfig()||{}).home_ordem),
   });
 });
 
