@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 12;
+const APP_BUILD = 13;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -158,6 +158,15 @@ try{ db.exec("ALTER TABLE config ADD COLUMN sorteio_modo TEXT NOT NULL DEFAULT '
 try{ db.exec("ALTER TABLE config ADD COLUMN sorteio_agendado TEXT"); }catch(e){}
 // 1 = a aba "Votos dos Jogadores" (Resenha) mostra quem votou em quem; 0 = oculta.
 try{ db.exec("ALTER TABLE config ADD COLUMN mostrar_votos INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+// admin marca jogador presente como RESERVA antes do sorteio manual (1 = reserva).
+try{ db.exec("ALTER TABLE confirmacoes ADD COLUMN reserva INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+// perfil do jogador (todos opcionais)
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN apelido TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN idade INTEGER"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN peso REAL"); }catch(e){}
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN altura INTEGER"); }catch(e){}
+// mês (YYYY-MM) em que a mensalidade foi zerada pela última vez
+try{ db.exec("ALTER TABLE config ADD COLUMN mensalidade_ref TEXT"); }catch(e){}
 
 // permissões concedíveis a um sub-admin (o Super Admin tem tudo, sempre).
 const PERMS_ADMIN = ['conteudo','mensalidades'];
@@ -315,7 +324,7 @@ function contarConvidados(rodadaId){
 }
 function calcViabilidade(rodadaId){
   const confirmados = getPorStatus(rodadaId, 'presente');
-  const linha = confirmados.filter(j=>j.posicao_padrao==='linha').length + contarConvidados(rodadaId);
+  const linha = confirmados.filter(j=>j.posicao_padrao==='linha' && !j.corneta).length + contarConvidados(rodadaId);
   const goleiro = confirmados.filter(j=>j.posicao_padrao==='goleiro').length;
   const viaPadrao = linha>=10 && goleiro>=2;
   const viaConversao = linha>=12;
@@ -515,15 +524,27 @@ function realizarSorteio(rodadaId){
   if(!v.viavel) return {ok:false, erro:'Jogo não viabilizado: confirmações insuficientes.'};
 
   // Goleiros NÃO entram no sorteio: ficam fixos na tela como "Goleiros Presentes".
+  // Cornetas também ficam de fora (só votam) — mas o convidado deles entra normalmente.
   const confirmados = getPorStatus(rodadaId, 'presente');
-  const linhaPoolReal = confirmados.filter(x=>x.posicao_padrao==='linha');
-  const guestRows = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND trouxe_convidado=1").all(rodadaId);
-  const guestPool = guestRows.map(g=>({id:'conv:'+g.jogador_id, posicao_padrao:'linha', isGuest:true, hostId:g.jogador_id}));
-  const linhaPool = [...linhaPoolReal, ...guestPool];
+  const info = {};
+  db.prepare("SELECT jogador_id, confirmado_em, trouxe_convidado, reserva FROM confirmacoes WHERE rodada_id=? AND status='presente'")
+    .all(rodadaId).forEach(r=>{ info[r.jogador_id] = r; });
+  const porCheckin = (a,b)=> String((info[a.hostId||a.id]||{}).confirmado_em||'').localeCompare(String((info[b.hostId||b.id]||{}).confirmado_em||''));
+  const linhaReal = confirmados.filter(x=>x.posicao_padrao==='linha' && !x.corneta);
+  // 1) cadastrados no app, na ordem de check-in (quem confirmou mais cedo tem prioridade)
+  const prioritarios = linhaReal.filter(x=>!info[x.id].reserva).sort(porCheckin);
+  // 2) prioridade baixa: reservas marcados pelo admin (sorteio manual) + convidados.
+  //    Eles formam os últimos times; só jogam se sobrar vaga.
+  const reservasMarcadas = linhaReal.filter(x=>info[x.id].reserva).sort(porCheckin);
+  const guestPool = Object.values(info).filter(r=>r.trouxe_convidado===1)
+    .map(r=>({id:'conv:'+r.jogador_id, posicao_padrao:'linha', isGuest:true, hostId:r.jogador_id}))
+    .sort(porCheckin);
+  const baixa = [...reservasMarcadas, ...guestPool];
+  const baixaSet = new Set(baixa);
 
   // times de 5 jogadores de linha (máx. 5 times). Se sobrarem 3 ou 4, formam mais um
   // time menor (ex.: 18 → 5+5+5+3); sobrando 1 ou 2 (ou além de 5 times) viram reservas.
-  const L = linhaPool.length;
+  const L = prioritarios.length + baixa.length;
   const cheios = Math.min(5, Math.floor(L/5));
   const sobraBruta = L - cheios*5;
   const caps = Array.from({length:cheios},()=>5);
@@ -534,18 +555,37 @@ function realizarSorteio(rodadaId){
   const usarFase2 = fase2Atingida(ranking);
   const ausencias = calcularAusencias();
 
-  let linhaOrdenada;
+  // quem entra em campo: segue a ordem de prioridade (cadastrados por check-in, depois
+  // reservas marcados e convidados). Quem passar do total de vagas vira reserva.
+  const ordemGeral = [...prioritarios, ...baixa];
+  const totalVagas = caps.reduce((a,b)=>a+b,0);
+  const campo = ordemGeral.slice(0, totalVagas);
+  const bancoReserva = ordemGeral.slice(totalVagas);
+  const campoBaixa = campo.filter(x=>baixaSet.has(x));
+  let campoPrior = campo.filter(x=>!baixaSet.has(x));
+
+  // convidados/reservas marcados vão juntos para o(s) ÚLTIMO(S) time(s): com 18 de linha
+  // (15 cadastrados + 3 convidados) sai um time só de convidados.
+  const preenchido = caps.map(()=>[]);
+  let iBaixa = 0;
+  for(let t=caps.length-1; t>=0 && iBaixa<campoBaixa.length; t--){
+    const n = Math.min(caps[t], campoBaixa.length-iBaixa);
+    preenchido[t] = campoBaixa.slice(iBaixa, iBaixa+n);
+    iBaixa += n;
+  }
+  const capsRestantes = caps.map((c,t)=>c-preenchido[t].length);
+
+  // os cadastrados em campo são distribuídos nas vagas restantes (equilibrado pela nota
+  // quando a fase 2 está ativa, aleatório antes disso)
   if(usarFase2){
     const mgLinha = mediaGlobalDoPapel(ranking,'linha');
-    linhaOrdenada = [...linhaPool].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha,ausencias) - mediaOuFallback(ranking,a.id,'linha',mgLinha,ausencias));
+    campoPrior = [...campoPrior].sort((a,b)=> mediaOuFallback(ranking,b.id,'linha',mgLinha,ausencias) - mediaOuFallback(ranking,a.id,'linha',mgLinha,ausencias));
   }else{
-    linhaOrdenada = shuffle(linhaPool);
+    campoPrior = shuffle(campoPrior);
   }
-  // convidados sempre priorizados como reserva: jogadores cadastrados primeiro (na ordem
-  // já calculada) e convidados sempre por último.
-  linhaOrdenada = [...linhaOrdenada.filter(x=>!x.isGuest), ...linhaOrdenada.filter(x=>x.isGuest)];
-
-  const {buckets: linhaBuckets, sobras: linhaReserva} = distribuirPorCapacidade(linhaOrdenada, caps, usarFase2);
+  const dist = distribuirPorCapacidade(campoPrior, capsRestantes, usarFase2);
+  const linhaBuckets = dist.buckets.map((b,t)=>[...b, ...preenchido[t]]);
+  const linhaReserva = [...dist.sobras, ...bancoReserva];
 
   const insertTime = db.prepare('INSERT INTO times_sorteados (id,rodada_id,nome_time,jogador_id,papel_na_partida) VALUES (?,?,?,?,?)');
   const insertReserva = db.prepare('INSERT INTO reservas (id,rodada_id,jogador_id) VALUES (?,?,?)');
@@ -561,7 +601,7 @@ function realizarSorteio(rodadaId){
     db.prepare('UPDATE rodadas SET status=? WHERE id=?').run('sorteado', rodadaId);
   });
   tx();
-  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'): '+caps.length+' time(s) ['+caps.join('+')+'], '+linhaReserva.length+' reserva(s), '+(confirmados.length-linhaPoolReal.length)+' goleiro(s) presente(s).');
+  logEvento('Sorteio realizado para a rodada de '+rodada.data+' ('+(usarFase2?'ponderado por nota':'aleatório')+'): '+caps.length+' time(s) ['+caps.join('+')+'], '+linhaReserva.length+' reserva(s), '+confirmados.filter(x=>x.posicao_padrao==='goleiro').length+' goleiro(s) presente(s), '+reservasMarcadas.length+' reserva(s) marcado(s), '+guestPool.length+' convidado(s).');
   return {ok:true};
 }
 
@@ -668,6 +708,11 @@ function jogadorPublico(j){
     corneta: !!j.corneta,
     timeCoracao: j.time_coracao || '',
     deptoMedico: !!j.depto_medico,
+    telefone: j.telefone || '',
+    apelido: j.apelido || '',
+    idade: j.idade==null ? '' : j.idade,
+    peso: j.peso==null ? '' : j.peso,
+    altura: j.altura==null ? '' : j.altura,
   };
 }
 
@@ -712,9 +757,38 @@ app.post('/api/trocar-pin', requireAuth, (req,res)=>{
   res.json({ok:true});
 });
 
+// Meu Perfil: todos os campos são opcionais (vazio = limpa o campo).
+app.put('/api/me/perfil', requireAuth, (req,res)=>{
+  const j = getJogadorPorId(req.jogadorId);
+  if(!j) return res.status(401).json({erro:'Sessão inválida.'});
+  const b = req.body || {};
+  const telefone = String(b.telefone==null ? (j.telefone||'') : b.telefone).replace(/[^\d+()\-\s]/g,'').slice(0,30);
+  let timeCoracao = j.time_coracao || '';
+  if(b.timeCoracao!=null){
+    if(!TIMES_CORACAO.includes(String(b.timeCoracao))) return res.status(400).json({erro:'Time do coração inválido.'});
+    timeCoracao = String(b.timeCoracao);
+  }
+  const apelido = String(b.apelido==null ? (j.apelido||'') : b.apelido).trim().slice(0,30);
+  const numOuNull = (v, min, max, rotulo, inteiro)=>{
+    if(v==null || String(v).trim()==='') return null;
+    const n = Number(String(v).replace(',','.'));
+    if(!Number.isFinite(n) || n<min || n>max) throw new Error(rotulo+' inválido(a) (use um valor entre '+min+' e '+max+').');
+    return inteiro ? Math.round(n) : Math.round(n*10)/10;
+  };
+  let idade, peso, altura;
+  try{
+    idade  = b.idade===undefined  ? j.idade  : numOuNull(b.idade, 5, 99, 'Idade', true);
+    peso   = b.peso===undefined   ? j.peso   : numOuNull(b.peso, 20, 250, 'Peso', false);
+    altura = b.altura===undefined ? j.altura : numOuNull(b.altura, 100, 230, 'Altura', true);
+  }catch(e){ return res.status(400).json({erro:e.message}); }
+  db.prepare('UPDATE jogadores SET telefone=?, time_coracao=?, apelido=?, idade=?, peso=?, altura=? WHERE id=?')
+    .run(telefone, timeCoracao, apelido, idade, peso, altura, j.id);
+  res.json({ok:true, jogador: jogadorPublico(getJogadorPorId(j.id))});
+});
+
 /* ---- elenco ---- */
 app.get('/api/elenco', (req,res)=>{
-  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, timeCoracao:j.time_coracao||''}));
+  const jogadores = getJogadores().map(j=>({id:j.id, nome:j.nome, posicaoPadrao:j.posicao_padrao, ativo:!!j.ativo, timeCoracao:j.time_coracao||'', corneta:!!j.corneta}));
   res.json({jogadores});
 });
 app.get('/api/admin/elenco', requireSuper, (req,res)=>{
@@ -832,6 +906,24 @@ app.put('/api/admin/sorteio-agenda', requireSuper, (req,res)=>{
   logEvento('Sorteio dos times AUTOMÁTICO agendado para '+quando.replace('T',' às ')+'.');
   res.json({ok:true});
 });
+// Sorteio MANUAL: o admin marca como RESERVA quem fez check-in mas não está presente na hora
+// do sorteio. Reservas + convidados formam os últimos times (prioridade baixa) e o jogador
+// continua podendo votar normalmente.
+app.put('/api/admin/rodadas/:id/reserva', requireSuper, (req,res)=>{
+  const rodada = getRodadaPorId(req.params.id);
+  if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
+  if(!['aguardando_confirmacao','sorteio_desfeito'].includes(rodada.status)) return res.status(400).json({erro:'Só é possível marcar reservas antes do sorteio.'});
+  if((getConfig().sorteio_modo||'manual')!=='manual') return res.status(400).json({erro:'Marcar reservas só está disponível no modo de sorteio MANUAL.'});
+  const jogadorId = String(req.body.jogadorId||'');
+  const conf = db.prepare('SELECT * FROM confirmacoes WHERE rodada_id=? AND jogador_id=?').get(rodada.id, jogadorId);
+  if(!conf || conf.status!=='presente') return res.status(400).json({erro:'Esse jogador não fez check-in como presente.'});
+  const jg = getJogadorPorId(jogadorId);
+  if(!jg || jg.posicao_padrao!=='linha' || jg.corneta) return res.status(400).json({erro:'Apenas jogadores de linha podem ser marcados como reserva.'});
+  const v = req.body.reserva ? 1 : 0;
+  db.prepare('UPDATE confirmacoes SET reserva=? WHERE id=?').run(v, conf.id);
+  logEvento('Jogador "'+jg.nome+'" '+(v?'marcado como RESERVA':'desmarcado de reserva')+' para o sorteio de '+rodada.data+'.');
+  res.json({ok:true});
+});
 // Exibe (ou não) a aba "Votos dos Jogadores" na Resenha.
 app.put('/api/admin/mostrar-votos', requireSuper, (req,res)=>{
   const v = req.body.mostrar ? 1 : 0;
@@ -883,7 +975,19 @@ function serializarRodada(rodada, viewerId){
   // goleiros presentes: não entram no sorteio, ficam fixos na tela dos times
   const goleirosPresentes = getPorStatus(rodada.id, 'presente').filter(j=>j.posicao_padrao==='goleiro').map(j=>j.id);
   const sorteioConfig = {modo: cfg.sorteio_modo||'manual', agendadoEm: cfg.sorteio_agendado||null};
-  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, vinho, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos:votosOut, goleirosPresentes, mostrarVotos, sorteioConfig};
+  const reservasMarcadas = db.prepare("SELECT jogador_id FROM confirmacoes WHERE rodada_id=? AND status='presente' AND reserva=1").all(rodada.id).map(r=>r.jogador_id);
+  // botão CORNETA (WhatsApp) na aba Votos dos Jogadores: só com a aba habilitada e para
+  // jogador logado — e só dos votantes que cadastraram telefone.
+  let telefonesVotantes = {};
+  if(mostrarVotos && viewerId){
+    const idsVot = [...new Set(votos.map(v=>v.avaliadorId).filter(Boolean))];
+    idsVot.forEach(id=>{
+      const jg = getJogadorPorId(id);
+      const dig = jg && jg.telefone ? String(jg.telefone).replace(/\D/g,'') : '';
+      if(dig.length>=10) telefonesVotantes[id] = (dig.length<=11 ? '55' : '')+dig;
+    });
+  }
+  return {id:rodada.id, data:rodada.data, status:rodada.status, fase, confirmados, ausentes, convidados, resenha, vinho, resenhaEdicaoConfirmacao, resenhaEdicaoLivre, resenhaCheckinAberto, times, votos:votosOut, goleirosPresentes, mostrarVotos, sorteioConfig, reservasMarcadas, telefonesVotantes};
 }
 
 function viewerIdDe(req){ const s = getSessao(extrairToken(req)); return (s && s.jogador_id) || null; }
@@ -937,8 +1041,6 @@ app.delete('/api/admin/rodadas/:id', requireSuper, (req,res)=>{
 app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
   const status = String(req.body.status||'');
   if(!['presente','ausente'].includes(status)) return res.status(400).json({erro:"Status inválido (use 'presente' ou 'ausente')."});
-  const jogador = getJogadorPorId(req.jogadorId);
-  if(status==='presente' && jogador && jogador.corneta) return res.status(403).json({erro:'Cornetas não confirmam presença na partida — apenas check-in na Resenha.'});
   const rodada = getRodadaPorId(req.params.id);
   if(!rodada) return res.status(404).json({erro:'Rodada não encontrada.'});
   const j = janelas(rodada.data);
@@ -949,7 +1051,9 @@ app.post('/api/rodadas/:id/presenca', requireAuth, (req,res)=>{
   // resenha não depende mais da presença na partida — não é limpa ao marcar ausente.
   const resenhaFlag = existente ? existente.resenha : 0;
   if(existente){
-    db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=?, resenha=? WHERE id=?').run(status, nowISO(), convidadoFlag, resenhaFlag, existente.id);
+    // reconfirmar estando já presente não muda o horário do check-in (a prioridade é de quem confirmou primeiro)
+    const mantemHora = status==='presente' && existente.status==='presente' && existente.confirmado_em;
+    db.prepare('UPDATE confirmacoes SET status=?, confirmado_em=?, trouxe_convidado=?, resenha=?, reserva=? WHERE id=?').run(status, mantemHora ? existente.confirmado_em : nowISO(), convidadoFlag, resenhaFlag, status==='presente' ? existente.reserva : 0, existente.id);
   }else{
     db.prepare('INSERT INTO confirmacoes (id,rodada_id,jogador_id,confirmado_em,status,trouxe_convidado,resenha) VALUES (?,?,?,?,?,?,?)')
       .run(idGen('c'), rodada.id, req.jogadorId, nowISO(), status, convidadoFlag, resenhaFlag);
@@ -1031,7 +1135,8 @@ app.post('/api/admin/rodadas/:id/desfazer-sorteio', requireSuper, (req,res)=>{
   res.json({ok:true});
 });
 
-function participouDaRodada(rodadaId, jogadorId){
+// pode ser AVALIADO: jogou (time ou reserva do sorteio) ou é goleiro presente.
+function votavelNaRodada(rodadaId, jogadorId){
   const emTime = db.prepare('SELECT 1 FROM times_sorteados WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
   if(emTime) return true;
   const emReserva = db.prepare('SELECT 1 FROM reservas WHERE rodada_id=? AND jogador_id=?').get(rodadaId, jogadorId);
@@ -1039,6 +1144,12 @@ function participouDaRodada(rodadaId, jogadorId){
   // goleiros presentes não entram no sorteio, mas participam da rodada (votam e são votados)
   const gol = db.prepare("SELECT 1 FROM confirmacoes c JOIN jogadores j ON j.id=c.jogador_id WHERE c.rodada_id=? AND c.jogador_id=? AND c.status='presente' AND j.posicao_padrao='goleiro'").get(rodadaId, jogadorId);
   return !!gol;
+}
+// pode VOTAR: quem pode ser avaliado + cornetas que fizeram check-in (votam, mas não jogam).
+function participouDaRodada(rodadaId, jogadorId){
+  if(votavelNaRodada(rodadaId, jogadorId)) return true;
+  const corneta = db.prepare("SELECT 1 FROM confirmacoes c JOIN jogadores j ON j.id=c.jogador_id WHERE c.rodada_id=? AND c.jogador_id=? AND c.status='presente' AND j.corneta=1").get(rodadaId, jogadorId);
+  return !!corneta;
 }
 
 app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
@@ -1052,8 +1163,8 @@ app.post('/api/rodadas/:id/votos', requireAuth, (req,res)=>{
   if(Number.isNaN(nota) || nota<1 || nota>5) return res.status(400).json({erro:'Nota inválida (use de 1 a 5 estrelas).'});
   if(avaliadoId === req.jogadorId) return res.status(400).json({erro:'Não é permitido avaliar a si mesmo.'});
   if(avaliadoId.startsWith('conv:')) return res.status(400).json({erro:'Convidados não podem ser avaliados.'});
-  if(!participouDaRodada(rodada.id, req.jogadorId)) return res.status(403).json({erro:'Você só pode votar se esteve presente nesta rodada (escalado ou reserva).'});
-  if(!participouDaRodada(rodada.id, avaliadoId)) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
+  if(!participouDaRodada(rodada.id, req.jogadorId)) return res.status(403).json({erro:'Você só pode votar se fez check-in nesta rodada (escalado, reserva, goleiro ou corneta).'});
+  if(!votavelNaRodada(rodada.id, avaliadoId)) return res.status(400).json({erro:'Esse jogador não fez parte desta rodada.'});
   const existente = db.prepare('SELECT * FROM votos WHERE rodada_id=? AND jogador_avaliado_id=? AND jogador_avaliador_id=?')
     .get(rodada.id, avaliadoId, req.jogadorId);
   // cada jogador pode votar e, uma única vez, mudar de ideia — a 2ª alteração já não é permitida.
@@ -1089,6 +1200,32 @@ function calcularAusencias(){
 }
 app.get('/api/ranking', (req,res)=>{
   res.json({ranking: calcularRanking(), ausencias: calcularAusencias()});
+});
+// Desempenho do jogador ao longo do tempo (gráfico do Ranking): por rodada sorteada, a média
+// recebida na rodada e a média acumulada — já com o desconto de 10% por ausência.
+function calcularSerieJogador(jogadorId){
+  const rodadas = db.prepare("SELECT id, data FROM rodadas WHERE status='sorteado' ORDER BY data ASC").all();
+  const votos = db.prepare('SELECT rodada_id, nota FROM votos WHERE jogador_avaliado_id=?').all(jogadorId);
+  const pres = new Set(db.prepare("SELECT rodada_id FROM confirmacoes WHERE jogador_id=? AND status='presente'").all(jogadorId).map(r=>r.rodada_id));
+  let somaAc = 0, nAc = 0, jaJogou = false, k = 0;
+  return rodadas.map(r=>{
+    const presente = pres.has(r.id);
+    if(presente) jaJogou = true; else if(jaJogou) k++;
+    const vs = votos.filter(v=>v.rodada_id===r.id);
+    const soma = vs.reduce((a,v)=>a+v.nota, 0);
+    somaAc += soma; nAc += vs.length;
+    return {
+      data: r.data, presente, n: vs.length,
+      media: vs.length ? Math.round(soma/vs.length*100)/100 : null,
+      acumulada: nAc ? Math.round(somaAc/nAc*Math.pow(0.9,k)*100)/100 : null,
+      ausencias: k,
+    };
+  });
+}
+app.get('/api/ranking/jogador/:id', (req,res)=>{
+  const j = getJogadorPorId(req.params.id);
+  if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
+  res.json({id:j.id, nome:j.nome, serie: calcularSerieJogador(j.id)});
 });
 app.get('/api/ranking-bola', (req,res)=>{
   res.json(calcularRankingBola());
@@ -1245,6 +1382,29 @@ function checarSorteioAutomatico(){
 }
 setInterval(checarSorteioAutomatico, 60*1000);
 checarSorteioAutomatico();
+
+/* ---- mensalidade: todo dia 1º o status é zerado ---- */
+// No primeiro minuto de cada mês (horário real de São Paulo) o status de mensalidade de
+// todos os jogadores é removido, EXCETO "em atraso" (que continua até o admin atualizar) e
+// "isenta" (isenção não é um status mensal). Usa o relógio REAL — a data simulada do admin
+// não dispara o reset. Na 1ª execução após o deploy só registra o mês atual (não zera nada).
+function resetMensalidadeMensalSeNecessario(){
+  try{
+    const mesAtual = spWallClockNow().slice(0,7);
+    const cfg = getConfig();
+    if(!cfg) return;
+    if(!cfg.mensalidade_ref){
+      db.prepare('UPDATE config SET mensalidade_ref=? WHERE id=1').run(mesAtual);
+      return;
+    }
+    if(cfg.mensalidade_ref === mesAtual) return;
+    const r = db.prepare("UPDATE jogadores SET mensalidade='' WHERE mensalidade IN ('em_dia')").run();
+    db.prepare('UPDATE config SET mensalidade_ref=? WHERE id=1').run(mesAtual);
+    logEvento('Virada de mês ('+mesAtual+'): status de mensalidade zerado para '+r.changes+' jogador(es); "em atraso" e "isenta" foram mantidos.');
+  }catch(e){ console.error('Erro ao zerar mensalidades:', e); }
+}
+setInterval(resetMensalidadeMensalSeNecessario, 60*1000);
+resetMensalidadeMensalSeNecessario();
 
 app.listen(PORT, ()=>{
   console.log('Bolerage F.D. rodando na porta ' + PORT);

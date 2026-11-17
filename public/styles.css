@@ -431,3 +431,22 @@ details summary{cursor:pointer;color:var(--gold);font-size:13px;margin-bottom:8p
 .gk-banner-label{color:var(--gold-bright);font-weight:700;}
 .gk-banner-nomes{color:#fff;font-weight:700;}
 .rank-ausencia{color:var(--red);font-weight:600;}
+
+/* v3.3 — gráfico de desempenho, botão CORNETA, linhas clicáveis do ranking */
+.rank-row-click{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.rank-row-click:active{background:rgba(255,255,255,.04);}
+.perf-backdrop{position:fixed;inset:0;z-index:60;background:rgba(3,8,18,.78);display:flex;align-items:center;justify-content:center;padding:16px;}
+.perf-card{position:relative;width:100%;max-width:420px;max-height:90vh;overflow:auto;background:var(--bg-elevated);border:1px solid var(--line);border-radius:16px;padding:16px 14px 12px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+.perf-close{position:absolute;top:8px;right:10px;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-size:20px;line-height:1;}
+.perf-svg{width:100%;height:auto;display:block;margin:6px 0 2px;}
+.perf-grid{stroke:rgba(255,255,255,.08);stroke-width:1;}
+.perf-axis{fill:var(--text-muted);font-size:9px;}
+.perf-line{fill:none;stroke:var(--gold);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
+.perf-dot-acum{fill:var(--gold-bright);}
+.perf-dot-rod{fill:#4EA1FF;stroke:#0A1626;stroke-width:1.5;}
+.perf-aus{fill:var(--red);color:var(--red);font-size:11px;font-weight:700;}
+.perf-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;margin:2px 0 8px;}
+.perf-key{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle;}
+.perf-key-acum{background:var(--gold-bright);}
+.perf-key-rod{background:#4EA1FF;}
+.corneta-btn{background:linear-gradient(180deg,#34C759,#1FA64A);color:#fff;border:none;text-decoration:none;white-space:nowrap;}

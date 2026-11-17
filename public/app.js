@@ -261,7 +261,7 @@ function renderTopbar(){
   topbar.style.display='block';
   bottomnav.style.display='flex';
   document.getElementById('pin-action-slot').innerHTML =
-    '<button data-action="abrir-troca-pin">Trocar meu PIN</button>';
+    '<button data-action="abrir-troca-pin">Meu Perfil</button>';
   document.getElementById('admin-action-slot').innerHTML =
     (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
     '<button data-action="logout">Sair</button>';
@@ -370,18 +370,47 @@ async function handleLogout(){
 }
 
 /* ============================================================
-   RENDER: TROCAR MEU PIN
+   RENDER: MEU PERFIL (+ trocar PIN)
    ============================================================ */
 function renderTrocarPin(){
+  const p = state.currentPlayer || {};
+  const v = x => escapeHtml(x==null ? '' : String(x));
   document.getElementById('content').innerHTML =
-    '<div class="card"><h2>Trocar meu PIN</h2>'+
+    '<div class="card"><h2>Meu Perfil</h2>'+
+    '<p class="small muted">Todos os campos são opcionais — preencha só o que quiser.</p>'+
+    '<div class="field"><label>Apelido</label><input id="perfil-apelido" maxlength="30" value="'+v(p.apelido)+'" placeholder="Como o pessoal te chama"></div>'+
+    '<div class="field"><label>Celular (WhatsApp, com DDD)</label><input id="perfil-telefone" type="tel" inputmode="tel" maxlength="30" value="'+v(p.telefone)+'" placeholder="(11) 91234-5678"></div>'+
+    '<div class="field"><label>Time do coração</label><select id="perfil-time">'+timeCoracaoOptionsHtml(p.timeCoracao)+'</select></div>'+
+    '<div class="field"><label>Idade</label><input id="perfil-idade" type="number" inputmode="numeric" min="5" max="99" value="'+v(p.idade)+'"></div>'+
+    '<div class="field"><label>Peso (kg)</label><input id="perfil-peso" type="number" inputmode="decimal" step="0.1" min="20" max="250" value="'+v(p.peso)+'"></div>'+
+    '<div class="field"><label>Altura (cm)</label><input id="perfil-altura" type="number" inputmode="numeric" min="100" max="230" value="'+v(p.altura)+'" placeholder="Ex.: 178"></div>'+
+    '<p class="small" id="perfil-msg" style="color:var(--red);min-height:1em;"></p>'+
+    '<div class="btn-row"><button class="btn" data-action="salvar-perfil">Salvar perfil</button>'+
+    '<button class="btn secondary" data-action="cancelar-troca-pin">Voltar</button></div>'+
+    '</div>'+
+    '<div class="card"><h3>Trocar meu PIN</h3>'+
     '<p class="small muted">Escolha um PIN de 4 dígitos que só você vai usar para entrar.</p>'+
     '<div class="field"><label>Novo PIN</label><input id="novo-pin-jogador" maxlength="4" inputmode="numeric" type="tel"></div>'+
     '<div class="field"><label>Confirmar novo PIN</label><input id="confirmar-pin-jogador" maxlength="4" inputmode="numeric" type="tel"></div>'+
     (state.trocaPinErro? '<p class="small" style="color:var(--red);">'+escapeHtml(state.trocaPinErro)+'</p>':'')+
-    '<div class="btn-row"><button class="btn" data-action="salvar-meu-pin">Salvar novo PIN</button>'+
-    '<button class="btn secondary" data-action="cancelar-troca-pin">Cancelar</button></div>'+
+    '<div class="btn-row"><button class="btn secondary" data-action="salvar-meu-pin">Salvar novo PIN</button></div>'+
     '</div>';
+}
+async function handleSalvarPerfil(){
+  const g = id => document.getElementById(id).value;
+  const msg = document.getElementById('perfil-msg');
+  if(msg) msg.textContent = '';
+  try{
+    const r = await api('/api/me/perfil', {method:'PUT', auth:true, body:{
+      apelido: g('perfil-apelido'), telefone: g('perfil-telefone'), timeCoracao: g('perfil-time'),
+      idade: g('perfil-idade'), peso: g('perfil-peso'), altura: g('perfil-altura'),
+    }});
+    state.currentPlayer = Object.assign({}, state.currentPlayer, r.jogador);
+    localStorage.setItem('bolerage_player', JSON.stringify(state.currentPlayer));
+    state._lastWhoHtml = null;
+    renderTopbar();
+    showToast('Perfil salvo!');
+  }catch(e){ if(msg) msg.textContent = e.message; }
 }
 async function handleSalvarMeuPin(){
   const novo = document.getElementById('novo-pin-jogador').value.trim();
@@ -484,7 +513,7 @@ function renderExtrasIniciais(){
 function linhaListaPresenca(j, ehConvidado){
   const media = mediaDoJogador(j.id, j.posicaoPadrao);
   return '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+'</span>'+
-    '<span class="row-right">'+starsHtml(media, true)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':'<span class="badge">linha</span>')+'</span></div>'+
+    '<span class="row-right">'+starsHtml(media, true)+(j.posicaoPadrao==='goleiro'?'<span class="badge gk">goleiro</span>':(j.corneta?'<span class="badge">🎺 corneta</span>':'<span class="badge">linha</span>'))+'</span></div>'+
     (ehConvidado ? '<div class="convidado-row"><span class="conv-txt">Convidado de '+escapeHtml(j.nome)+'</span><span class="badge conv-badge">convidado</span></div>' : '');
 }
 
@@ -493,7 +522,7 @@ function renderInicio(){
   const c = document.getElementById('content');
   let dica = '';
   if(!state.mostrouDicaPin){
-    dica = '<div class="info-box">Dica: você pode trocar seu PIN quando quiser clicando em "trocar PIN" no topo da tela.</div>';
+    dica = '<div class="info-box">Dica: em "Meu Perfil" (no topo da tela) você troca seu PIN e completa seus dados: celular, time do coração, apelido, idade, peso e altura.</div>';
     state.mostrouDicaPin = true;
   }
   const extrasHtml = renderExtrasIniciais();
@@ -510,7 +539,8 @@ function renderInicio(){
   const meuStatus = presentesIds.includes(state.currentPlayer.id) ? 'presente'
     : ausentesIds.includes(state.currentPlayer.id) ? 'ausente' : null;
   const euTrouxeConvidado = convidadosDeIds.has(state.currentPlayer.id);
-  const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha').length + convidadosDeIds.size;
+  // cornetas fazem check-in mas não jogam: não entram na contagem de jogadores de linha
+  const linhaN = presentes.filter(j=>j.posicaoPadrao==='linha' && !j.corneta).length + convidadosDeIds.size;
   const golN = presentes.filter(j=>j.posicaoPadrao==='goleiro').length;
 
   let html = '<div class="card accent-blue"><h2>Rodada do Próximo Domingão - '+formatDataBR(rodada.data)+'</h2>';
@@ -520,13 +550,13 @@ function renderInicio(){
   }
   if(fase.chave==='confirmacao_aberta'){
     html += renderMedidorConfirmacao(linhaN, golN);
-    if(state.currentPlayer.corneta){
-      html += '<p class="small muted" style="padding:8px 2px;">🎺 Você está marcado como <strong style="color:var(--text)">Corneta</strong> — não participa da lista de presença da partida. Faça seu check-in na aba <strong style="color:var(--text)">Resenha</strong> quando quiser.</p>';
-    }else{
-      html += renderTogglePresenca(meuStatus);
-      if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
-      if(meuStatus==='presente') html += renderToggleResenha((rodada.resenha||[]).includes(state.currentPlayer.id));
+    const souCorneta = !!state.currentPlayer.corneta;
+    html += renderTogglePresenca(meuStatus, souCorneta);
+    if(souCorneta){
+      html += '<p class="small" style="padding:8px 2px;color:var(--text-muted);">🎺 Você é <strong style="color:var(--text)">Corneta</strong>: pode fazer o check-in, mas <strong style="color:var(--text)">não participa do sorteio dos times</strong>. Na votação você vota normalmente nos jogadores.'+(meuStatus==='presente'?' Se quiser levar um amigo para jogar, marque Convidado abaixo.':'')+'</p>';
     }
+    if(meuStatus==='presente') html += renderToggleConvidado(euTrouxeConvidado);
+    if(meuStatus==='presente') html += renderToggleResenha((rodada.resenha||[]).includes(state.currentPlayer.id));
   }
   if(fase.chave==='aguardando_sorteio'){
     html += renderMedidorConfirmacao(linhaN, golN);
@@ -557,16 +587,19 @@ function renderInicio(){
     const souReserva = rodada.times.reservas.includes(state.currentPlayer.id);
     const souAlternante = meuTime && meuTime.nome==='Alternantes'; // rodadas antigas
     const souGoleiroPresente = (rodada.goleirosPresentes||[]).includes(state.currentPlayer.id);
+    const souCornetaPresente = !!state.currentPlayer.corneta && (rodada.confirmados||[]).includes(state.currentPlayer.id);
     html += souAlternante
       ? '<p class="small">Você ficou como <strong>Alternar Jogador</strong> nesta rodada — reveza com os times completos. Veja na aba Sorteio.</p>'
       : meuTime
       ? '<p class="small">Você está no time <strong>'+meuTime.nome+'</strong>. Veja a formação completa na aba Sorteio.</p>'
+      : souCornetaPresente
+        ? '<p class="small">🎺 Você fez check-in como <strong>corneta</strong>: não entrou no sorteio dos times, mas pode votar normalmente nos jogadores.</p>'
       : souGoleiroPresente
         ? '<p class="small">Você está como <strong>goleiro presente</strong> nesta rodada (fixo, fora do sorteio). Pode votar e receber votos normalmente.</p>'
       : souReserva
         ? '<p class="small">Você ficou como <strong>reserva</strong> nesta rodada, mas pode votar e receber votos normalmente.</p>'
         : '<p class="small muted">Você não participou desta rodada.</p>';
-    if(fase.chave==='votacao_aberta' && (meuTime || souReserva || souGoleiroPresente)){
+    if(fase.chave==='votacao_aberta' && (meuTime || souReserva || souGoleiroPresente || souCornetaPresente)){
       const jaVotouEm = new Set(rodada.votos.filter(v=>v.avaliadorId===state.currentPlayer.id).map(v=>v.avaliadoId));
       const alvos = [...new Set([...rodada.times.times.flatMap(t=>t.jogadores.map(j=>j.jogadorId)), ...rodada.times.reservas, ...(rodada.goleirosPresentes||[])])]
         .filter(id=>id!==state.currentPlayer.id && !id.startsWith('conv:'));
@@ -581,15 +614,15 @@ function renderInicio(){
   c.innerHTML = dica + html + extrasHtml;
 }
 
-function renderTogglePresenca(meuStatus){
+function renderTogglePresenca(meuStatus, souCorneta){
   const ligado = meuStatus==='presente';
   const desligado = meuStatus==='ausente';
   const classe = ligado ? 'is-on' : (desligado ? 'is-off' : 'is-pending');
   const label = ligado
-    ? '<strong style="color:var(--green)">Presente</strong> — vou jogar'
+    ? '<strong style="color:var(--green)">Presente</strong> — '+(souCorneta ? 'check-in feito' : 'vou jogar')
     : desligado
-      ? '<strong style="color:var(--red)">Ausente</strong> — não vou jogar'
-      : '<span class="muted">Toque para dizer se você vai jogar</span>';
+      ? '<strong style="color:var(--red)">Ausente</strong> — '+(souCorneta ? 'sem check-in' : 'não vou jogar')
+      : '<span class="muted">Toque para fazer o '+(souCorneta ? 'check-in' : 'check-in e dizer que vai jogar')+'</span>';
   return '<div class="presence-toggle-wrap">'+
     '<button class="presence-toggle '+classe+'" data-action="toggle-presenca" data-atual="'+(meuStatus||'')+'"><span class="presence-toggle-knob"></span></button>'+
     '<div class="presence-toggle-label">'+label+'</div>'+
@@ -692,7 +725,13 @@ function renderResenha(){
     }else{
       ids.forEach(idAv=>{
         const lista = porAvaliador[idAv].slice().sort((a,b)=> (b.nota-a.nota) || nomeJ(a.avaliadoId).localeCompare(nomeJ(b.avaliadoId),'pt-BR'));
-        h += '<div class="card"><h3>'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+' <span class="small muted">votou em '+lista.length+'</span></h3>';
+        // botão CORNETA: abre o WhatsApp de quem votou (só se ele cadastrou o celular)
+        const tel = (rodV.telefonesVotantes||{})[idAv];
+        const primeiroNome = nomeJ(idAv).split(' ')[0];
+        const btnCorneta = tel
+          ? '<a class="btn small corneta-btn" href="https://wa.me/'+tel+'?text='+encodeURIComponent('🎺 Opa, '+primeiroNome+'! Vi seus votos no Bolerage F.D. 😄')+'" target="_blank" rel="noopener">🎺 CORNETA</a>'
+          : '';
+        h += '<div class="card"><div class="list-row" style="border:none;padding:0 0 6px 0;"><h3 style="margin:0;">'+escapeHtml(nomeJ(idAv))+timeCoracaoSuffixDoId(idAv)+' <span class="small muted">votou em '+lista.length+'</span></h3>'+btnCorneta+'</div>';
         lista.forEach(v=>{
           h += '<div class="list-row"><span>'+escapeHtml(nomeJ(v.avaliadoId))+timeCoracaoSuffixDoId(v.avaliadoId)+'</span><span class="row-right">'+starsHtml(v.nota)+'</span></div>';
         });
@@ -930,7 +969,8 @@ function renderVotacao(){
     c.innerHTML = '<div class="empty"><p style="color:var(--text);font-weight:700;margin-bottom:12px;">'+msg+'</p>'+infoVotacaoHtml()+'</div>'; return;
   }
   const meuId = state.currentPlayer.id;
-  const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId) || (rod.goleirosPresentes||[]).includes(meuId);
+  const participei = rod.times.times.some(t=>t.jogadores.some(j=>j.jogadorId===meuId)) || rod.times.reservas.includes(meuId) || (rod.goleirosPresentes||[]).includes(meuId)
+    || (!!state.currentPlayer.corneta && (rod.confirmados||[]).includes(meuId));
   if(!participei){
     c.innerHTML = '<div class="empty">Você não participou desta rodada (nem escalado, nem reserva) e por isso não pode votar.</div>'; return;
   }
@@ -963,6 +1003,82 @@ function renderVotacao(){
 async function handleVotar(avaliadoId, nota){
   try{ await api('/api/rodadas/'+state.rodadaAtual.id+'/votos', {method:'POST', auth:true, body:{avaliadoId, nota}}); await refreshRodadaAtual(); render(); }
   catch(e){ alert(e.message); }
+}
+
+/* ============================================================
+   GRÁFICO DE DESEMPENHO (clique no jogador, na tela Ranking)
+   ============================================================ */
+function perfChartSvg(serie){
+  const W = 340, H = 210, L = 30, R = 12, T = 14, B = 34;
+  const iw = W-L-R, ih = H-T-B;
+  const n = serie.length;
+  const x = i => n===1 ? L+iw/2 : L + iw*i/(n-1);
+  const y = v => T + ih*(1 - Math.max(0, Math.min(5, v))/5);
+  let g = '';
+  for(let v=0; v<=5; v++){
+    g += '<line x1="'+L+'" y1="'+y(v).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(v).toFixed(1)+'" class="perf-grid"/>'+
+         '<text x="'+(L-6)+'" y="'+(y(v)+3).toFixed(1)+'" class="perf-axis" text-anchor="end">'+v+'</text>';
+  }
+  const passo = Math.max(1, Math.ceil(n/6));
+  serie.forEach((p,i)=>{
+    if(i%passo!==0 && i!==n-1) return;
+    const d = p.data.slice(8,10)+'/'+p.data.slice(5,7);
+    g += '<text x="'+x(i).toFixed(1)+'" y="'+(H-14)+'" class="perf-axis" text-anchor="middle">'+d+'</text>';
+  });
+  // média acumulada (com o desconto por ausência) = linha dourada
+  const pts = serie.map((p,i)=> p.acumulada==null ? null : [x(i), y(p.acumulada)]).filter(Boolean);
+  if(pts.length>1) g += '<polyline class="perf-line" points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'"/>';
+  pts.forEach(p=>{ g += '<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3" class="perf-dot-acum"/>'; });
+  // nota da rodada = pontos azuis; ausência = marca vermelha no eixo
+  serie.forEach((p,i)=>{
+    if(p.media!=null) g += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(p.media).toFixed(1)+'" r="4.5" class="perf-dot-rod"><title>'+p.data.slice(8,10)+'/'+p.data.slice(5,7)+': '+p.media.toFixed(1)+' ('+p.n+' voto(s))</title></circle>';
+    else if(!p.presente) g += '<text x="'+x(i).toFixed(1)+'" y="'+(y(0)-4).toFixed(1)+'" class="perf-aus" text-anchor="middle">✕</text>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="perf-svg" role="img" aria-label="Desempenho do jogador por rodada">'+g+'</svg>';
+}
+function fecharPerformance(){
+  const m = document.getElementById('perf-modal');
+  if(m) m.remove();
+}
+async function abrirPerformance(jogadorId){
+  fecharPerformance();
+  const nome = jogadorNome(jogadorId);
+  const m = document.createElement('div');
+  m.id = 'perf-modal';
+  m.className = 'perf-backdrop';
+  m.setAttribute('data-action','fechar-performance');
+  m.innerHTML = '<div class="perf-card" role="dialog" aria-modal="true" data-action="noop">'+
+    '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
+    '<h3 class="titulo-centralizado" style="margin:0 24px 2px;">'+escapeHtml(nome)+timeCoracaoSuffixDoId(jogadorId)+'</h3>'+
+    '<p class="rodada-sub">Desempenho ao longo do tempo</p>'+
+    '<div id="perf-body"><div class="empty">Carregando…</div></div></div>';
+  document.getElementById('shell').appendChild(m);
+  let data;
+  try{ data = await api('/api/ranking/jogador/'+encodeURIComponent(jogadorId)); }
+  catch(e){ const b = document.getElementById('perf-body'); if(b) b.innerHTML = '<div class="empty">'+escapeHtml(e.message)+'</div>'; return; }
+  const body = document.getElementById('perf-body');
+  if(!body) return; // fechou enquanto carregava
+  const serie = data.serie || [];
+  const comVoto = serie.filter(p=>p.media!=null);
+  if(!serie.length || !comVoto.length){
+    body.innerHTML = '<div class="empty">Ainda não há votos suficientes para montar o gráfico.</div>'; return;
+  }
+  const ultimo = [...serie].reverse().find(p=>p.acumulada!=null);
+  const melhor = comVoto.reduce((a,p)=> p.media>a.media ? p : a, comVoto[0]);
+  const pior = comVoto.reduce((a,p)=> p.media<a.media ? p : a, comVoto[0]);
+  const aus = serie.length ? serie[serie.length-1].ausencias : 0;
+  const fd = d => d.slice(8,10)+'/'+d.slice(5,7);
+  body.innerHTML = perfChartSvg(serie)+
+    '<div class="perf-legenda small muted">'+
+      '<span><i class="perf-key perf-key-acum"></i> Média acumulada (ranking)</span>'+
+      '<span><i class="perf-key perf-key-rod"></i> Nota da rodada</span>'+
+      '<span><b class="perf-aus">✕</b> Ausente</span>'+
+    '</div>'+
+    '<div class="list-row"><span>Média atual no ranking</span><span class="row-right">'+starsHtml(ultimo ? ultimo.acumulada : null, true)+'</span></div>'+
+    '<div class="list-row"><span>Melhor rodada</span><span class="row-right">'+melhor.media.toFixed(1)+' ★ <span class="small muted">('+fd(melhor.data)+')</span></span></div>'+
+    '<div class="list-row"><span>Pior rodada</span><span class="row-right">'+pior.media.toFixed(1)+' ★ <span class="small muted">('+fd(pior.data)+')</span></span></div>'+
+    '<div class="list-row"><span>Rodadas avaliadas</span><span class="row-right">'+comVoto.length+' de '+serie.length+'</span></div>'+
+    (aus ? '<div class="list-row"><span>Ausências acumuladas</span><span class="row-right rank-ausencia">'+aus+' (−'+Math.round((1-Math.pow(0.9,aus))*100)+'%)</span></div>' : '');
 }
 
 /* ============================================================
@@ -1009,10 +1125,11 @@ async function renderRanking(){
     const semNota = linhas.filter(l=>l.media==null);
     html += '<div class="card">';
     comNota.forEach((l,i)=>{
-      html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
+      html += '<div class="rank-row rank-row-click" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
         '<div class="rank-count">'+l.total+' avaliação(ões)'+textoAusencias(l.id)+'</div></div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
     });
     if(!comNota.length) html += '<p class="muted small">Ainda não há avaliações suficientes.</p>';
+    else html += '<p class="small muted" style="margin-top:8px;">Toque em um jogador para ver o gráfico de desempenho dele.</p>';
     html += '<p class="small muted" style="margin-top:10px;">Jogadores AUSENTES perdem 10% dos pontos acumulados a cada rodada em que não estiverem presentes.</p>';
     html += '</div>';
     if(semNota.length){
@@ -1031,7 +1148,7 @@ async function renderRanking(){
     html += '<div class="card">';
     if(lista.length){
       lista.forEach((l,i)=>{
-        html += '<div class="rank-row"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
+        html += '<div class="rank-row rank-row-click" data-action="ranking-jogador" data-id="'+l.id+'"><div class="rank-pos">'+(i+1)+'</div><div class="rank-name">'+escapeHtml(l.nome)+timeCoracaoSuffixDoId(l.id)+
           '<div class="rank-count rank-count-bola'+(isMurcha?' rank-count-murcha':' rank-count-cheia')+'">'+l.n+'&#215; '+rotulo+'</div></div><div class="rank-avg'+(isMurcha?' rank-avg-murcha':'')+'">'+starsHtml(l.media, true)+'</div></div>';
       });
     }else{
@@ -1133,11 +1250,27 @@ async function renderAdmin(){
   if(rodada){
     html += '<p class="small">'+formatDataBR(rodada.data)+' — '+rodada.fase.label+'</p>';
     const confirmados = (rodada.confirmados||[]).map(id=>state.elenco.find(j=>j.id===id)).filter(Boolean);
-    const linhaN = confirmados.filter(j=>j.posicaoPadrao==='linha').length;
+    const linhaN = confirmados.filter(j=>j.posicaoPadrao==='linha' && !j.corneta).length;
     const golN = confirmados.filter(j=>j.posicaoPadrao==='goleiro').length;
     const podeSortear = (rodada.status==='aguardando_confirmacao' && rodada.fase.chave==='aguardando_sorteio') || rodada.status==='sorteio_desfeito';
     html += '<p class="small muted">'+linhaN+' de linha, '+golN+' goleiro(s) confirmados.</p>';
     html += '<button class="btn" data-action="disparar-sorteio" '+(podeSortear?'':'disabled')+'>Realizar sorteio</button>';
+    // sorteio MANUAL: o admin marca como RESERVA quem fez check-in mas não está presente na hora
+    if(podeSortear && elencoAdmin.config.sorteioModo!=='automatico'){
+      const marcados = new Set(rodada.reservasMarcadas||[]);
+      const candidatos = confirmados.filter(j=>j.posicaoPadrao==='linha' && !j.corneta);
+      html += '<div class="divider"></div><h4 style="margin:0 0 4px;">Reservas do sorteio (modo manual)</h4>'+
+        '<p class="small muted">Marque como Reserva quem fez check-in mas não está presente na hora do sorteio. Reservas e convidados formam os últimos times; o jogador marcado continua podendo votar normalmente.</p>';
+      if(candidatos.length){
+        candidatos.forEach(j=>{
+          const on = marcados.has(j.id);
+          html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+'</span>'+
+            '<span class="row-right"><button class="btn small '+(on?'':'secondary')+'" data-action="toggle-reserva" data-id="'+j.id+'" data-atual="'+(on?'sim':'nao')+'">'+(on?'✔ Reserva':'Marcar reserva')+'</button></span></div>';
+        });
+      }else{
+        html += '<p class="small muted">Ninguém confirmou presença ainda.</p>';
+      }
+    }
     if(rodada.status==='sorteado'){
       html += '<button class="btn danger small" style="margin-top:8px;" data-action="desfazer-sorteio" data-id="'+rodada.id+'">Desfazer sorteio</button>';
     }
@@ -1184,7 +1317,7 @@ async function renderAdmin(){
         '<input id="edit-tel-'+j.id+'" value="'+escapeHtml(j.telefone||'')+'" placeholder="Telefone / WhatsApp (com DDD)" inputmode="tel">'+
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
-        '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (só faz check-in na Resenha, não confirma presença na partida)</label>'+
+        '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (faz check-in e vota, mas não entra no sorteio dos times)</label>'+
         '<label class="small"><input type="checkbox" id="edit-depto-medico-'+j.id+'" '+(j.deptoMedico?'checked':'')+'> Depto. Médico (mostra 🚑 ao lado do nome na tela inicial)</label>'+
         (j.superAdmin
           ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
@@ -1334,6 +1467,13 @@ async function handleRemoverRodada(id, dataStr, faseLabel, ehHistorico){
     await refreshRodadaAtual();
     await refreshRodadasLista();
     await render();
+  }catch(e){ alert(e.message); }
+}
+async function handleToggleReserva(jogadorId, atual){
+  if(!state.rodadaAtual) return;
+  try{
+    await api('/api/admin/rodadas/'+state.rodadaAtual.id+'/reserva', {method:'PUT', adminAuth:true, body:{jogadorId, reserva: atual!=='sim'}});
+    await refreshRodadaAtual(); await render();
   }catch(e){ alert(e.message); }
 }
 async function handleSalvarSorteioAgenda(){
@@ -1550,6 +1690,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='logout') return handleLogout();
   if(action==='abrir-troca-pin'){ state.trocaPinErro=''; state.tab='trocarPin'; return render(); }
   if(action==='salvar-meu-pin') return handleSalvarMeuPin();
+  if(action==='salvar-perfil') return handleSalvarPerfil();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){
     state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null;
@@ -1563,6 +1704,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
   if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; return render(); }
+  if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
+  if(action==='fechar-performance') return fecharPerformance();
+  if(action==='noop') return;
   if(action==='ranking-aba'){ state.rankingAba = el.dataset.aba; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
   if(action==='disparar-sorteio') return handleDispararSorteio();
@@ -1571,6 +1715,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='remover-rodada') return handleRemoverRodada(el.dataset.id, el.dataset.data, el.dataset.fase, el.dataset.hist==='1');
   if(action==='salvar-config') return handleSalvarConfig();
   if(action==='salvar-sorteio-agenda') return handleSalvarSorteioAgenda();
+  if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
   if(action==='adicionar-jogador') return handleAdicionarJogador();
   if(action==='editar-jogador'){ state.editingJogadorId = el.dataset.id; return render(); }
