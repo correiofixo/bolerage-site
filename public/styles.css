@@ -1146,3 +1146,12 @@ body.na-tela-login #login-screen{
 /* ---- v6.4: legenda das zonas do Ranking centralizada (ícone + nome centrados em cada selo) ---- */
 .rank-legenda{justify-content:center;align-items:center;text-align:center;}
 .rank-chip{display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;text-align:center;}
+
+/* ---- v6.5: Agenda de eventos (admin): "incluir novo" separado dos eventos cadastrados ---- */
+.evt-bloco-novo{margin:10px 0 4px;padding:10px;border-radius:14px;border:1px solid rgba(228,193,88,.55);background:linear-gradient(180deg,rgba(228,193,88,.12),rgba(228,193,88,.03));box-shadow:0 0 14px rgba(228,193,88,.12);}
+.evt-bloco-tit{font-family:var(--font-display);font-weight:700;letter-spacing:.6px;font-size:clamp(13px,4vw,15px);color:var(--gold-bright,#E4C158);text-align:center;margin:0 0 8px;}
+.evt-bloco-novo .btn{width:100%;}
+.evt-divisor{display:flex;align-items:center;gap:10px;margin:18px 0 10px;}
+.evt-divisor::before,.evt-divisor::after{content:"";flex:1 1 0;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,rgba(78,161,255,.75),transparent);}
+.evt-divisor span{flex:0 0 auto;max-width:78%;padding:5px 14px;border-radius:999px;border:1px solid rgba(78,161,255,.6);background:rgba(78,161,255,.14);color:#BBD9FF;font-family:var(--font-display);font-weight:700;letter-spacing:.5px;font-size:clamp(11px,3.5vw,14px);text-align:center;overflow-wrap:anywhere;}
+.evt-item.evt-cad{margin:0 0 10px;padding:10px;border:1px solid rgba(78,161,255,.4);border-radius:14px;background:rgba(78,161,255,.06);}

@@ -2683,19 +2683,24 @@ function eventoEditorHtml(key, e, respOpc){
 function renderAgendaAdminHtml(agenda, respOpc){
   let h = '<div class="card hz hz-verde"><h3>📅 AGENDA DE EVENTOS</h3>'+
     '<p class="small muted">Inclua, altere e remova eventos. Em cada evento você define onde ele aparece, o local, os responsáveis, o pagamento e a lista de participantes (que fica dentro do próprio evento).</p>';
+  // bloco 1: incluir novo evento (destacado)
+  h += '<div class="evt-bloco-novo"><div class="evt-bloco-tit">➕ INCLUIR NOVO EVENTO</div>';
   if(state.editingEventoId==='novo'){
     h += eventoEditorHtml('novo', {mostrarParticipantes: !agenda.some(x=>x.mostrarParticipantes)}, respOpc);
   }else{
     h += '<button class="btn" data-action="evento-novo">➕ Novo evento</button>';
   }
+  h += '</div>';
+  // divisor + bloco 2: eventos já cadastrados
+  h += '<div class="evt-divisor"><span>📋 EVENTOS CADASTRADOS ('+agenda.length+')</span></div>';
   if(!agenda.length){
-    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento cadastrado.</p>';
+    h += '<p class="small muted" style="margin:6px 0 0;text-align:center;">Nenhum evento cadastrado.</p>';
   }
   agenda.forEach(e=>{
     if(state.editingEventoId===e.id){
       h += eventoEditorHtml(e.id, e, respOpc);
     }else{
-      h += '<div class="evt-item"><div class="evt-item-info"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div>'+
+      h += '<div class="evt-item evt-cad"><div class="evt-item-info"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div>'+
         '<div class="evt-item-badges"><span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':'<span class="badge">inativo</span>')+
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
           (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
