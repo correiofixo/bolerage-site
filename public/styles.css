@@ -1022,3 +1022,14 @@ details.evt-part-adm > summary{cursor:pointer;padding:10px 12px;font-weight:700;
 .badge.badge-btn.ativo{background:rgba(167,123,255,.4)}
 div.evt-part-adm{margin:8px 0;border:1px solid rgba(167,123,255,.45);border-radius:12px;background:rgba(167,123,255,.05);}
 .evt-part-tit{padding:10px 12px 0;font-weight:700;font-family:var(--font-display);letter-spacing:.3px;font-size:clamp(12px,3.9vw,15px);overflow-wrap:anywhere;color:var(--gold,#e8c14a)}
+
+/* v5.7: participantes dentro do cadastro do evento */
+.pd-add .pd-l2,.pd-row .pd-l2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;}
+.pd-row{padding:8px 2px;border-bottom:1px solid var(--line);}
+.pd-l1{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.pd-n{flex:1 1 0;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pd-row input,.pd-row select{width:100%;min-width:0;box-sizing:border-box;padding:8px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14px;}
+.pd-l3{margin-top:6px;} .pd-l3 label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:3px;}
+.pd-add .field select{width:100%;box-sizing:border-box;}
+.pd-add .pd-l2,.pd-row .pd-l2{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);}
+.pd-row select,.pd-add select{font-size:13px;padding-left:6px;padding-right:2px;}

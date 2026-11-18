@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 36;
+const APP_BUILD = 37;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -2005,6 +2005,24 @@ function lerParticipante(b, atual){
   else if(pago>=valor) return {erro:'No status Pago Parcial o valor pago precisa ser menor que o valor total.'};
   return {nome, valor, status, pago};
 }
+// valida a lista inteira de participantes enviada junto com o evento (substitui a lista atual)
+function validarParticipantes(arr){
+  if(!Array.isArray(arr)) return {lista:null};
+  if(arr.length>300) return {erro:'Lista de participantes grande demais.'};
+  const vistos = new Set(), lista = [];
+  for(const it of arr){
+    const r = lerParticipante(it||{}, null);
+    if(r.erro) return {erro:((it && it.nome) ? String(it.nome).trim()+': ' : '')+r.erro};
+    const k = r.nome.toLowerCase();
+    if(vistos.has(k)) return {erro:'Participante repetido: '+r.nome};
+    vistos.add(k); lista.push(r);
+  }
+  return {lista};
+}
+function gravarParticipantes(lista){
+  db.prepare('DELETE FROM evento_participantes').run();
+  lista.forEach(r=>db.prepare('INSERT INTO evento_participantes (id,nome,valor,valor_pago,status,criado_em) VALUES (?,?,?,?,?,?)').run(idGen('ep'), r.nome, r.valor, r.pago, r.status, nowISO()));
+}
 function abaEvento(){
   const cfg = getConfig() || {};
   return {ativa: cfg.evento_aba_ativa!==0, titulo: cfg.evento_aba_titulo||'', texto: cfg.evento_aba_texto||''};
@@ -2262,14 +2280,19 @@ app.post('/api/admin/agenda', requireEventos, (req,res)=>{
   if(!nome || !data) return res.status(400).json({erro:'Informe nome e data do evento.'});
   const descricao = String(req.body.descricao||'');
   const responsavel = String(req.body.responsavel||'');
+  const vp = validarParticipantes(req.body.participantes);
+  if(vp.erro) return res.status(400).json({erro:vp.erro});
   const id = idGen('ev');
   db.prepare('INSERT INTO eventos (id,nome,data,ativo,descricao,responsavel) VALUES (?,?,?,1,?,?)').run(id, nome, data, descricao, responsavel);
   aplicarExtrasEvento(id, req.body);
+  if(vp.lista) gravarParticipantes(vp.lista);
   res.json({ok:true, id});
 });
 app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   const ev = db.prepare('SELECT * FROM eventos WHERE id=?').get(req.params.id);
   if(!ev) return res.status(404).json({erro:'Evento não encontrado.'});
+  const vp = validarParticipantes(req.body.participantes);
+  if(vp.erro) return res.status(400).json({erro:vp.erro});
   const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
   const data = req.body.data!=null ? String(req.body.data) : ev.data;
   const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : ev.ativo;
@@ -2277,6 +2300,7 @@ app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   const responsavel = req.body.responsavel!=null ? String(req.body.responsavel) : (ev.responsavel||'');
   db.prepare('UPDATE eventos SET nome=?,data=?,ativo=?,descricao=?,responsavel=? WHERE id=?').run(nome,data,ativo,descricao,responsavel,ev.id);
   aplicarExtrasEvento(ev.id, req.body);
+  if(vp.lista) gravarParticipantes(vp.lista);
   res.json({ok:true});
 });
 app.delete('/api/admin/agenda/:id', requireEventos, (req,res)=>{

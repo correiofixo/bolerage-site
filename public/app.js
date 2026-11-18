@@ -2458,42 +2458,76 @@ async function handleSalvarAdminPin(){
   try{ await api('/api/admin/admin-pin', {method:'PUT', adminAuth:true, body:{pin}}); alert('PIN administrativo atualizado.'); await render(); }
   catch(e){ alert(e.message); }
 }
-// ---- participantes do evento (dentro da Agenda de eventos): valor padrão, adicionar, status
-function participantesAdminHtml(tit){
-  const l = state.eventoLista;
-  let h = '';
-  if(l){
-    h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
-    h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
-      '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
-      '<div class="field"><label>Valor (R$)</label><input id="evt-valor" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"></div>'+
-      '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Pago Parcial</option><option value="pago">Pago Total</option></select></div>'+
-      '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
-      '<div class="btn-row"><button class="btn" data-action="evt-adicionar">Adicionar</button><button class="btn secondary" data-action="evt-todos">Adicionar todos os jogadores</button></div></div>';
-    if(l.participantes.length){
-      h += '<div class="divider"></div>'+eventoTotaisHtml(l.totais);
-      l.participantes.forEach((p,i)=>{
-        if(state.eventoEditId===p.id){
-          h += '<div class="evt-edit"><div class="field"><label>Nome</label><input id="evt-e-nome-'+p.id+'" value="'+escapeHtml(p.nome)+'" maxlength="80"></div>'+
-            '<div class="field"><label>Valor (R$)</label><input id="evt-e-valor-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.valor)+'"></div>'+
-            '<div class="field"><label>Status</label><select id="evt-e-status-'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select></div>'+
-            '<div class="field"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
-            '<div class="btn-row"><button class="btn small" data-action="evt-salvar" data-id="'+p.id+'">Salvar</button><button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">Cancelar</button></div></div>';
-        }else{
-          h += '<div class="evt-adm-item"><div class="evt-adm-info"><span class="evt-adm-nome">'+(i+1)+'. '+escapeHtml(p.nome)+'</span>'+
-            '<span class="evt-pago">'+fmtBRLfront(p.valorPago)+(p.status!=='pago'?' <small>de '+fmtBRLfront(p.valor)+'</small>':'')+'</span></div>'+
-            '<div class="evt-adm-acoes"><select data-action="evt-status" data-id="'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select>'+
-            '<button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">editar</button><button class="btn danger small" data-action="evt-remover" data-id="'+p.id+'">remover</button></div></div>';
-        }
-      });
-    }else{
-      h += '<p class="small muted" style="margin-top:8px;">Nenhum participante cadastrado ainda.</p>';
-    }
-  }else{
-    h += '<p class="small muted">Não foi possível carregar a lista.</p>';
-  }
-  return '<div class="evt-part-adm"><div class="evt-part-tit">👥 PARTICIPANTES'+(tit?' — '+escapeHtml(tit):'')+(l?' ('+l.participantes.length+')':'')+'</div><div class="evt-part-corpo">'+h+'</div></div>';
+// ---- participantes do evento: rascunho dentro do cadastro do evento (gravado junto com o evento)
+function pdNum(s){
+  const t = String(s==null ? '' : s).replace(/[^\d.,]/g, '');
+  if(!t) return 0;
+  const n = parseFloat(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
+  return Number.isFinite(n) ? n : 0;
 }
+function pdTotais(){
+  const L = state.partDraft || [];
+  let prev = 0, arr = 0, pg = 0, pa = 0, pe = 0;
+  L.forEach(p=>{
+    const v = pdNum(p.valor); prev += v;
+    if(p.status==='pago'){ arr += v; pg++; }
+    else if(p.status==='parcial'){ arr += Math.min(pdNum(p.pago), v); pa++; }
+    else pe++;
+  });
+  return {qtd:L.length, previsto:prev, arrecadado:arr, aReceber:Math.max(0, prev-arr), pctPago: prev>0 ? Math.round(arr/prev*1000)/10 : 0, pagos:pg, parciais:pa, pendentes:pe};
+}
+function pdOpcoesStatus(sel){
+  return ['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(sel===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('');
+}
+function partDraftListaHtml(){
+  const L = state.partDraft || [];
+  if(!L.length) return '<p class="small muted" style="margin:8px 0 0;">Nenhum participante na lista ainda.</p>';
+  return eventoTotaisHtml(pdTotais()) + L.map((p,i)=>
+    '<div class="pd-row"><div class="pd-l1"><span class="pd-n">'+(i+1)+'. '+escapeHtml(p.nome)+'</span><button type="button" class="btn danger small" data-action="pd-del" data-i="'+i+'">remover</button></div>'+
+    '<div class="pd-l2"><input inputmode="decimal" data-pd="valor" data-i="'+i+'" value="'+escapeHtml(p.valor)+'" aria-label="Valor (R$)" placeholder="Valor"><select data-pd="status" data-i="'+i+'" aria-label="Status">'+pdOpcoesStatus(p.status)+'</select></div>'+
+    (p.status==='parcial' ? '<div class="pd-l3"><label>Valor pago (R$)</label><input inputmode="decimal" data-pd="pago" data-i="'+i+'" value="'+escapeHtml(p.pago)+'" placeholder="0,00"></div>' : '')+
+    '</div>').join('');
+}
+function partDraftHtml(e){
+  const l = state.eventoLista;
+  if(state.partDraft == null){
+    state.partDraft = (e && e.mostrarParticipantes && l) ? l.participantes.map(p=>({nome:p.nome, valor:inputValorBRL(p.valor), status:p.status, pago:inputValorBRL(p.status==='parcial' ? p.valorPago : 0)})) : [];
+    state.partDirty = false;
+  }
+  const valorPad = inputValorBRL(pdNum(e && e.pgtoValor) || (l && l.valorPadrao) || 250);
+  return '<div class="evt-novo pd-add"><div class="stack-tit">Adicionar participante</div>'+
+    '<div class="field"><label>Nome</label><input id="pd-nome" maxlength="80" list="pd-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="pd-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
+    '<div class="pd-l2"><div class="field"><label>Valor (R$)</label><input id="pd-valor" inputmode="decimal" value="'+valorPad+'"></div>'+
+    '<div class="field"><label>Status</label><select id="pd-status">'+pdOpcoesStatus('pendente')+'</select></div></div>'+
+    '<div class="field" id="pd-pago-campo" hidden><label>Valor pago (R$)</label><input id="pd-pago" inputmode="decimal" placeholder="0,00"></div>'+
+    '<div class="btn-row"><button type="button" class="btn" data-action="pd-add">Adicionar</button><button type="button" class="btn secondary" data-action="pd-todos">Adicionar todos os jogadores</button></div></div>'+
+    '<div id="pd-lista">'+partDraftListaHtml()+'</div>';
+}
+function pdRerender(){ const el = document.getElementById('pd-lista'); if(el) el.innerHTML = partDraftListaHtml(); }
+function pdAdicionar(){
+  const g = id => document.getElementById(id);
+  const nome = g('pd-nome').value.trim();
+  if(nome.length < 2){ alert('Informe o nome do participante.'); return; }
+  if(state.partDraft.some(p=>p.nome.toLowerCase()===nome.toLowerCase())){ alert('Esse participante já está na lista.'); return; }
+  const status = g('pd-status').value;
+  state.partDraft.push({nome, valor:g('pd-valor').value.trim(), status, pago: status==='parcial' ? g('pd-pago').value.trim() : ''});
+  state.partDirty = true;
+  g('pd-nome').value = ''; g('pd-pago').value = '';
+  pdRerender(); g('pd-nome').focus();
+}
+function pdTodos(){
+  const valor = document.getElementById('pd-valor').value.trim();
+  const ja = new Set(state.partDraft.map(p=>p.nome.toLowerCase()));
+  let n = 0;
+  state.elenco.filter(j=>j.ativo).forEach(j=>{
+    const nm = j.nomeReal || j.nome;
+    if(ja.has(nm.toLowerCase())) return;
+    state.partDraft.push({nome:nm, valor, status:'pendente', pago:''}); n++;
+  });
+  if(n) state.partDirty = true;
+  pdRerender(); showToast(n+' jogador(es) adicionados à lista');
+}
+
 // ---- AGENDA DE EVENTOS (painel admin): lista + editor organizado em seções
 function eventoSecao(cor, titulo, sub, corpo){
   return '<div class="fin-zona fz-'+cor+' evt-secao"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
@@ -2517,9 +2551,10 @@ function eventoEditorHtml(key, e, respOpc){
       '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
       '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'" maxlength="120"></div>'+
       '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" maxlength="40" placeholder="Ex.: R$ 250,00"></div>')+
-    eventoSecao('ciano', '📋 LISTA DE PARTICIPANTES', 'Fica dentro deste evento ("Sobre o Evento" no início e aba Eventos)',
-      '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (status do pagamento)</label>'+
-      '<p class="small muted" style="margin:4px 0 0;">Só um evento por vez exibe a lista. Depois de salvar, cadastre os participantes dentro do evento.</p>')+
+    eventoSecao('ciano', '👥 PARTICIPANTES', 'Quem vai, valor e status do pagamento',
+      '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (nome e status) em "Sobre o Evento" e na aba Eventos</label>'+
+      '<p class="small muted" style="margin:4px 0 8px;">Só um evento por vez exibe a lista. Os participantes são gravados ao tocar em "'+(novo?'Criar evento':'Salvar alterações')+'".</p>'+
+      partDraftHtml(e))+
     '<div class="btn-row"><button class="btn" data-action="salvar-evento" data-id="'+key+'">'+(novo?'Criar evento':'Salvar alterações')+'</button>'+
     '<button class="btn secondary" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
 }
@@ -2527,7 +2562,7 @@ function renderAgendaAdminHtml(agenda, respOpc){
   let h = '<div class="card hz hz-verde"><h3>📅 AGENDA DE EVENTOS</h3>'+
     '<p class="small muted">Inclua, altere e remova eventos. Em cada evento você define onde ele aparece, o local, os responsáveis, o pagamento e a lista de participantes (que fica dentro do próprio evento).</p>';
   if(state.editingEventoId==='novo'){
-    h += eventoEditorHtml('novo', null, respOpc);
+    h += eventoEditorHtml('novo', {mostrarParticipantes: !agenda.some(x=>x.mostrarParticipantes)}, respOpc);
   }else{
     h += '<button class="btn" data-action="evento-novo">➕ Novo evento</button>';
   }
@@ -2543,14 +2578,13 @@ function renderAgendaAdminHtml(agenda, respOpc){
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
           (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
           (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
-          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn'+(state.eventoPartAberto===e.id?' ativo':'')+'" data-action="evento-part-toggle" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+' '+(state.eventoPartAberto===e.id?'▲':'▼')+'</button>':'')+'</div></div>'+
+          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn" data-action="editar-evento" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+'</button>':'')+'</div></div>'+
         '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
-      if(e.mostrarParticipantes && state.eventoPartAberto===e.id) h += participantesAdminHtml(e.nome);
     }
   });
   if(agenda.length && !agenda.some(e=>e.mostrarParticipantes)){
-    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento exibe a lista de participantes. Edite um evento e marque "Exibir a lista de participantes"; aí aparece a opção "👥 participantes" dentro dele.</p>';
+    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento exibe a lista de participantes. Edite um evento e marque "Exibir a lista de participantes" para cadastrar os participantes.</p>';
   }
   return h + '</div>';
 }
@@ -2565,10 +2599,12 @@ async function handleSalvarEvento(key){
   const data = g('ev-data').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
   const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-exib').value!=='oculto', soAba:g('ev-exib').value==='aba', ...lerEventoExtras(key)};
+  if(state.partDirty) corpo.participantes = (state.partDraft||[]).map(p=>({nome:p.nome, valor:p.valor, status:p.status, valorPago:p.pago}));
   try{
     if(key==='novo') await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:corpo});
     else await api('/api/admin/agenda/'+key, {method:'PUT', adminAuth:true, body:corpo});
-    state.editingEventoId = null;
+    state.editingEventoId = null; state.partDraft = null; state.partDirty = false;
+    await refreshEvento();
     await refreshHomeExtras();
     await render();
     showToast(key==='novo' ? 'Evento criado!' : 'Evento salvo!');
@@ -2696,7 +2732,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-perfil') return handleSalvarPerfil();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){
-    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null;
+    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; state.partDraft=null; state.partDirty=false;
     if(['sorteio','resenha','votacao'].includes(state.tab)) await irParaRodadaMaisRecente();
     return render();
   }
@@ -2769,9 +2805,11 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-jogador') return handleSalvarJogador(el.dataset.id);
   if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
-  if(action==='evento-part-toggle'){ state.eventoPartAberto = state.eventoPartAberto===el.dataset.id ? null : el.dataset.id; return render(); }
-  if(action==='evento-novo'){ state.editingEventoId = 'novo'; return render(); }
-  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; return render(); }
+  if(action==='pd-add') return pdAdicionar();
+  if(action==='pd-todos') return pdTodos();
+  if(action==='pd-del'){ state.partDraft.splice(Number(el.dataset.i), 1); state.partDirty = true; return pdRerender(); }
+  if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; return render(); }
+  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; state.partDraft = null; state.partDirty = false; return render(); }
   if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; return render(); }
   if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
   if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
@@ -2787,7 +2825,15 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='admin-login-back'){ state.adminPinBuffer = state.adminPinBuffer.slice(0,-1); return render(); }
 });
 
+document.getElementById('shell').addEventListener('input', (e)=>{
+  const t = e.target;
+  if(t && t.dataset && t.dataset.pd && state.partDraft && state.partDraft[Number(t.dataset.i)]){ state.partDraft[Number(t.dataset.i)][t.dataset.pd] = t.value; state.partDirty = true; }
+});
 document.getElementById('shell').addEventListener('change', async (e)=>{
+  if(e.target.id==='pd-status'){ const c = document.getElementById('pd-pago-campo'); if(c) c.hidden = e.target.value!=='parcial'; return; }
+  if(e.target.dataset && e.target.dataset.pd && state.partDraft && state.partDraft[Number(e.target.dataset.i)]){
+    state.partDraft[Number(e.target.dataset.i)][e.target.dataset.pd] = e.target.value; state.partDirty = true; pdRerender(); return;
+  }
   if(e.target.dataset.action==='mudar-rodada-visualizada'){
     await carregarRodadaVisualizada(e.target.value);
     render();
