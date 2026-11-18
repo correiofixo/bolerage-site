@@ -240,12 +240,37 @@ function renderCardSaude(){
 }
 // nota rápida com sugestões de saúde de acordo com o resultado do IMC (orientação geral, não substitui avaliação médica)
 function dicasSaudePorIMC(imc, menor){
-  if(menor) return {tit:'Atenção à idade', cor:'#4EA1FF', itens:['Para menores de 18 anos a avaliação do peso é feita por idade e sexo — procure um pediatra ou médico do esporte.','Mantenha alimentação variada, com frutas, legumes e proteínas.','Beba água antes, durante e depois do jogo e durma bem (8 a 10 horas).','Faça aquecimento e alongamento antes do racha.']};
-  if(imc < 18.5) return {tit:'Abaixo do peso', cor:'#4EA1FF', itens:['Faça refeições regulares, com boa fonte de proteína (ovos, carnes, leite, feijão).','Inclua lanches nutritivos entre as refeições (frutas, castanhas, iogurte).','Treino de força ajuda a ganhar massa muscular e proteger as articulações.','Se o peso baixo persistir, procure um médico ou nutricionista para investigar a causa.']};
-  if(imc < 25) return {tit:'Peso normal', cor:'#3FAE58', itens:['Parabéns! Mantenha a rotina: alimentação variada, com frutas, verduras e pouco ultraprocessado.','Hidrate-se bem durante o racha e evite exagerar no álcool depois do jogo.','Aquecimento e alongamento antes de jogar reduzem o risco de lesões.','Durma de 7 a 8 horas e faça um check-up médico uma vez por ano.']};
-  if(imc < 30) return {tit:'Sobrepeso', cor:'#E4C158', itens:['Reduza refrigerantes, doces, frituras e o álcool depois do racha.','Capriche nas porções de verduras e legumes e controle o tamanho do prato.','Some uma caminhada ou corrida leve 2 a 3 vezes por semana ao racha de domingo.','Beba bastante água e durma bem — o sono ajuda no controle do peso.']};
-  if(imc < 35) return {tit:'Obesidade grau I', cor:'#F0902E', itens:['Marque uma avaliação com médico e nutricionista para montar um plano seguro.','Priorize atividades de baixo impacto (caminhada, bicicleta, natação) além do racha.','Evite jogar em horários de calor extremo e hidrate-se com frequência.','Troque bebidas açucaradas e alimentos ultraprocessados por comida de verdade.']};
-  return {tit:imc < 40 ? 'Obesidade grau II' : 'Obesidade grau III', cor:imc < 40 ? '#E2574C' : '#C93A3A', itens:['Procure um médico antes de aumentar a intensidade dos exercícios; um check-up cardiológico é recomendado.','Faça acompanhamento com nutricionista e, se indicado, com equipe multiprofissional.','Comece com atividades leves e progressivas (caminhada, bicicleta, hidroginástica).','No racha, respeite seus limites: troque de posição, faça pausas e hidrate-se.']};
+  const P = (ico, tit, txt) => ({ico, tit, txt});
+  if(menor) return {tit:'Atenção à idade', cor:'#4EA1FF', frase:'Cuidar do corpo cedo faz de você um craque por muito mais tempo!', itens:[
+    P('🩺','Avaliação certa','Para menores de 18 anos o peso é avaliado por idade e sexo. Converse com um pediatra ou médico do esporte.'),
+    P('🥗','Prato de craque','Frutas, legumes e proteínas todos os dias.'),
+    P('💧','Hidratação','Água antes, durante e depois do jogo.'),
+    P('😴','Sono em dia','De 8 a 10 horas por noite para crescer e render mais.')]};
+  if(imc < 18.5) return {tit:'Abaixo do peso', cor:'#4EA1FF', frase:'Energia é combustível: alimente o craque para render mais em campo!', itens:[
+    P('🍳','Refeições regulares','Inclua proteína em cada refeição: ovos, carnes, leite e feijão.'),
+    P('🥜','Lanches nutritivos','Entre as refeições vale fruta, castanhas e iogurte.'),
+    P('🏋️','Treino de força','Ajuda a ganhar massa muscular e protege as articulações.'),
+    P('🩺','Acompanhamento','Se o peso baixo persistir, procure médico ou nutricionista.')]};
+  if(imc < 25) return {tit:'Peso normal', cor:'#3FAE58', frase:'Você está no caminho certo. É só manter o ritmo e seguir jogando bola!', itens:[
+    P('🥗','Rotina de craque','Alimentação variada, com frutas e verduras e pouco ultraprocessado.'),
+    P('💧','Hidrate-se','Água durante o racha e pouco exagero no álcool depois do jogo.'),
+    P('🔥','Aquecimento','Aquecer e alongar antes de jogar reduz o risco de lesão.'),
+    P('😴','Sono e check-up','Durma de 7 a 8 horas e faça um check-up médico por ano.')]};
+  if(imc < 30) return {tit:'Sobrepeso', cor:'#E4C158', frase:'Pequenas mudanças, grande resultado. Bora começar hoje!', itens:[
+    P('🥤','Corte o excesso','Menos refrigerante, doces, frituras e álcool depois do racha.'),
+    P('🍽️','Prato equilibrado','Metade de verduras e legumes, e atenção ao tamanho da porção.'),
+    P('🏃','Mexa-se mais','Uma caminhada ou corrida leve de 2 a 3 vezes por semana, além do racha.'),
+    P('💧','Água e sono','Beba bastante água e durma bem: o sono ajuda no controle do peso.')]};
+  if(imc < 35) return {tit:'Obesidade grau I', cor:'#F0902E', frase:'Cada passo conta. O primeiro é buscar apoio, e você já está cuidando de si!', itens:[
+    P('🩺','Apoio profissional','Marque uma avaliação com médico e nutricionista para montar um plano seguro.'),
+    P('🚶','Movimento leve','Caminhada, bicicleta ou natação, além do racha.'),
+    P('☀️','Cuidado com o calor','Evite jogar nos horários mais quentes e hidrate-se com frequência.'),
+    P('🥗','Comida de verdade','Troque bebidas açucaradas e ultraprocessados por comida de verdade.')]};
+  return {tit:imc < 40 ? 'Obesidade grau II' : 'Obesidade grau III', cor:imc < 40 ? '#E2574C' : '#C93A3A', frase:'Seu corpo merece cuidado. Comece devagar e conte com apoio!', itens:[
+    P('🩺','Check-up primeiro','Procure um médico antes de intensificar os exercícios; um check-up do coração é recomendado.'),
+    P('🥗','Plano alimentar','Acompanhamento com nutricionista e, se indicado, com equipe multiprofissional.'),
+    P('🚴','Comece leve','Caminhada, bicicleta ou hidroginástica, aumentando aos poucos.'),
+    P('⚽','Respeite seus limites','No racha, faça pausas, troque de posição e hidrate-se.')]};
 }
 function fecharSaudeDica(){ const m = document.getElementById('perf-modal'); if(m) m.remove(); }
 function abrirSaudeDica(){
@@ -254,17 +279,23 @@ function abrirSaudeDica(){
   const imc = calcIMC(p.peso, p.altura); if(imc==null) return;
   const menor = Number(p.idade) < 18;
   const d = dicasSaudePorIMC(imc, menor);
+  const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
   fecharSaudeDica();
   const m = document.createElement('div');
   m.id = 'perf-modal'; m.className = 'perf-backdrop'; m.setAttribute('data-action','fechar-performance');
-  m.innerHTML = '<div class="perf-card saude-nota" role="dialog" aria-modal="true" data-action="noop">'+
+  m.innerHTML = '<div class="perf-card saude-nota" role="dialog" aria-modal="true" aria-label="Saúde do Craque" data-action="noop">'+
     '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
-    '<h2 class="perf-nome">👨‍⚕️ Saúde do Craque</h2>'+
-    '<p class="perf-sub">Nota rápida</p>'+
-    '<div class="saude-imc"><span class="imc-sigla">IMC</span> <span class="imc-valor" style="color:'+d.cor+'">'+imc.toFixed(1).replace('.',',')+'</span></div>'+
-    '<div class="saude-class" style="color:'+d.cor+'">'+d.tit+'</div>'+
-    '<ul class="saude-dicas">'+d.itens.map(t=>'<li>'+escapeHtml(t)+'</li>').join('')+'</ul>'+
-    '<p class="small muted" style="margin:10px 0 0;">Orientações gerais, baseadas no IMC (referência da OMS). Não substituem a avaliação de um médico ou nutricionista.</p>'+
+    '<div class="saude-topo"><div class="saude-ico">👨‍⚕️</div><h2 class="saude-tit">Saúde do Craque</h2><span class="saude-chip">NOTA RÁPIDA</span></div>'+
+    '<div class="saude-imc-card" style="--cor:'+d.cor+'">'+
+      '<div class="saude-imc-linha"><span class="saude-imc-sigla">SEU IMC</span><span class="saude-imc-valor">'+imc.toFixed(1).replace('.',',')+'</span></div>'+
+      '<div class="saude-class" style="color:'+d.cor+'">'+d.tit+'</div>'+
+      '<div class="imc-bar"><span class="imc-marker" style="left:'+pct.toFixed(1)+'%"></span></div>'+
+    '</div>'+
+    '<p class="saude-frase">“'+escapeHtml(d.frase)+'”</p>'+
+    '<div class="saude-plano-tit">🎯 SEU PLANO DE JOGO</div>'+
+    '<ul class="saude-passos">'+d.itens.map(t=>'<li><span class="saude-passo-ico">'+t.ico+'</span><div class="saude-passo-txt"><strong>'+escapeHtml(t.tit)+'</strong><span>'+escapeHtml(t.txt)+'</span></div></li>').join('')+'</ul>'+
+    '<button type="button" class="btn saude-ok" data-action="fechar-performance">Bora, craque! 💪</button>'+
+    '<p class="saude-aviso">Orientações gerais baseadas no IMC (referência da OMS). Não substituem a avaliação de um médico ou nutricionista.</p>'+
   '</div>';
   document.getElementById('shell').appendChild(m);
 }

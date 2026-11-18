@@ -1196,3 +1196,38 @@ body.na-tela-login #login-screen{
 .filtro-modo-bloco{margin:0 0 10px;}
 .filtro-modo-rot{font-size:12px;color:var(--text-muted);margin:0 0 4px;letter-spacing:.4px;}
 .filtro-modo-bloco .tabtoggle button{white-space:nowrap;}
+
+/* ---- v6.12: nota "Saúde do Craque" elegante e motivadora ---- */
+.perf-card.saude-nota{padding:20px 16px 16px;text-align:center;}
+.saude-topo{display:flex;flex-direction:column;align-items:center;gap:6px;margin:2px 0 14px;}
+.saude-ico{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:radial-gradient(circle at 50% 30%,rgba(228,193,88,.35),rgba(228,193,88,.08));border:1px solid rgba(228,193,88,.6);box-shadow:0 0 18px rgba(228,193,88,.3);}
+.saude-tit{margin:0;font-family:var(--font-display);font-size:clamp(22px,6.4vw,28px);color:var(--gold-bright,#E4C158);letter-spacing:.5px;}
+.saude-chip{padding:2px 12px;border-radius:999px;border:1px solid rgba(228,193,88,.55);background:rgba(228,193,88,.12);color:var(--gold-bright,#E4C158);font-size:11px;font-weight:800;letter-spacing:1.6px;}
+.saude-imc-card{margin:0 0 14px;padding:14px 14px 16px;border-radius:16px;border:1px solid var(--cor,#3FAE58);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.01));box-shadow:0 0 16px color-mix(in srgb,var(--cor,#3FAE58) 30%,transparent);}
+.saude-imc-linha{display:flex;align-items:baseline;justify-content:center;gap:10px;}
+.saude-imc-sigla{font-size:12px;font-weight:700;letter-spacing:1.6px;color:var(--text-muted);}
+.saude-imc-valor{font-family:var(--font-display);font-size:clamp(44px,13vw,56px);line-height:1;font-weight:800;color:var(--cor,#3FAE58);}
+.saude-class{font-weight:800;font-size:clamp(15px,4.4vw,18px);margin:4px 0 12px;}
+.saude-imc-card .imc-bar{margin:0 4px;}
+.saude-frase{margin:0 4px 16px;font-size:clamp(14px,4.1vw,16px);line-height:1.4;font-style:italic;color:var(--text);}
+.saude-plano-tit{font-family:var(--font-display);font-weight:700;letter-spacing:1.2px;font-size:clamp(12px,3.6vw,14px);color:var(--gold-bright,#E4C158);margin:0 0 10px;display:flex;align-items:center;justify-content:center;gap:10px;}
+.saude-plano-tit::before,.saude-plano-tit::after{content:"";flex:1 1 0;height:1px;background:linear-gradient(90deg,transparent,rgba(228,193,88,.55));}
+.saude-plano-tit::after{background:linear-gradient(270deg,transparent,rgba(228,193,88,.55));}
+.saude-passos{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:10px;text-align:left;}
+.saude-passos li{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:14px;border:1px solid rgba(78,161,255,.35);background:linear-gradient(180deg,rgba(78,161,255,.12),rgba(78,161,255,.03));}
+.saude-passo-ico{flex:0 0 auto;width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:21px;background:rgba(228,193,88,.14);border:1px solid rgba(228,193,88,.4);}
+.saude-passo-txt{min-width:0;display:flex;flex-direction:column;gap:2px;}
+.saude-passo-txt strong{font-size:clamp(14px,4vw,15.5px);color:var(--text);}
+.saude-passo-txt span{font-size:clamp(12.5px,3.6vw,14px);line-height:1.35;color:var(--text-muted);}
+.saude-ok{width:100%;font-size:clamp(15px,4.3vw,17px);padding:12px 8px;}
+.saude-aviso{margin:12px 6px 0;font-size:11.5px;line-height:1.35;color:var(--text-muted);}
+/* v6.12b: um pouco mais compacta (menos rolagem) */
+.saude-topo{gap:4px;margin:0 0 10px;}
+.saude-ico{width:44px;height:44px;font-size:25px;}
+.saude-imc-card{margin:0 0 10px;padding:10px 12px 12px;}
+.saude-imc-valor{font-size:clamp(38px,11vw,48px);}
+.saude-class{margin:2px 0 9px;}
+.saude-frase{margin:0 2px 12px;}
+.saude-passos{gap:8px;margin-bottom:12px;}
+.saude-passos li{padding:8px 10px;gap:10px;}
+.saude-passo-ico{width:34px;height:34px;font-size:19px;}
