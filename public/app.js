@@ -148,6 +148,7 @@ const state = {
   rankingBola: {cheia:{}, murcha:{}, detalhe:{cheia:{}, murcha:{}}},
   histJogador: '',
   votosJogador: '', votosRecebidos: null,
+  histModo: 'rodada', votosModo: 'rodada',   // escolha do filtro: por rodada ou por jogador
   rankingAba: 'geral',
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
@@ -480,7 +481,7 @@ async function handleLoginDigit(d){
 
 async function handleLogout(){
   try{ await api('/api/logout', {method:'POST', auth:true}); }catch(e){}
-  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null; state.votosJogador=''; state.votosRecebidos=null; state.histJogador='';
+  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null; state.votosJogador=''; state.votosRecebidos=null; state.histJogador=''; state.histModo='rodada'; state.votosModo='rodada';
   localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player');
   // encerra também a sessão de admin: ela não pode sobreviver à troca de jogador neste navegador
   state.adminToken=null; state.isAdmin=false;
@@ -1336,7 +1337,7 @@ function seletorVotanteHtml(){
   const eu = state.currentPlayer && state.currentPlayer.id;
   const ops = state.elenco.filter(j=>j.ativo && j.id!==eu).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'))
     .map(j=>'<option value="'+j.id+'" '+(j.id===state.votosJogador?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
-  return '<div class="field"><label>Filtrar por jogador — notas que ele deu a você</label><select data-action="votos-jogador"><option value="">Todos os jogadores (ver por rodada)</option>'+ops+'</select></div>';
+  return '<div class="field"><label>Jogador — notas que ele deu a você</label><select data-action="votos-jogador"><option value="">— escolha o jogador —</option>'+ops+'</select></div>';
 }
 async function carregarVotosRecebidos(){
   const id = state.votosJogador;
@@ -1367,7 +1368,12 @@ function votosRecebidosHtml(){
 // Tela VOTAÇÃO > aba "Votos dos Jogadores" (só aparece se o ADMIN habilitou no painel)
 function renderVotosDosJogadores(abasHtml){
   const rodV = state.rodadaVisualizada || state.rodadaAtual;
-  let h = abasHtml + seletorVotanteHtml() + votosRecebidosHtml() + seletorRodadaVisualizadaHtml('Rodada dos votos');
+  let h = abasHtml + modoFiltroHtml('votos', state.votosModo);
+  if(state.votosModo==='jogador'){
+    h += seletorVotanteHtml() + (state.votosJogador ? votosRecebidosHtml() : '<div class="empty">Escolha um jogador para ver as notas que ele deu a você, rodada a rodada.</div>');
+    setContent(h, 'votacao-votos'); return;
+  }
+  h += seletorRodadaVisualizadaHtml('Rodada dos votos');
   if(!rodV){ setContent(h+'<div class="empty">Ainda sem votos.</div>', 'votacao-votos'); return; }
     const porAvaliador = {};
     (rodV.votos||[]).forEach(v=>{
@@ -1402,11 +1408,16 @@ function renderVotosDosJogadores(abasHtml){
     }
   setContent(h, 'votacao-votos');
 }
+// escolha do filtro (Rodada ou Jogador): mostra só um seletor por vez
+function modoFiltroHtml(tela, modo){
+  const b = (m, rot) => '<button type="button" data-action="filtro-modo" data-tela="'+tela+'" data-modo="'+m+'" class="'+(modo===m?'active':'')+'">'+rot+'</button>';
+  return '<div class="filtro-modo-bloco"><div class="filtro-modo-rot">Filtrar por:</div><div class="tabtoggle">'+b('rodada','📅 Rodada')+b('jogador','👤 Jogador')+'</div></div>';
+}
 // filtro por jogador do Histórico: quantas e quais rodadas ele foi Bola Cheia / Bola Murcha
 function seletorJogadorHistoricoHtml(){
   const ops = state.elenco.filter(j=>j.ativo).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'))
     .map(j=>'<option value="'+j.id+'" '+(j.id===state.histJogador?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
-  return '<div class="field"><label>Filtrar por jogador</label><select data-action="hist-jogador"><option value="">Todos os jogadores (ver por rodada)</option>'+ops+'</select></div>';
+  return '<div class="field"><label>Jogador</label><select data-action="hist-jogador"><option value="">— escolha o jogador —</option>'+ops+'</select></div>';
 }
 function bolaDoJogadorHtml(id){
   const det = (state.rankingBola && state.rankingBola.detalhe) || {cheia:{}, murcha:{}};
@@ -1426,8 +1437,12 @@ function bolaDoJogadorHtml(id){
 // Tela VOTAÇÃO > "Histórico Bola Cheia x Bola Murcha": quem foi Bola Cheia/Murcha em cada rodada
 function renderHistoricoBola(abasHtml){
   const rod = state.rodadaVisualizada || state.rodadaAtual;
-  let html = abasHtml + seletorJogadorHistoricoHtml() + seletorRodadaVisualizadaHtml('Histórico Bola Cheia x Bola Murcha — escolha a rodada');
-  if(state.histJogador) html += bolaDoJogadorHtml(state.histJogador);
+  let html = abasHtml + modoFiltroHtml('hist', state.histModo);
+  if(state.histModo==='jogador'){
+    html += seletorJogadorHistoricoHtml() + (state.histJogador ? bolaDoJogadorHtml(state.histJogador) : '<div class="empty">Escolha um jogador para ver quantas e quais rodadas ele foi Bola Cheia ou Bola Murcha.</div>');
+    setContent(html, 'votacao-historico'); return;
+  }
+  html += seletorRodadaVisualizadaHtml('Histórico Bola Cheia x Bola Murcha — escolha a rodada');
   if(!rod){ setContent(html+'<div class="empty">Nenhuma rodada agendada ainda.</div>', 'votacao-historico'); return; }
   // só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
   const aggRod = {};
@@ -2979,6 +2994,11 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
   if(action==='saude-dica') return abrirSaudeDica();
+  if(action==='filtro-modo'){
+    if(el.dataset.tela==='hist') state.histModo = el.dataset.modo;
+    else{ state.votosModo = el.dataset.modo; if(state.votosModo==='jogador' && state.votosJogador) await carregarVotosRecebidos(); }
+    return render();
+  }
   if(action==='noop') return;
   if(action==='ranking-aba'){ state.rankingAba = el.dataset.aba; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));

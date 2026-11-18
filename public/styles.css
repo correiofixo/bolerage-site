@@ -1191,3 +1191,8 @@ body.na-tela-login #login-screen{
 .votos-dist{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 0 6px;}
 .votos-dist .voto-nota{white-space:nowrap;}
 .votos-dist .voto-nota b{margin-left:2px;}
+
+/* ---- v6.11: escolha do filtro (Rodada / Jogador) nas abas Histórico Bola Cheia x Murcha e Votos dos Jogadores ---- */
+.filtro-modo-bloco{margin:0 0 10px;}
+.filtro-modo-rot{font-size:12px;color:var(--text-muted);margin:0 0 4px;letter-spacing:.4px;}
+.filtro-modo-bloco .tabtoggle button{white-space:nowrap;}
