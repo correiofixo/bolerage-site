@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 31;
+const APP_BUILD = 32;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -185,6 +185,14 @@ try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_ativo INTEGER NOT NULL DEFAULT
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_nome TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_pix TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_valor TEXT NOT NULL DEFAULT ''"); }catch(e){}
+// acesso marketing: o jogador pode gerir os eventos (agenda, participantes e aba Evento)
+try{ db.exec("ALTER TABLE jogadores ADD COLUMN marketing INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+// local do evento (endereço) para abrir no Waze / Google Maps / Uber
+try{ db.exec("ALTER TABLE eventos ADD COLUMN local TEXT NOT NULL DEFAULT ''"); }catch(e){}
+// aba "Evento" da Resenha editável pelo admin
+try{ db.exec("ALTER TABLE config ADD COLUMN evento_aba_ativa INTEGER NOT NULL DEFAULT 1"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN evento_aba_titulo TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN evento_aba_texto TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // CONTROLE DE ACESSOS: cada entrada no app (login/abertura) e cada troca de tela de cada jogador
 try{ db.exec("CREATE TABLE IF NOT EXISTS acessos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, ts TEXT NOT NULL, tipo TEXT NOT NULL, tela TEXT)"); }catch(e){}
 try{ db.exec("CREATE INDEX IF NOT EXISTS idx_acessos_jog_ts ON acessos (jogador_id, ts)"); }catch(e){}
@@ -690,6 +698,22 @@ function requireSuper(req,res,next){
     return res.status(403).json({erro:'Ação restrita ao Super Admin.'});
   });
 }
+// Eventos (agenda, participantes, aba Evento): Super Admin, admin com a área "conteudo"
+// ou jogador ATIVO com a opção "acesso marketing" (usa o token normal do jogador).
+function requireEventos(req,res,next){
+  const sessao = getSessao(extrairToken(req));
+  if(!sessao) return res.status(401).json({erro:'Sessão inválida. Faça login novamente.'});
+  if(sessao.jogador_id){
+    const a = getJogadorAuth(sessao.jogador_id);
+    const j = getJogadorPorId(sessao.jogador_id);
+    if(a.superAdmin || (a.admin && a.perms.includes('conteudo')) || (j && j.ativo && j.marketing)){
+      req.jogadorId = sessao.jogador_id; return next();
+    }
+    return res.status(403).json({erro:'Seu acesso não inclui a gestão de eventos.'});
+  }
+  if(sessao.is_admin){ req.jogadorId = null; return next(); }   // PIN administrativo legado
+  return res.status(401).json({erro:'Sessão inválida.'});
+}
 function requirePerm(perm){
   return (req,res,next)=>requireAdmin(req,res,()=>{
     if(req.auth && (req.auth.superAdmin || req.auth.perms.includes(perm))) return next();
@@ -778,6 +802,7 @@ function jogadorPublico(j){
     corneta: !!j.corneta,
     timeCoracao: j.time_coracao || '',
     deptoMedico: !!j.depto_medico,
+    marketing: !!j.marketing,
     telefone: j.telefone || '',
     email: j.email || '',
     apelido: j.apelido || '',
@@ -878,6 +903,7 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     diasAtraso: diasEmAtraso(j),
     corneta:!!j.corneta, timeCoracao:j.time_coracao||'',
     deptoMedico:!!j.depto_medico,
+    marketing:!!j.marketing,
   }));
   const cfg = getConfig();
   res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now, sorteioModo:cfg.sorteio_modo||'manual', sorteioAgendado:cfg.sorteio_agendado||'', mostrarVotos:!!cfg.mostrar_votos}});
@@ -1514,6 +1540,7 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
     timeCoracao = String(req.body.timeCoracao);
   }
   const deptoMedico = req.body.deptoMedico!=null ? (req.body.deptoMedico?1:0) : (j.depto_medico||0);
+  const marketing = req.body.marketing!=null ? (req.body.marketing?1:0) : (j.marketing||0);
   // valor de mensalidade individual ('' = volta ao valor padrão do card Aluguel da quadra)
   let valorMens = j.valor_mensalidade==null ? null : j.valor_mensalidade;
   if(req.body.valorMensalidade!==undefined){
@@ -1525,8 +1552,8 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
       valorMens = Math.round(n*100)/100;
     }
   }
-  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,telefone=?,corneta=?,time_coracao=?,depto_medico=?,valor_mensalidade=? WHERE id=?')
-    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,telefone,corneta,timeCoracao,deptoMedico,valorMens,j.id);
+  db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,telefone=?,corneta=?,time_coracao=?,depto_medico=?,valor_mensalidade=?,marketing=? WHERE id=?')
+    .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,telefone,corneta,timeCoracao,deptoMedico,valorMens,marketing,j.id);
   aplicarMensalidade(j.id, mensalidade);
   res.json({ok:true});
 });
@@ -1949,7 +1976,7 @@ function montarEventoLista(){
   return {
     valorPadrao: Number(cfg.evento_valor_padrao)||250,
     eventoNome: ev ? ev.nome : '', eventoData: ev ? ev.data : '',
-    participantes,
+    participantes, aba: abaEvento(),
     totais: {qtd:participantes.length, previsto, arrecadado, aReceber: Math.max(0, previsto-arrecadado),
       pctPago: previsto>0 ? Math.round(arrecadado/previsto*1000)/10 : 0,
       pagos: participantes.filter(p=>p.status==='pago').length, parciais: participantes.filter(p=>p.status==='parcial').length, pendentes: participantes.filter(p=>p.status==='pendente').length},
@@ -1965,7 +1992,7 @@ function lerParticipante(b, atual){
     valor = Math.round(v*100)/100;
   }
   const status = b.status===undefined ? (atual?atual.status:'pendente') : String(b.status);
-  if(!STATUS_EVENTO.includes(status)) return {erro:'Status inválido (use Pago, Parcial ou Pendente).'};
+  if(!STATUS_EVENTO.includes(status)) return {erro:'Status inválido (use Pago Total, Pago Parcial ou Pendente).'};
   let pago = atual ? atual.valor_pago : 0;
   if(b.valorPago!==undefined && String(b.valorPago).trim()!==''){
     const v = parseValorBR(b.valorPago);
@@ -1974,19 +2001,30 @@ function lerParticipante(b, atual){
   }
   if(status==='pago') pago = valor;
   else if(status==='pendente') pago = 0;
-  else if(pago>=valor) return {erro:'No status Parcial o valor pago precisa ser menor que o valor total.'};
+  else if(pago>=valor) return {erro:'No status Pago Parcial o valor pago precisa ser menor que o valor total.'};
   return {nome, valor, status, pago};
 }
+function abaEvento(){
+  const cfg = getConfig() || {};
+  return {ativa: cfg.evento_aba_ativa!==0, titulo: cfg.evento_aba_titulo||'', texto: cfg.evento_aba_texto||''};
+}
+app.put('/api/admin/evento-aba', requireEventos, (req,res)=>{
+  const b = req.body || {};
+  db.prepare('UPDATE config SET evento_aba_ativa=?, evento_aba_titulo=?, evento_aba_texto=? WHERE id=1')
+    .run(b.ativa===false ? 0 : 1, String(b.titulo||'').trim().slice(0,80), String(b.texto||'').trim().slice(0,500));
+  logEvento('Aba Evento da Resenha atualizada.');
+  res.json({ok:true});
+});
 // lista visível para qualquer jogador logado (aba Evento da Resenha)
 app.get('/api/evento', requireAuth, (req,res)=>{ res.json(montarEventoLista()); });
-app.post('/api/admin/evento-participantes', requirePerm('conteudo'), (req,res)=>{
+app.post('/api/admin/evento-participantes', requireEventos, (req,res)=>{
   const r = lerParticipante(req.body||{}, null);
   if(r.erro) return res.status(400).json({erro:r.erro});
   if(db.prepare('SELECT 1 FROM evento_participantes WHERE lower(nome)=lower(?)').get(r.nome)) return res.status(409).json({erro:'Esse participante já está na lista.'});
   db.prepare('INSERT INTO evento_participantes (id,nome,valor,valor_pago,status,criado_em) VALUES (?,?,?,?,?,?)').run(idGen('ep'), r.nome, r.valor, r.pago, r.status, nowISO());
   res.json({ok:true});
 });
-app.put('/api/admin/evento-participantes/:id', requirePerm('conteudo'), (req,res)=>{
+app.put('/api/admin/evento-participantes/:id', requireEventos, (req,res)=>{
   const p = db.prepare('SELECT * FROM evento_participantes WHERE id=?').get(req.params.id);
   if(!p) return res.status(404).json({erro:'Participante não encontrado.'});
   const r = lerParticipante(req.body||{}, p);
@@ -1996,12 +2034,12 @@ app.put('/api/admin/evento-participantes/:id', requirePerm('conteudo'), (req,res
   db.prepare('UPDATE evento_participantes SET nome=?, valor=?, valor_pago=?, status=? WHERE id=?').run(r.nome, r.valor, r.pago, r.status, p.id);
   res.json({ok:true});
 });
-app.delete('/api/admin/evento-participantes/:id', requirePerm('conteudo'), (req,res)=>{
+app.delete('/api/admin/evento-participantes/:id', requireEventos, (req,res)=>{
   db.prepare('DELETE FROM evento_participantes WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });
 // adiciona todos os jogadores ativos que ainda não estão na lista (valor padrão, status Pendente)
-app.post('/api/admin/evento-participantes-todos', requirePerm('conteudo'), (req,res)=>{
+app.post('/api/admin/evento-participantes-todos', requireEventos, (req,res)=>{
   const valor = Number(getConfig().evento_valor_padrao)||250;
   const ja = new Set(db.prepare('SELECT lower(nome) n FROM evento_participantes').all().map(r=>r.n));
   let n = 0;
@@ -2012,7 +2050,7 @@ app.post('/api/admin/evento-participantes-todos', requirePerm('conteudo'), (req,
   logEvento('Evento de fim de ano: '+n+' jogador(es) adicionados à lista de participantes.');
   res.json({ok:true, adicionados:n});
 });
-app.put('/api/admin/evento-valor-padrao', requirePerm('conteudo'), (req,res)=>{
+app.put('/api/admin/evento-valor-padrao', requireEventos, (req,res)=>{
   const v = parseValorBR((req.body||{}).valor);
   if(v==null || v<0 || v>100000) return res.status(400).json({erro:'Valor inválido.'});
   db.prepare('UPDATE config SET evento_valor_padrao=? WHERE id=1').run(Math.round(v*100)/100);
@@ -2180,8 +2218,8 @@ app.put('/api/admin/home-ordem', requirePerm('conteudo'), (req,res)=>{
 /* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
 app.get('/api/home-extras', (req,res)=>{
   const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
-  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel,mostrar_participantes,pgto_ativo,pgto_nome,pgto_pix,pgto_valor FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
-    .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel),
+  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel,local,mostrar_participantes,pgto_ativo,pgto_nome,pgto_pix,pgto_valor FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
+    .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel), local:e.local||'',
       mostrarParticipantes:!!e.mostrar_participantes,
       pagamento: e.pgto_ativo ? {nome:e.pgto_nome||'', chavePix:e.pgto_pix||'', valor:e.pgto_valor||''} : null}));
   const algumComLista = eventos.some(e=>e.mostrarParticipantes);
@@ -2195,11 +2233,13 @@ app.get('/api/home-extras', (req,res)=>{
     gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente, presidenteTel:telDoNome(gestaoRow.presidente), viceTel:telDoNome(gestaoRow.vice_presidente)} : null,
     ordem: normalizarOrdemHome((getConfig()||{}).home_ordem),
     eventoLista: algumComLista ? montarEventoLista() : null,
+    eventoAba: abaEvento(),
   });
 });
 
 // salva as opções extras de um evento (lista de participantes + dados para pagamento), se vierem no corpo
 function aplicarExtrasEvento(id, b){
+  if(b.local!==undefined) db.prepare('UPDATE eventos SET local=? WHERE id=?').run(String(b.local).trim().slice(0,200), id);
   if(b.mostrarParticipantes!==undefined){
     const v = b.mostrarParticipantes ? 1 : 0;
     if(v) db.prepare('UPDATE eventos SET mostrar_participantes=0').run();     // só um evento exibe a lista
@@ -2210,11 +2250,11 @@ function aplicarExtrasEvento(id, b){
   if(b.pgtoPix!==undefined)   db.prepare('UPDATE eventos SET pgto_pix=? WHERE id=?').run(String(b.pgtoPix).trim().slice(0,120), id);
   if(b.pgtoValor!==undefined) db.prepare('UPDATE eventos SET pgto_valor=? WHERE id=?').run(String(b.pgtoValor).trim().slice(0,40), id);
 }
-app.get('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
+app.get('/api/admin/agenda', requireEventos, (req,res)=>{
   res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||'',
-    mostrarParticipantes:!!e.mostrar_participantes, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
+    local:e.local||'', mostrarParticipantes:!!e.mostrar_participantes, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
 });
-app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
+app.post('/api/admin/agenda', requireEventos, (req,res)=>{
   const nome = String(req.body.nome||'').trim();
   const data = String(req.body.data||'').trim();
   if(!nome || !data) return res.status(400).json({erro:'Informe nome e data do evento.'});
@@ -2225,7 +2265,7 @@ app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   aplicarExtrasEvento(id, req.body);
   res.json({ok:true, id});
 });
-app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
+app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   const ev = db.prepare('SELECT * FROM eventos WHERE id=?').get(req.params.id);
   if(!ev) return res.status(404).json({erro:'Evento não encontrado.'});
   const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
@@ -2237,7 +2277,7 @@ app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
   aplicarExtrasEvento(ev.id, req.body);
   res.json({ok:true});
 });
-app.delete('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
+app.delete('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   db.prepare('DELETE FROM eventos WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });

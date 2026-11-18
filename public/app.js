@@ -7,7 +7,9 @@
 async function api(path, opts={}){
   const headers = {'Content-Type':'application/json'};
   if(opts.auth && state.token) headers.Authorization = 'Bearer '+state.token;
+  const usouTokenJogador = !!(opts.adminAuth && !state.adminToken && state.token);
   if(opts.adminAuth && state.adminToken) headers.Authorization = 'Bearer '+state.adminToken;
+  else if(usouTokenJogador) headers.Authorization = 'Bearer '+state.token;
   const res = await fetch(path, {
     method: opts.method||'GET',
     headers,
@@ -17,7 +19,7 @@ async function api(path, opts={}){
   try{ data = await res.json(); }catch(e){}
   if(res.status===401){
     if(opts.adminAuth){ state.adminToken=null; state.isAdmin=false; localStorage.removeItem('bolerage_admin_token'); }
-    if(opts.auth){ state.token=null; state.currentPlayer=null; localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player'); }
+    if(opts.auth || usouTokenJogador){ state.token=null; state.currentPlayer=null; localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player'); }
   }
   if(!res.ok){
     const err = new Error((data&&data.erro) || ('Erro '+res.status));
@@ -155,6 +157,7 @@ const state = {
   eventoLista: null,
   eventoEditId: null,
   eventoSobreAberto: false,
+  eventoLocalAberto: false,
   trampoFormAberto: false,
   acessosPeriodo: 30,
   acessos: null,
@@ -340,7 +343,7 @@ function renderTopbar(){
   document.getElementById('pin-action-slot').innerHTML =
     '<button data-action="abrir-troca-pin">Meu Contrato</button>';
   document.getElementById('admin-action-slot').innerHTML =
-    (state.currentPlayer.admin ? '<button data-action="abrir-admin">Admin</button>' : '')+
+    ((state.currentPlayer.admin || state.currentPlayer.marketing) ? '<button data-action="abrir-admin">'+(state.currentPlayer.admin ? 'Admin' : 'Eventos')+'</button>' : '')+
     '<button data-action="logout">Sair</button>';
   const m = MENS_INFO[state.currentPlayer.mensalidade];
   const mensLine = m
@@ -596,7 +599,7 @@ function renderExtrasIniciais(){
     ex.eventos.forEach(e=>{
       const desc = (e.descricao||'').trim();
       const resp = (e.responsavel||'').trim();
-      if(desc || resp || e.mostrarParticipantes || e.pagamento){
+      if(desc || resp || e.mostrarParticipantes || e.pagamento || e.local){
         const wa = waLink(e.responsavelTel);
         const aberto = state.eventoAbertoId===String(e.id) && Date.now() < state.eventoAbertoExp;
         html += '<details class="evento-item" data-evento-id="'+e.id+'"'+(aberto?' open':'')+'>'+
@@ -604,6 +607,7 @@ function renderExtrasIniciais(){
           (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
           (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(nomeExibicaoPorNomeReal(resp))+
             (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</span></div>' : '')+
+        localEventoHtml(e)+
         sobreEventoHtml(e, ex.eventoLista)+
         '</details>';
       }else{
@@ -814,19 +818,17 @@ async function handleTogglePresenca(atual){
    ============================================================ */
 // ---- EVENTO DE FIM DE ANO: lista de participantes (valor pago e status)
 async function refreshEvento(){ try{ state.eventoLista = await api('/api/evento', {auth:true}); }catch(e){} }
-const ST_EVENTO = {pago:{rot:'Pago', cls:'st-pago', ico:'✅'}, parcial:{rot:'Parcial', cls:'st-parcial', ico:'🟠'}, pendente:{rot:'Pendente', cls:'st-pendente', ico:'⏳'}};
+const ST_EVENTO = {pago:{rot:'Pago Total', cls:'st-pago', ico:'✅'}, parcial:{rot:'Pago Parcial', cls:'st-parcial', ico:'🟠'}, pendente:{rot:'Pendente', cls:'st-pendente', ico:'⏳'}};
 function statusEventoPill(st){ const x = ST_EVENTO[st] || ST_EVENTO.pendente; return '<span class="st-pill '+x.cls+'">'+x.ico+' '+x.rot+'</span>'; }
 function eventoLinhaHtml(p, i){
-  const pagoTxt = fmtBRLfront(p.valorPago) + (p.status!=='pago' ? ' <small>de '+fmtBRLfront(p.valor)+'</small>' : '');
-  return '<div class="fin-row evt-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(p.nome)+'</span>'+
-    '<span class="evt-pago">'+pagoTxt+'</span>'+statusEventoPill(p.status)+'</div>';
+  return '<div class="fin-row evt-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(p.nome)+'</span>'+statusEventoPill(p.status)+'</div>';
 }
 function eventoTotaisHtml(t){
   return '<div class="kpi-grid">'+
     '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
     '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>'+
     '<div class="kpi kpi-sm kpi-dourado"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
-    '<div class="kpi kpi-sm kpi-azul"><div class="kpi-num">'+t.qtd+'</div><div class="kpi-rot">participante'+(t.qtd===1?'':'s')+' ('+t.pagos+' '+(t.pagos===1?'pago':'pagos')+' • '+t.parciais+' '+(t.parciais===1?'parcial':'parciais')+' • '+t.pendentes+' '+(t.pendentes===1?'pendente':'pendentes')+')</div></div>'+
+    '<div class="kpi kpi-sm kpi-azul"><div class="kpi-num">'+t.qtd+'</div><div class="kpi-rot">participante'+(t.qtd===1?'':'s')+' ('+t.pagos+' pago total • '+t.parciais+' pago parcial • '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+')</div></div>'+
   '</div>';
 }
 function pagamentoEventoHtml(pg){
@@ -836,6 +838,17 @@ function pagamentoEventoHtml(pg){
     (pg.chavePix ? '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(pg.chavePix)+'</span><button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(pg.chavePix)+'">Copiar</button></span></div>' : '')+
     (pg.valor ? '<div class="list-row"><span>Valor</span><span><strong>'+escapeHtml(pg.valor)+'</strong></span></div>' : '')+
   '</div>';
+}
+// local do evento: toque para abrir no Waze, Google Maps ou Uber
+function localEventoHtml(e){
+  if(!e.local) return '';
+  const q = encodeURIComponent(e.local);
+  return '<details class="evento-local" data-evento-id="'+e.id+'"'+(state.eventoLocalAberto?' open':'')+'><summary>📍 '+escapeHtml(e.local)+' <small>• toque para ir</small></summary>'+
+    '<div class="local-btns">'+
+      '<a class="btn small local-btn local-waze" href="https://waze.com/ul?q='+q+'&navigate=yes" target="_blank" rel="noopener">🚗 Waze</a>'+
+      '<a class="btn small local-btn local-maps" href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener">🗺️ Google Maps</a>'+
+      '<a class="btn small local-btn local-uber" href="https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff%5Bformatted_address%5D='+q+'" target="_blank" rel="noopener">🚕 Uber</a>'+
+    '</div></details>';
 }
 // nota "Sobre o Evento" (tela inicial): dados para pagamento + lista de participantes
 function sobreEventoHtml(e, lista){
@@ -854,21 +867,22 @@ function sobreEventoHtml(e, lista){
 function renderEventoAbaHtml(){
   const l = state.eventoLista;
   const evHome = ((state.homeExtras && state.homeExtras.eventos) || []).find(e=>e.mostrarParticipantes) || null;
-  const titulo = (l && l.eventoNome) ? l.eventoNome : 'Evento de Fim de Ano';
+  const aba = (l && l.aba) || (state.homeExtras && state.homeExtras.eventoAba) || {};
+  const titulo = aba.titulo || ((l && l.eventoNome) ? l.eventoNome : 'Evento de Fim de Ano');
   let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(titulo)+'</h3>'+
     (l && l.eventoData ? '<p class="rodada-sub">'+formatDataBR(l.eventoData)+'</p>' : '')+
-    '<p class="small muted">Lista de participantes com o valor já pago e o status de cada um.</p></div>';
+    '<p class="small muted" style="white-space:pre-line;">'+escapeHtml(aba.texto || 'Lista de participantes e o status do pagamento de cada um.')+'</p></div>';
   if(!l){ return h + '<div class="empty">Carregando…</div>'; }
   if(!l.participantes.length) return h + '<div class="empty">A lista de participantes ainda não foi cadastrada pelo administrador.</div>';
   const t = l.totais;
   h += pagamentoEventoHtml(evHome && evHome.pagamento) ? '<div class="card hz hz-verde">'+pagamentoEventoHtml(evHome.pagamento)+'</div>' : '';
   h += '<div class="card"><h3 class="titulo-centralizado">Resumo</h3>'+eventoTotaisHtml(t)+
     pizzaHtml('', [
-      {label:'Pago', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
-      {label:'Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
+      {label:'Pago Total', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
+      {label:'Pago Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
       {label:'Pendente', valor:t.pendentes, cor:'#E2574C', txt:t.pendentes+' participante'+(t.pendentes===1?'':'s')},
     ])+'</div>';
-  h += finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • valor pago e status', l.participantes.map(eventoLinhaHtml).join(''));
+  h += finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • status do pagamento', l.participantes.map(eventoLinhaHtml).join(''));
   return h;
 }
 
@@ -978,13 +992,15 @@ function renderResenha(){
   const euNaResenha = idsResenhaAtual.includes(meuId);
   const euNoVinho = (rodAtual.vinho || []).includes(meuId);
 
-  const ab = state.resenhaAba || 'resenha';
+  const abaEventoAtiva = !(state.homeExtras && state.homeExtras.eventoAba && state.homeExtras.eventoAba.ativa===false);
+  let ab = state.resenhaAba || 'resenha';
+  if(ab==='evento' && !abaEventoAtiva) ab = 'resenha';
   const abasResenha = '<div class="tabtoggle tabtoggle-grid">'+
       '<button data-action="resenha-aba" data-aba="resenha" class="'+(ab==='resenha'?'active':'')+'">Resenha</button>'+
       '<button data-action="resenha-aba" data-aba="rifas" class="'+(ab==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
       '<button data-action="resenha-aba" data-aba="redes" class="'+(ab==='redes'?'active':'')+'">📲 Redes Sociais</button>'+
       '<button data-action="resenha-aba" data-aba="trampos" class="'+(ab==='trampos'?'active':'')+'">💼 Trampos</button>'+
-      '<button data-action="resenha-aba" data-aba="evento" class="'+(ab==='evento'?'active':'')+'">🎉 Evento</button>'+
+      (abaEventoAtiva ? '<button data-action="resenha-aba" data-aba="evento" class="'+(ab==='evento'?'active':'')+'">🎉 '+'Evento'+'</button>' : '')+
     '</div>';
   if(ab==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
   if(ab==='redes'){ setContent(abasResenha + renderRedesHtml(), 'resenha-redes'); return; }
@@ -1604,10 +1620,10 @@ async function handleAdminLogout(){
 
 async function renderAdmin(){
   const c = document.getElementById('content');
-  if(!state.currentPlayer || !state.currentPlayer.admin){
+  if(!state.currentPlayer || (!state.currentPlayer.admin && !state.currentPlayer.marketing)){
     c.innerHTML = '<div class="empty">Área restrita à administração.</div>'; return;
   }
-  if(!state.isAdmin){
+  if(!state.isAdmin && state.currentPlayer.admin){
     try{
       const data = await api('/api/admin/enter', {method:'POST', auth:true});
       state.adminToken = data.adminToken; state.isAdmin = true;
@@ -1619,6 +1635,9 @@ async function renderAdmin(){
   const isSuper = !!state.currentPlayer.superAdmin;
   const permsMe = state.currentPlayer.perms || [];
   const can = p => isSuper || permsMe.includes(p);
+  // acesso marketing: gere só os eventos (agenda, participantes e aba Evento)
+  const marketing = !!state.currentPlayer.marketing;
+  const soEventos = marketing && !can('conteudo');
   const permLabel = p => p==='conteudo' ? 'Conteúdo da tela inicial' : p==='mensalidades' ? 'Mensalidades' : p;
   const on401 = e => { if(e && e.status===401){ state.isAdmin=false; state.adminToken=null; localStorage.removeItem('bolerage_admin_token'); render(); return true; } return false; };
 
@@ -1634,16 +1653,20 @@ async function renderAdmin(){
       try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
     }
   }
-  if(!isSuper){
+  if(!isSuper && !soEventos){
     // Admin (não super) também visualiza a Gestão (relatório financeiro e fluxo de caixa)
     try{ state.relatorioFin = await api('/api/admin/relatorio-financeiro', {adminAuth:true}); }catch(e){ if(on401(e)) return; state.relatorioFin = null; }
   }
-  if(can('conteudo')){
+  if(can('conteudo') || marketing){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
-    try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
-    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista(); await refreshHomeExtras(); await refreshEvento();
-    try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
-    try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+    if(soEventos){
+      await refreshHomeExtras(); await refreshEvento();
+    }else{
+      try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+      await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista(); await refreshHomeExtras(); await refreshEvento();
+      try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+      try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
+    }
   }
   if(can('mensalidades')){
     try{ const rm = await api('/api/admin/mensalidades', {adminAuth:true}); mensalPlayers = rm.jogadores; mensalMeta = rm; state._mensalPadrao = rm.valorPadrao; }catch(e){ if(on401(e)) return; }
@@ -1651,8 +1674,8 @@ async function renderAdmin(){
   if(elencoAdmin) state.elencoAdmin = elencoAdmin;
 
   const rodada = state.rodadaAtual;
-  const papelLabel = isSuper ? 'Super Admin' : ('Admin — '+(permsMe.length ? permsMe.map(permLabel).join(', ') : 'sem áreas atribuídas'));
-  let html = '<div class="card"><div class="list-row" style="border:none;padding:0;"><span><h2 style="margin:0;">Painel administrativo</h2><span class="small muted">'+escapeHtml(papelLabel)+'</span></span><button class="btn secondary small" data-action="admin-logout">sair do admin</button></div></div>';
+  const papelLabel = soEventos ? 'Acesso marketing — gestão de eventos' : isSuper ? 'Super Admin' : ('Admin — '+(permsMe.length ? permsMe.map(permLabel).join(', ') : 'sem áreas atribuídas'));
+  let html = '<div class="card"><div class="list-row" style="border:none;padding:0;"><span><h2 style="margin:0;">Painel administrativo</h2><span class="small muted">'+escapeHtml(papelLabel)+'</span></span>'+(soEventos ? '<button class="btn secondary small" data-action="tab" data-tab="inicio">voltar</button>' : '<button class="btn secondary small" data-action="admin-logout">sair do admin</button>')+'</div></div>';
 
   if(isSuper){
   html += '<div class="card"><h3>Rodada atual</h3>';
@@ -1736,6 +1759,7 @@ async function renderAdmin(){
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
         '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (faz check-in e vota, mas não entra no sorteio dos times)</label>'+
         '<label class="small"><input type="checkbox" id="edit-depto-medico-'+j.id+'" '+(j.deptoMedico?'checked':'')+'> Depto. Médico (mostra 🚑 ao lado do nome na tela inicial)</label>'+
+        '<label class="small"><input type="checkbox" id="edit-marketing-'+j.id+'" '+(j.marketing?'checked':'')+'> Acesso marketing (pode gerir os eventos: agenda, participantes e aba Evento)</label>'+
         (j.superAdmin
           ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
           : '<label class="small"><input type="checkbox" id="edit-admin-'+j.id+'" '+(j.admin?'checked':'')+'> acesso admin</label>'+
@@ -1751,6 +1775,7 @@ async function renderAdmin(){
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
         (j.corneta?' <span class="badge">🎺🥜 corneta</span>':'')+
         (j.deptoMedico?' <span class="badge">🚑 depto. médico</span>':'')+
+        (j.marketing?' <span class="badge">📣 marketing</span>':'')+
         (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+((j.mensalidade==='em_atraso' && j.diasAtraso!=null)?' • '+j.diasAtraso+' dia'+(j.diasAtraso===1?'':'s'):'')+'</span>':'')+
         (j.valorMensalidade!==''?' <span class="badge">'+fmtBRLfront(Number(j.valorMensalidade))+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
@@ -1766,14 +1791,15 @@ async function renderAdmin(){
   } /* fim aba Jogadores */
   } /* fim isSuper (rodada / critérios / elenco) */
 
-  if(!isSuper){
+  if(!isSuper && !soEventos){
     html += '<div class="card"><h3>Gestão</h3>'+renderRelatorioFinanceiroHtml(state.relatorioFin, false)+'</div>';
   }
 
-  if(can('conteudo')){
+  if(can('conteudo') || marketing){
   const respOpc = sel => '<option value="">— sem responsável —</option>'+
     state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'" '+((j.nomeReal||j.nome)===sel?'selected':'')+'>'+escapeHtml(j.nomeReal||j.nome)+'</option>').join('');
   const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;';
+  if(!soEventos){
   if(isSuper) html += renderAcessosHtml(state.acessos);
   // card ORDEM: escolhe a sequência dos cards da tela inicial
   {
@@ -1808,6 +1834,7 @@ async function renderAdmin(){
         : '<p class="small muted">Nenhuma rifa cadastrada ainda.</p>')+
       '</div>';
   }
+  } /* fim !soEventos (acessos/ordem/rifas) */
   html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
   agenda.forEach(e=>{
     if(state.editingEventoId===e.id){
@@ -1821,7 +1848,7 @@ async function renderAdmin(){
         '<div class="btn-row"><button class="btn small" data-action="salvar-evento" data-id="'+e.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
     }else{
-      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+(e.mostrarParticipantes?' <span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?' <span class="badge">💳 pagamento</span>':'')+'</span>'+
+      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+(e.local?' <span class="badge">📍 local</span>':'')+(e.mostrarParticipantes?' <span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?' <span class="badge">💳 pagamento</span>':'')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button> '+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
     }
@@ -1840,12 +1867,18 @@ async function renderAdmin(){
     let h = '<div class="card hz hz-roxo"><h3>🎉 EVENTO DE FIM DE ANO — PARTICIPANTES</h3>'+
       '<p class="small muted">Cadastre quem vai ao evento, o valor e o status do pagamento. A lista aparece para todos em Resenha &gt; Evento e, se você ativar na Agenda de eventos, também em "Sobre o Evento" na tela inicial.</p>';
     if(l){
+      const ab = l.aba || {};
+      h += '<div class="evt-novo"><div class="stack-tit">Aba Evento (Resenha)</div>'+
+        '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Evento" na tela Resenha</label>'+
+        '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="'+escapeHtml(l.eventoNome||'Evento de Fim de Ano')+'"></div>'+
+        '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Lista de participantes e o status do pagamento de cada um.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
+        '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Evento</button></div>';
       h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
       h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
         '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
         '<div class="field"><label>Valor (R$)</label><input id="evt-valor" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"></div>'+
-        '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Parcial</option><option value="pago">Pago</option></select></div>'+
-        '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
+        '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Pago Parcial</option><option value="pago">Pago Total</option></select></div>'+
+        '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
         '<div class="btn-row"><button class="btn" data-action="evt-adicionar">Adicionar</button><button class="btn secondary" data-action="evt-todos">Adicionar todos os jogadores</button></div></div>';
       if(l.participantes.length){
         h += '<div class="divider"></div>'+eventoTotaisHtml(l.totais);
@@ -1854,7 +1887,7 @@ async function renderAdmin(){
             h += '<div class="evt-edit"><div class="field"><label>Nome</label><input id="evt-e-nome-'+p.id+'" value="'+escapeHtml(p.nome)+'" maxlength="80"></div>'+
               '<div class="field"><label>Valor (R$)</label><input id="evt-e-valor-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.valor)+'"></div>'+
               '<div class="field"><label>Status</label><select id="evt-e-status-'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select></div>'+
-              '<div class="field"><label>Valor pago (só no status Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
+              '<div class="field"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
               '<div class="btn-row"><button class="btn small" data-action="evt-salvar" data-id="'+p.id+'">Salvar</button><button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">Cancelar</button></div></div>';
           }else{
             h += '<div class="evt-adm-item"><div class="evt-adm-info"><span class="evt-adm-nome">'+(i+1)+'. '+escapeHtml(p.nome)+'</span>'+
@@ -1872,6 +1905,7 @@ async function renderAdmin(){
     html += h + '</div>';
   }
 
+  if(!soEventos){
   html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
     '<div class="field"><label>Descrição</label><textarea id="noticia-descricao" rows="3" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;">'+escapeHtml(noticia.descricao)+'</textarea></div>'+
     '<label class="small"><input type="checkbox" id="noticia-ativo" '+(noticia.ativo?'checked':'')+'> exibir na tela inicial</label>'+
@@ -1892,6 +1926,7 @@ async function renderAdmin(){
     '<div class="field"><label>Vice-Presidente</label><select id="gestao-vice">'+gestaoOpc(gestao.vicePresidente)+'</select></div>'+
     '<label class="small"><input type="checkbox" id="gestao-ativo" '+(gestao.ativo?'checked':'')+'> exibir na tela inicial</label>'+
     '<button class="btn secondary" style="margin-top:10px;" data-action="salvar-gestao">Salvar gestão</button></div>';
+  } /* fim !soEventos (notícia/aluguel/gestão) */
   } /* fim can(conteudo) */
 
   if(can('mensalidades')){
@@ -2231,6 +2266,9 @@ async function handleEvtStatus(id, status){
 }
 async function handleEvtRemover(id){ if(confirm('Remover este participante da lista?')) return evtApi('DELETE', '/api/admin/evento-participantes/'+id, undefined, 'Removido'); }
 function handleEvtValorPadrao(){ return evtApi('PUT', '/api/admin/evento-valor-padrao', {valor: document.getElementById('evt-valor-padrao').value}, 'Valor padrão salvo'); }
+function handleEvtAbaSalvar(){
+  return evtApi('PUT', '/api/admin/evento-aba', {ativa: document.getElementById('evt-aba-ativa').checked, titulo: document.getElementById('evt-aba-titulo').value, texto: document.getElementById('evt-aba-texto').value}, 'Aba Evento salva');
+}
 async function handleEvtTodos(){
   if(!confirm('Adicionar todos os jogadores ativos que ainda não estão na lista (valor padrão, status Pendente)?')) return;
   try{ const r = await api('/api/admin/evento-participantes-todos', {method:'POST', adminAuth:true}); await refreshEvento(); await render(); showToast(r.adicionados+' jogador(es) adicionados'); }
@@ -2430,7 +2468,8 @@ async function handleSalvarJogador(id){
   const ativo = document.getElementById('edit-ativo-'+id).checked;
   const corneta = document.getElementById('edit-corneta-'+id).checked;
   const deptoMedico = document.getElementById('edit-depto-medico-'+id).checked;
-  const body = {nome,pin,posicaoPadrao,ativo,corneta,deptoMedico};
+  const marketing = document.getElementById('edit-marketing-'+id).checked;
+  const body = {nome,pin,posicaoPadrao,ativo,corneta,deptoMedico,marketing};
   const valorEl = document.getElementById('edit-valor-'+id);
   if(valorEl) body.valorMensalidade = valorEl.value;
   const adminEl = document.getElementById('edit-admin-'+id);
@@ -2471,7 +2510,8 @@ async function handleSalvarAdminPin(){
 // campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
 function eventoExtrasForm(key, e){
   e = e || {};
-  return '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (valores pagos e status) — adiciona a opção "Sobre o Evento"</label>'+
+  return '<div class="field"><label>Local do evento (endereço) — abre no Waze, Google Maps ou Uber</label><input id="ev-local-'+key+'" maxlength="200" value="'+escapeHtml(e.local||'')+'" placeholder="Ex.: Sítio Boa Vista, Estrada do Sol, 1500 - Cotia"></div>'+
+    '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (valores pagos e status) — adiciona a opção "Sobre o Evento"</label>'+
     '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
     '<div class="field"><label>Responsável pelo pagamento</label><input id="ev-pg-nome-'+key+'" value="'+escapeHtml(e.pgtoNome||'')+'"></div>'+
     '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'"></div>'+
@@ -2479,7 +2519,7 @@ function eventoExtrasForm(key, e){
 }
 function lerEventoExtras(key){
   const g = id => document.getElementById(id+key);
-  return {mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
+  return {local:g('ev-local-').value, mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
 }
 async function handleAdicionarEvento(){
   const nome = document.getElementById('novo-evento-nome').value.trim();
@@ -2665,6 +2705,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='evt-remover') return handleEvtRemover(el.dataset.id);
   if(action==='evt-valor-padrao') return handleEvtValorPadrao();
   if(action==='evt-todos') return handleEvtTodos();
+  if(action==='evt-aba-salvar') return handleEvtAbaSalvar();
   if(action==='salvar-rifa') return handleSalvarRifa(false);
   if(action==='rifa-editar'){
     state.rifaRodadaId = el.dataset.id; await render();
@@ -2737,6 +2778,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
 document.getElementById('shell').addEventListener('toggle', (e)=>{
   const d = e.target;
   if(d && d.classList && d.classList.contains('evento-sobre')){ state.eventoSobreAberto = !!d.open; return; }
+  if(d && d.classList && d.classList.contains('evento-local')){ state.eventoLocalAberto = !!d.open; return; }
   if(!d || !d.classList || !d.classList.contains('evento-item')) return;
   const id = d.dataset.eventoId || '';
   if(d._autoCloseTimer){ clearTimeout(d._autoCloseTimer); d._autoCloseTimer = null; }
