@@ -888,10 +888,8 @@ function participantesBlocoHtml(l){
 function renderEventoAbaHtml(){
   const l = state.eventoLista;
   const eventos = (state.homeExtras && state.homeExtras.eventos) || [];
-  const aba = (l && l.aba) || (state.homeExtras && state.homeExtras.eventoAba) || {};
   if(!eventos.length) return '<div class="empty">Nenhum evento cadastrado ainda.</div>';
-  let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(aba.titulo || 'Eventos')+'</h3>'+
-    '<p class="small muted" style="white-space:pre-line;">'+escapeHtml(aba.texto || 'Eventos do grupo: data, local, pagamento e a lista de participantes.')+'</p></div>';
+  let h = '';
   eventos.forEach(e=>{
     h += '<div class="card hz hz-verde evt-card"><div class="evt-card-topo"><h3 class="evt-card-nome">'+escapeHtml(e.nome)+'</h3><span class="badge">'+formatDataBR(e.data)+'</span></div>'+
       (e.descricao ? '<p class="small avisos-text" style="margin:6px 0;">'+escapeHtml(e.descricao)+'</p>' : '')+
