@@ -294,7 +294,7 @@ function abrirSaudeDica(){
     '<p class="saude-frase">“'+escapeHtml(d.frase)+'”</p>'+
     '<div class="saude-plano-tit">🎯 SEU PLANO DE JOGO</div>'+
     '<ul class="saude-passos">'+d.itens.map(t=>'<li><span class="saude-passo-ico">'+t.ico+'</span><div class="saude-passo-txt"><strong>'+escapeHtml(t.tit)+'</strong><span>'+escapeHtml(t.txt)+'</span></div></li>').join('')+'</ul>'+
-    '<button type="button" class="btn saude-ok" data-action="fechar-performance">Bora, craque! 💪</button>'+
+    '<button type="button" class="btn saude-ok" data-action="fechar-performance">Bora, Craque! 💪🏼</button>'+
     '<p class="saude-aviso">Orientações gerais baseadas no IMC (referência da OMS). Não substituem a avaliação de um médico ou nutricionista.</p>'+
   '</div>';
   document.getElementById('shell').appendChild(m);
@@ -1147,7 +1147,7 @@ function renderRifasHtml(){
     // Hall dos Sortudos: destaque dourado + selo "🔥 N× ganhador" para quem ganhou mais de uma vez
     const vit = {};
     rifas.forEach(r=>{ const k = String(r.ganhador).trim().toLowerCase(); vit[k] = (vit[k]||0)+1; });
-    h += '<div class="rifa-hall"><div class="rifa-hall-tit">🍀 HALL DOS SORTUDOS</div><div class="rifa-hall-sub">Ganhadores anteriores</div>';
+    h += '<div class="rifa-hall"><div class="rifa-hall-tit">🍀 Hall da Sorte</div><div class="rifa-hall-sub">Ganhadores anteriores</div>';
     rifas.slice(1).forEach(r=>{
       const n = vit[String(r.ganhador).trim().toLowerCase()];
       h += '<div class="rifa-hall-item'+(n>1?' rifa-hall-repete':'')+'"><div class="rifa-hall-trofeu">'+(n>1?'👑':'🏆')+'</div>'+
@@ -1376,7 +1376,7 @@ function seletorVotanteHtml(){
   const eu = state.currentPlayer && state.currentPlayer.id;
   const ops = state.elenco.filter(j=>j.ativo && j.id!==eu).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'))
     .map(j=>'<option value="'+j.id+'" '+(j.id===state.votosJogador?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
-  return '<div class="field"><label>Jogador — notas que ele deu a você</label><select data-action="votos-jogador"><option value="">— escolha o jogador —</option>'+ops+'</select></div>';
+  return '<div class="field"><label>Escolha o Jogador para saber as notas que deu a você:</label><select data-action="votos-jogador"><option value="">— escolha o jogador —</option>'+ops+'</select></div>';
 }
 async function carregarVotosRecebidos(){
   const id = state.votosJogador;

@@ -5,15 +5,15 @@
 'use strict';
 
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
-// no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
-// (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 56;
+// no máximo 10 releases por major (0 a 9), minor com um dígito só: 4.0 -> 4.1 ... 4.9 -> 5.0 -> 5.1 ...
+// (reiniciado na versão 4.0: APP_BUILD 57 = 4.0, ciclo de 10 a partir daqui.)
+const VERSAO_BASE_BUILD = 57;   // build que corresponde à versão 4.0
+const APP_BUILD = 57;
 function computeVersion(b){
-  const minor = b % 10;
-  const major = 2 + Math.floor(b / 10);
-  return major + '.' + minor;
+  const n = Math.max(0, b - VERSAO_BASE_BUILD);
+  return (4 + Math.floor(n / 10)) + '.' + (n % 10);
 }
-const APP_VERSION = computeVersion(APP_BUILD); // ex.: 0 -> "2.0", 9 -> "2.9", 10 -> "3.0"
+const APP_VERSION = computeVersion(APP_BUILD); // 57 -> "4.0", 58 -> "4.1", 66 -> "4.9", 67 -> "5.0"
 
 const path = require('path');
 const fs = require('fs');
