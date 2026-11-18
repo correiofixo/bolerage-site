@@ -1142,3 +1142,7 @@ body.na-tela-login #login-screen{
   .pg-val{font-size:min(16px,max(11px,calc((100cqw - 100px) * 1.9 / var(--n))));}
   .pg-chave{font-size:min(16px,max(10px,calc((100cqw - 160px) * 1.9 / var(--n))));}
 }
+
+/* ---- v6.4: legenda das zonas do Ranking centralizada (ícone + nome centrados em cada selo) ---- */
+.rank-legenda{justify-content:center;align-items:center;text-align:center;}
+.rank-chip{display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;text-align:center;}
