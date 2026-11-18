@@ -1091,3 +1091,32 @@ body.na-tela-login #login-screen{
 .login-versao{padding:2px 12px;gap:0;background:rgba(201,162,39,.10);animation:none;
   border:1px solid rgba(201,162,39,.35);box-shadow:none;}
 .login-versao-num{font-size:clamp(11px,1.7dvh,13px);letter-spacing:1.2px;font-weight:700;color:rgba(228,193,88,.85);}
+
+/* ---- v6.2: card "Dados para pagamento do evento" responsivo, sem quebra de linha ---- */
+.evt-pgto{container-type:inline-size;}
+.pg-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.1);min-width:0;}
+.pg-row:last-child{border-bottom:0;}
+.pg-rot{flex:0 0 auto;white-space:nowrap;font-size:clamp(12px,3.9vw,15px);color:var(--text);}
+.pg-val{flex:1 1 0;min-width:0;text-align:right;white-space:nowrap;font-weight:600;
+  font-size:min(16px,max(9px,calc((100vw - 190px) * 1.75 / var(--n))));}
+.pg-valor{font-weight:800;}
+/* PIX: rótulo + botão na 1ª linha; a chave inteira na 2ª, com a fonte ajustada ao tamanho */
+.pg-pix{flex-wrap:wrap;row-gap:4px;}
+.pg-pix .btn{margin-left:auto;}
+.pg-chave{flex:0 0 100%;min-width:0;text-align:center;white-space:nowrap;font-weight:700;letter-spacing:.2px;color:var(--gold-bright,#E4C158);
+  font-size:min(17px,max(9px,calc((100vw - 100px) * 1.7 / var(--n))));}
+@supports (width:1cqw){
+  .pg-val{font-size:min(16px,max(9px,calc((100cqw - 96px) * 1.75 / var(--n))));}
+  .pg-chave{font-size:min(17px,max(9px,calc(96cqw * 1.7 / var(--n))));}
+}
+/* v6.2b: textos longos descem para uma linha própria (sem quebrar) e a fonte se ajusta à largura toda */
+.pg-chave,.pg-val{font-weight:600;}
+.pg-chave{font-size:min(17px,max(8px,calc((100vw - 100px) * 1.5 / var(--n))));}
+.pg-val{font-size:min(16px,max(8px,calc((100vw - 190px) * 1.5 / var(--n))));}
+.pg-long{flex-wrap:wrap;row-gap:2px;}
+.pg-long .pg-val{flex:0 0 100%;text-align:left;font-size:min(16px,max(8px,calc((100vw - 90px) * 1.5 / var(--n))));}
+@supports (width:1cqw){
+  .pg-chave{font-size:min(17px,max(8px,calc(96cqw * 1.5 / var(--n))));}
+  .pg-val{font-size:min(16px,max(8px,calc((100cqw - 96px) * 1.5 / var(--n))));}
+  .pg-long .pg-val{font-size:min(16px,max(8px,calc(96cqw * 1.5 / var(--n))));}
+}

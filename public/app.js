@@ -840,10 +840,13 @@ function eventoTotaisHtml(t){
 }
 function pagamentoEventoHtml(pg){
   if(!pg || (!pg.nome && !pg.chavePix && !pg.valor)) return '';
+  // cada valor recebe --n (nº de caracteres): a fonte se ajusta à largura do card, sem quebrar linha
+  const n = s => Math.max(6, String(s).length);
   return '<div class="evt-pgto"><div class="evt-pgto-tit">💳 Dados para pagamento do evento</div>'+
-    (pg.nome ? '<div class="list-row"><span>Responsável</span><span>'+escapeHtml(pg.nome)+'</span></div>' : '')+
-    (pg.chavePix ? '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(pg.chavePix)+'</span><button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(pg.chavePix)+'">Copiar</button></span></div>' : '')+
-    (pg.valor ? '<div class="list-row"><span>Valor</span><span><strong>'+escapeHtml(pg.valor)+'</strong></span></div>' : '')+
+    (pg.nome ? '<div class="pg-row'+(n(pg.nome)>16?' pg-long':'')+'"><span class="pg-rot">Responsável</span><span class="pg-val" style="--n:'+n(pg.nome)+'">'+escapeHtml(pg.nome)+'</span></div>' : '')+
+    (pg.chavePix ? '<div class="pg-row pg-pix"><span class="pg-rot">Chave PIX</span><button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(pg.chavePix)+'">Copiar</button>'+
+      '<span class="pg-chave" style="--n:'+n(pg.chavePix)+'">'+escapeHtml(pg.chavePix)+'</span></div>' : '')+
+    (pg.valor ? '<div class="pg-row'+(n(pg.valor)>16?' pg-long':'')+'"><span class="pg-rot">Valor</span><span class="pg-val pg-valor" style="--n:'+n(pg.valor)+'">'+escapeHtml(pg.valor)+'</span></div>' : '')+
   '</div>';
 }
 // local do evento: toque para abrir no Waze, Google Maps ou Uber
