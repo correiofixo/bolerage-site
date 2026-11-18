@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 33;
+const APP_BUILD = 34;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -185,6 +185,7 @@ try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_ativo INTEGER NOT NULL DEFAULT
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_nome TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_pix TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_valor TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN so_aba INTEGER NOT NULL DEFAULT 0"); }catch(e){}   // 1 = exibir só na aba Eventos da Resenha
 // acesso marketing: o jogador pode gerir os eventos (agenda, participantes e aba Evento)
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN marketing INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 // local do evento (endereço) para abrir no Waze / Google Maps / Uber
@@ -2218,9 +2219,9 @@ app.put('/api/admin/home-ordem', requirePerm('conteudo'), (req,res)=>{
 /* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
 app.get('/api/home-extras', (req,res)=>{
   const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
-  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel,local,mostrar_participantes,pgto_ativo,pgto_nome,pgto_pix,pgto_valor FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
+  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel,local,mostrar_participantes,so_aba,pgto_ativo,pgto_nome,pgto_pix,pgto_valor FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
     .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel), local:e.local||'',
-      mostrarParticipantes:!!e.mostrar_participantes,
+      mostrarParticipantes:!!e.mostrar_participantes, soAba:!!e.so_aba,
       pagamento: e.pgto_ativo ? {nome:e.pgto_nome||'', chavePix:e.pgto_pix||'', valor:e.pgto_valor||''} : null}));
   const algumComLista = eventos.some(e=>e.mostrarParticipantes);
   const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
@@ -2245,6 +2246,7 @@ function aplicarExtrasEvento(id, b){
     if(v) db.prepare('UPDATE eventos SET mostrar_participantes=0').run();     // só um evento exibe a lista
     db.prepare('UPDATE eventos SET mostrar_participantes=? WHERE id=?').run(v, id);
   }
+  if(b.soAba!==undefined) db.prepare('UPDATE eventos SET so_aba=? WHERE id=?').run(b.soAba?1:0, id);
   if(b.pgtoAtivo!==undefined) db.prepare('UPDATE eventos SET pgto_ativo=? WHERE id=?').run(b.pgtoAtivo?1:0, id);
   if(b.pgtoNome!==undefined)  db.prepare('UPDATE eventos SET pgto_nome=? WHERE id=?').run(String(b.pgtoNome).trim().slice(0,80), id);
   if(b.pgtoPix!==undefined)   db.prepare('UPDATE eventos SET pgto_pix=? WHERE id=?').run(String(b.pgtoPix).trim().slice(0,120), id);
@@ -2252,7 +2254,7 @@ function aplicarExtrasEvento(id, b){
 }
 app.get('/api/admin/agenda', requireEventos, (req,res)=>{
   res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||'',
-    local:e.local||'', mostrarParticipantes:!!e.mostrar_participantes, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
+    local:e.local||'', mostrarParticipantes:!!e.mostrar_participantes, soAba:!!e.so_aba, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
 });
 app.post('/api/admin/agenda', requireEventos, (req,res)=>{
   const nome = String(req.body.nome||'').trim();

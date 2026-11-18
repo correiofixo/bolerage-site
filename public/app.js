@@ -594,9 +594,10 @@ function renderExtrasIniciais(){
       '</div>';
     p.departamento_medico = renderCardSaude();
   }
-  if(ex.eventos && ex.eventos.length){
+  const eventosHome = (ex.eventos || []).filter(e=>!e.soAba);
+  if(eventosHome.length){
     let html = '<div class="card hz hz-roxo"><h3>📅 Eventos:</h3>';
-    ex.eventos.forEach(e=>{
+    eventosHome.forEach(e=>{
       const desc = (e.descricao||'').trim();
       const resp = (e.responsavel||'').trim();
       if(desc || resp || e.mostrarParticipantes || e.pagamento || e.local){
@@ -889,7 +890,7 @@ function renderEventoAbaHtml(){
   const aba = (l && l.aba) || (state.homeExtras && state.homeExtras.eventoAba) || {};
   let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(aba.titulo || 'Eventos')+'</h3>'+
     '<p class="small muted" style="white-space:pre-line;">'+escapeHtml(aba.texto || 'Eventos do grupo: data, local, pagamento e a lista de participantes.')+'</p></div>';
-  if(!eventos.length && !(l && l.participantes && l.participantes.length)){
+  if(!eventos.length){
     return h + '<div class="empty">Nenhum evento cadastrado ainda.</div>';
   }
   eventos.forEach(e=>{
@@ -901,10 +902,6 @@ function renderEventoAbaHtml(){
       ((e.mostrarParticipantes && l && l.participantes.length) ? participantesBlocoHtml(l) : (e.mostrarParticipantes ? '<p class="small muted">A lista de participantes ainda não foi cadastrada.</p>' : ''))+
     '</div>';
   });
-  // participantes cadastrados, mas nenhum evento marcado para exibir a lista
-  if(l && l.participantes && l.participantes.length && !eventos.some(e=>e.mostrarParticipantes)){
-    h += '<div class="card hz hz-roxo"><h3>Evento de Fim de Ano</h3>'+participantesBlocoHtml(l)+'</div>';
-  }
   return h;
 }
 
@@ -1859,49 +1856,6 @@ async function renderAdmin(){
   } /* fim !soEventos (acessos/ordem/rifas) */
   html += renderAgendaAdminHtml(agenda, respOpc);
 
-  // ---- card: gestão do evento de fim de ano (participantes, valor e status)
-  {
-    const l = state.eventoLista;
-    let h = '<div class="card hz hz-roxo"><h3>🎉 EVENTO DE FIM DE ANO — PARTICIPANTES</h3>'+
-      '<p class="small muted">Cadastre quem vai ao evento, o valor e o status do pagamento. A lista aparece para todos em Resenha &gt; Eventos e, se você ativar na Agenda de eventos, também em "Sobre o Evento" na tela inicial.</p>';
-    if(l){
-      const ab = l.aba || {};
-      h += '<div class="evt-novo"><div class="stack-tit">Aba Eventos (Resenha)</div>'+
-        '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Eventos" na tela Resenha</label>'+
-        '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="Eventos"></div>'+
-        '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Eventos do grupo: data, local, pagamento e a lista de participantes.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
-        '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Eventos</button></div>';
-      h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
-      h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
-        '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
-        '<div class="field"><label>Valor (R$)</label><input id="evt-valor" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"></div>'+
-        '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Pago Parcial</option><option value="pago">Pago Total</option></select></div>'+
-        '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
-        '<div class="btn-row"><button class="btn" data-action="evt-adicionar">Adicionar</button><button class="btn secondary" data-action="evt-todos">Adicionar todos os jogadores</button></div></div>';
-      if(l.participantes.length){
-        h += '<div class="divider"></div>'+eventoTotaisHtml(l.totais);
-        l.participantes.forEach((p,i)=>{
-          if(state.eventoEditId===p.id){
-            h += '<div class="evt-edit"><div class="field"><label>Nome</label><input id="evt-e-nome-'+p.id+'" value="'+escapeHtml(p.nome)+'" maxlength="80"></div>'+
-              '<div class="field"><label>Valor (R$)</label><input id="evt-e-valor-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.valor)+'"></div>'+
-              '<div class="field"><label>Status</label><select id="evt-e-status-'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select></div>'+
-              '<div class="field"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
-              '<div class="btn-row"><button class="btn small" data-action="evt-salvar" data-id="'+p.id+'">Salvar</button><button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">Cancelar</button></div></div>';
-          }else{
-            h += '<div class="evt-adm-item"><div class="evt-adm-info"><span class="evt-adm-nome">'+(i+1)+'. '+escapeHtml(p.nome)+'</span>'+
-              '<span class="evt-pago">'+fmtBRLfront(p.valorPago)+(p.status!=='pago'?' <small>de '+fmtBRLfront(p.valor)+'</small>':'')+'</span></div>'+
-              '<div class="evt-adm-acoes"><select data-action="evt-status" data-id="'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select>'+
-              '<button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">editar</button><button class="btn danger small" data-action="evt-remover" data-id="'+p.id+'">remover</button></div></div>';
-          }
-        });
-      }else{
-        h += '<p class="small muted" style="margin-top:8px;">Nenhum participante cadastrado ainda.</p>';
-      }
-    }else{
-      h += '<p class="small muted">Não foi possível carregar a lista.</p>';
-    }
-    html += h + '</div>';
-  }
 
   if(!soEventos){
   html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
@@ -2505,6 +2459,56 @@ async function handleSalvarAdminPin(){
   try{ await api('/api/admin/admin-pin', {method:'PUT', adminAuth:true, body:{pin}}); alert('PIN administrativo atualizado.'); await render(); }
   catch(e){ alert(e.message); }
 }
+// ---- participantes do evento (dentro da Agenda de eventos): valor padrão, adicionar, status
+function participantesAdminHtml(tit){
+  const l = state.eventoLista;
+  let h = '';
+  if(l){
+    h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
+    h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
+      '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
+      '<div class="field"><label>Valor (R$)</label><input id="evt-valor" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"></div>'+
+      '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Pago Parcial</option><option value="pago">Pago Total</option></select></div>'+
+      '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
+      '<div class="btn-row"><button class="btn" data-action="evt-adicionar">Adicionar</button><button class="btn secondary" data-action="evt-todos">Adicionar todos os jogadores</button></div></div>';
+    if(l.participantes.length){
+      h += '<div class="divider"></div>'+eventoTotaisHtml(l.totais);
+      l.participantes.forEach((p,i)=>{
+        if(state.eventoEditId===p.id){
+          h += '<div class="evt-edit"><div class="field"><label>Nome</label><input id="evt-e-nome-'+p.id+'" value="'+escapeHtml(p.nome)+'" maxlength="80"></div>'+
+            '<div class="field"><label>Valor (R$)</label><input id="evt-e-valor-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.valor)+'"></div>'+
+            '<div class="field"><label>Status</label><select id="evt-e-status-'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select></div>'+
+            '<div class="field"><label>Valor pago (só no status Pago Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
+            '<div class="btn-row"><button class="btn small" data-action="evt-salvar" data-id="'+p.id+'">Salvar</button><button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">Cancelar</button></div></div>';
+        }else{
+          h += '<div class="evt-adm-item"><div class="evt-adm-info"><span class="evt-adm-nome">'+(i+1)+'. '+escapeHtml(p.nome)+'</span>'+
+            '<span class="evt-pago">'+fmtBRLfront(p.valorPago)+(p.status!=='pago'?' <small>de '+fmtBRLfront(p.valor)+'</small>':'')+'</span></div>'+
+            '<div class="evt-adm-acoes"><select data-action="evt-status" data-id="'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select>'+
+            '<button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">editar</button><button class="btn danger small" data-action="evt-remover" data-id="'+p.id+'">remover</button></div></div>';
+        }
+      });
+    }else{
+      h += '<p class="small muted" style="margin-top:8px;">Nenhum participante cadastrado ainda.</p>';
+    }
+  }else{
+    h += '<p class="small muted">Não foi possível carregar a lista.</p>';
+  }
+  return '<details class="evt-part-adm" open><summary>📋 PARTICIPANTES'+(tit?' — '+escapeHtml(tit):'')+(l?' ('+l.participantes.length+')':'')+'</summary><div class="evt-part-corpo">'+h+'</div></details>';
+}
+// ---- configuração da aba Eventos (Resenha)
+function abaEventosAdminHtml(){
+  const l = state.eventoLista;
+  if(!l) return '';
+  let h = '';
+    const ab = l.aba || {};
+    h += '<div class="evt-novo"><div class="stack-tit">Aba Eventos (Resenha)</div>'+
+      '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Eventos" na tela Resenha</label>'+
+      '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="Eventos"></div>'+
+      '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Eventos do grupo: data, local, pagamento e a lista de participantes.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
+      '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Eventos</button></div>';
+  return '<details class="evt-part-adm"><summary>⚙️ ABA EVENTOS (Resenha)</summary><div class="evt-part-corpo">'+h+'</div></details>';
+}
+
 // ---- AGENDA DE EVENTOS (painel admin): lista + editor organizado em seções
 function eventoSecao(cor, titulo, sub, corpo){
   return '<div class="fin-zona fz-'+cor+' evt-secao"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
@@ -2519,7 +2523,8 @@ function eventoEditorHtml(key, e, respOpc){
       '<div class="field"><label>Data *</label><input type="date" id="ev-data-'+key+'" value="'+escapeHtml(e.data||'')+'"></div>'+
       '<div class="field"><label>Local (endereço) — abre no Waze, Google Maps ou Uber</label><input id="ev-local-'+key+'" maxlength="200" value="'+escapeHtml(e.local||'')+'" placeholder="Ex.: Sítio Boa Vista, Estrada do Sol, 1500 - Cotia"></div>'+
       '<div class="field"><label>Descrição</label><textarea id="ev-desc-'+key+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
-      '<label class="small"><input type="checkbox" id="ev-ativo-'+key+'" '+((novo || e.ativo)?'checked':'')+'> Exibir na tela inicial</label>')+
+      '<div class="field"><label>Onde exibir</label><select id="ev-exib-'+key+'">'+
+        [['ambos','🏠 Tela inicial e aba Eventos (Resenha)'],['aba','🎉 Somente na aba Eventos (Resenha)'],['oculto','🚫 Não exibir (inativo)']].map(o=>'<option value="'+o[0]+'" '+(o[0]===((novo||e.ativo)?(e.soAba?'aba':'ambos'):'oculto')?'selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>')+
     eventoSecao('roxo', '👤 RESPONSÁVEIS', 'Quem gere o evento e quem recebe o pagamento',
       '<div class="field"><label>Gestor do Evento</label><select id="ev-resp-'+key+'">'+respOpc(e.responsavel||'')+'</select></div>'+
       '<div class="field"><label>Responsável pelo pagamento</label><input id="ev-pg-nome-'+key+'" value="'+escapeHtml(e.pgtoNome||'')+'" maxlength="80" placeholder="Nome de quem recebe"></div>')+
@@ -2527,15 +2532,15 @@ function eventoEditorHtml(key, e, respOpc){
       '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
       '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'" maxlength="120"></div>'+
       '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" maxlength="40" placeholder="Ex.: R$ 250,00"></div>')+
-    eventoSecao('ciano', '📋 LISTA DE PARTICIPANTES', 'Cria a opção "Sobre o Evento" na tela inicial',
+    eventoSecao('ciano', '📋 LISTA DE PARTICIPANTES', 'Fica dentro deste evento ("Sobre o Evento" no início e aba Eventos)',
       '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (status do pagamento)</label>'+
-      '<p class="small muted" style="margin:4px 0 0;">Só um evento por vez exibe a lista. Cadastre os participantes no card abaixo.</p>')+
+      '<p class="small muted" style="margin:4px 0 0;">Só um evento por vez exibe a lista. Depois de salvar, cadastre os participantes dentro do evento.</p>')+
     '<div class="btn-row"><button class="btn" data-action="salvar-evento" data-id="'+key+'">'+(novo?'Criar evento':'Salvar alterações')+'</button>'+
     '<button class="btn secondary" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
 }
 function renderAgendaAdminHtml(agenda, respOpc){
-  let h = '<div class="card hz hz-verde"><h3>📅 AGENDA DE EVENTOS (tela inicial)</h3>'+
-    '<p class="small muted">Inclua, altere e remova eventos. Em cada evento você define o local, os responsáveis, os dados de pagamento e se a lista de participantes aparece.</p>';
+  let h = '<div class="card hz hz-verde"><h3>📅 AGENDA DE EVENTOS</h3>'+
+    '<p class="small muted">Inclua, altere e remova eventos. Em cada evento você define onde ele aparece, o local, os responsáveis, o pagamento e a lista de participantes (que fica dentro do próprio evento).</p>';
   if(state.editingEventoId==='novo'){
     h += eventoEditorHtml('novo', null, respOpc);
   }else{
@@ -2551,11 +2556,17 @@ function renderAgendaAdminHtml(agenda, respOpc){
       h += '<div class="evt-item"><div class="evt-item-info"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div>'+
         '<div class="evt-item-badges"><span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':'<span class="badge">inativo</span>')+
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
+          (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
           (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+'</div></div>'+
         '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
+      if(e.mostrarParticipantes) h += participantesAdminHtml(e.nome);
     }
   });
+  if(agenda.length && !agenda.some(e=>e.mostrarParticipantes)){
+    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento exibe a lista de participantes. Edite um evento e marque "Exibir a lista de participantes" para ela aparecer dentro dele.</p>'+participantesAdminHtml('');
+  }
+  h += abaEventosAdminHtml();
   return h + '</div>';
 }
 // campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
@@ -2568,7 +2579,7 @@ async function handleSalvarEvento(key){
   const nome = g('ev-nome').value.trim();
   const data = g('ev-data').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
-  const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-ativo').checked, ...lerEventoExtras(key)};
+  const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-exib').value!=='oculto', soAba:g('ev-exib').value==='aba', ...lerEventoExtras(key)};
   try{
     if(key==='novo') await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:corpo});
     else await api('/api/admin/agenda/'+key, {method:'PUT', adminAuth:true, body:corpo});
