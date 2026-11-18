@@ -1906,7 +1906,7 @@ async function renderAdmin(){
       try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     }
   }
-  if(can('mensalidades')){
+  if(can('mensalidades') && !isSuper){
     try{ const rm = await api('/api/admin/mensalidades', {adminAuth:true}); mensalPlayers = rm.jogadores; mensalMeta = rm; state._mensalPadrao = rm.valorPadrao; }catch(e){ if(on401(e)) return; }
   }
   if(elencoAdmin) state.elencoAdmin = elencoAdmin;
@@ -1987,6 +1987,16 @@ async function renderAdmin(){
   if(abaElenco==='gestao'){
     html += renderRelatorioFinanceiroHtml(state.relatorioFin, true) + '</div>';
   }else{
+  {
+    const cntM = {em_dia:0, em_atraso:0, isenta:0, sem_status:0};
+    elencoAdmin.jogadores.filter(j=>j.ativo).forEach(j=>{ cntM[(j.mensalidade in cntM) ? j.mensalidade : 'sem_status']++; });
+    html += '<div class="mens-resumo">'+
+      '<span class="mens-chip mc-em_dia">✅ Em dia <b>'+cntM.em_dia+'</b></span>'+
+      '<span class="mens-chip mc-em_atraso">⚠️ Em atraso <b>'+cntM.em_atraso+'</b></span>'+
+      '<span class="mens-chip mc-isenta">🆓 Isento <b>'+cntM.isenta+'</b></span>'+
+      '<span class="mens-chip mc-sem_status">⏳ Sem status <b>'+cntM.sem_status+'</b></span></div>'+
+      '<p class="small muted">A mensalidade (status, valor e início do atraso) de cada jogador é editada aqui, no botão <strong style="color:var(--text)">editar</strong>.</p>';
+  }
   elencoAdmin.jogadores.forEach(j=>{
     if(state.editingJogadorId===j.id){
       html += '<div class="list-row" style="flex-direction:column;align-items:stretch;gap:6px;">'+
@@ -2005,6 +2015,8 @@ async function renderAdmin(){
             permsDisp.map(p=>'<label class="small" style="margin-left:12px;"><input type="checkbox" id="edit-perm-'+p+'-'+j.id+'" '+((j.adminPerms||[]).includes(p)?'checked':'')+'> '+permLabel(p)+'</label>').join(''))+
         '<label class="small">Mensalidade: <select id="edit-mens-'+j.id+'">'+mensOptionsHtml(j.mensalidade)+'</select></label>'+
         '<label class="small">Valor da mensalidade deste jogador (R$): <input id="edit-valor-'+j.id+'" inputmode="decimal" value="'+inputValorBRL(j.valorMensalidade)+'" placeholder="vazio = valor padrão (Aluguel da quadra)"></label>'+
+        '<div class="field" id="edit-desde-wrap-'+j.id+'" '+(j.mensalidade==='em_atraso'?'':'hidden')+'><label class="small">Em atraso desde</label><div class="evt-inline"><input type="date" id="edit-desde-'+j.id+'" value="'+(j.atrasoDesde||'')+'">'+
+          (elencoAdmin.ultimoVencimento ? '<button type="button" class="btn secondary small" data-action="edit-usar-vencimento" data-id="'+j.id+'" data-data="'+elencoAdmin.ultimoVencimento+'" title="2º domingo do mês">Vencimento '+elencoAdmin.ultimoVencimento.slice(8,10)+'/'+elencoAdmin.ultimoVencimento.slice(5,7)+'</button>' : '')+'</div></div>'+
         '<label class="small">Time do coração: <select id="edit-time-'+j.id+'">'+timeCoracaoOptionsHtml(j.timeCoracao)+'</select></label>'+
         '<div class="btn-row"><button class="btn small" data-action="salvar-jogador" data-id="'+j.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao">Cancelar</button></div></div>';
@@ -2100,7 +2112,7 @@ async function renderAdmin(){
   } /* fim !soEventos (notícia/aluguel/gestão) */
   } /* fim can(conteudo) */
 
-  if(can('mensalidades')){
+  if(can('mensalidades') && !isSuper){   // o Super Admin edita status e valor no cadastro do jogador (Elenco > editar)
     const padraoTxt = mensalMeta.valorPadrao==null ? 'não definido' : fmtBRLfront(mensalMeta.valorPadrao);
     const cntM = {em_dia:0, em_atraso:0, isenta:0, sem_status:0};
     mensalPlayers.forEach(j=>{ cntM[(j.mensalidade in cntM) ? j.mensalidade : 'sem_status']++; });
@@ -2653,6 +2665,8 @@ async function handleSalvarJogador(id){
   }
   const mensEl = document.getElementById('edit-mens-'+id);
   if(mensEl) body.mensalidade = mensEl.value;
+  const desdeEl = document.getElementById('edit-desde-'+id);
+  if(desdeEl && body.mensalidade==='em_atraso' && desdeEl.value) body.atrasoDesde = desdeEl.value;
   const timeEl = document.getElementById('edit-time-'+id);
   if(timeEl) body.timeCoracao = timeEl.value;
   const telEl = document.getElementById('edit-tel-'+id);
@@ -3076,6 +3090,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='mens-usar-padrao'){ const inp = document.getElementById('mens-valor-'+el.dataset.id); if(inp) inp.value = el.dataset.valor; return; }
   if(action==='mens-salvar-valor') return handleSalvarMensalidadeValor(el.dataset.id);
   if(action==='mens-salvar-atraso') return handleSalvarAtrasoDesde(el.dataset.id);
+  if(action==='edit-usar-vencimento'){ const inp = document.getElementById('edit-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
   if(action==='mens-usar-vencimento'){ const inp = document.getElementById('mens-desde-'+el.dataset.id); if(inp) inp.value = el.dataset.data; return; }
   if(action==='toggle-reserva') return handleToggleReserva(el.dataset.id, el.dataset.atual);
   if(action==='alternar-mostrar-votos') return handleSalvarMostrarVotos(el.dataset.atual);
@@ -3128,6 +3143,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
     if(e.target.dataset.dd==='valor') ddRerender();
     return;
   }
+  if(e.target.id && e.target.id.indexOf('edit-mens-')===0){ const w = document.getElementById('edit-desde-wrap-'+e.target.id.slice(10)); if(w) w.hidden = e.target.value!=='em_atraso'; return; }
   if(e.target.id==='pd-status'){ const c = document.getElementById('pd-pago-campo'); if(c) c.hidden = e.target.value!=='parcial'; return; }
   if(e.target.dataset && e.target.dataset.pd && state.partDraft && state.partDraft[Number(e.target.dataset.i)]){
     state.partDraft[Number(e.target.dataset.i)][e.target.dataset.pd] = e.target.value; state.partDirty = true; pdRerender(); return;

@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 53;
+const APP_BUILD = 54;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -906,13 +906,13 @@ app.get('/api/admin/elenco', requireSuper, (req,res)=>{
     adminPerms:(j.admin_perms||'').split(',').filter(Boolean),
     mensalidade:j.mensalidade||'', telefone:j.telefone||'',
     valorMensalidade: j.valor_mensalidade==null ? '' : j.valor_mensalidade,
-    diasAtraso: diasEmAtraso(j),
+    diasAtraso: diasEmAtraso(j), atrasoDesde: j.atraso_desde || '',
     corneta:!!j.corneta, timeCoracao:j.time_coracao||'',
     deptoMedico:!!j.depto_medico,
     marketing:!!j.marketing,
   }));
   const cfg = getConfig();
-  res.json({jogadores, permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now, sorteioModo:cfg.sorteio_modo||'manual', sorteioAgendado:cfg.sorteio_agendado||'', mostrarVotos:!!cfg.mostrar_votos}});
+  res.json({jogadores, ultimoVencimento: ultimoVencimento(hojeSP()), permsDisponiveis:PERMS_ADMIN, config:{minRodadas:cfg.min_rodadas, minVotos:cfg.min_votos, simuladoNow:cfg.simulado_now, sorteioModo:cfg.sorteio_modo||'manual', sorteioAgendado:cfg.sorteio_agendado||'', mostrarVotos:!!cfg.mostrar_votos}});
 });
 /* ============================================================
    RELATÓRIO FINANCEIRO (Painel Admin > Elenco > Gestão)
@@ -1745,6 +1745,13 @@ app.put('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
   db.prepare('UPDATE jogadores SET nome=?,pin=?,posicao_padrao=?,ativo=?,admin=?,admin_perms=?,telefone=?,corneta=?,time_coracao=?,depto_medico=?,valor_mensalidade=?,marketing=? WHERE id=?')
     .run(nome,pin,posicaoPadrao,ativo,admin,adminPerms,telefone,corneta,timeCoracao,deptoMedico,valorMens,marketing,j.id);
   aplicarMensalidade(j.id, mensalidade);
+  // início do atraso (só para quem está EM ATRASO)
+  if(mensalidade==='em_atraso' && req.body.atrasoDesde){
+    const d = String(req.body.atrasoDesde).trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({erro:'Data de início do atraso inválida.'});
+    if(d > hojeSP()) return res.status(400).json({erro:'A data de início do atraso não pode ser futura.'});
+    db.prepare('UPDATE jogadores SET atraso_desde=? WHERE id=?').run(d, j.id);
+  }
   res.json({ok:true});
 });
 app.delete('/api/admin/jogadores/:id', requireSuper, (req,res)=>{
