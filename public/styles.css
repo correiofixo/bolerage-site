@@ -1262,3 +1262,5 @@ body.na-tela-login #login-screen{
   font-size:min(11.5px,max(8.5px,calc(128px * 1.8 / var(--n,12))));}
 .saude-topo{row-gap:16px;}
 .saude-tit{margin-bottom:0;}
+/* v6.16: títulos médios ("Performance na Temporada", "Condição Física Atual") em uma linha, com fonte maior que o título longo */
+.card h3.titulo-uma-linha.titulo-m{font-size:clamp(11px, calc((100vw - 62px) / 17), 18px);}

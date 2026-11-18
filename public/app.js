@@ -225,7 +225,7 @@ function renderCardSaude(){
   const cl = classificarIMC(imc);
   const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
   const valorFmt = imc.toFixed(1).replace('.',',');
-  return '<div class="card hz hz-vermelho saude-click" data-action="saude-dica" role="button" tabindex="0" title="Toque para ver dicas de saúde"><h3>👨‍⚕️ Saúde do Craque:</h3>'+
+  return '<div class="card hz hz-vermelho saude-click" data-action="saude-dica" role="button" tabindex="0" title="Toque para ver dicas de saúde"><h3 class="titulo-uma-linha titulo-m">💪🏼 Condição Física Atual:</h3>'+
     '<div class="imc-box">'+
       '<div class="imc-linha"><span class="imc-sigla">IMC</span><span class="imc-valor"'+(menor?'':' style="color:'+cl.cor+'"')+'>'+valorFmt+'</span></div>'+
       (menor
@@ -283,9 +283,9 @@ function abrirSaudeDica(){
   fecharSaudeDica();
   const m = document.createElement('div');
   m.id = 'perf-modal'; m.className = 'perf-backdrop'; m.setAttribute('data-action','fechar-performance');
-  m.innerHTML = '<div class="perf-card saude-nota" role="dialog" aria-modal="true" aria-label="Saúde do Craque" data-action="noop">'+
+  m.innerHTML = '<div class="perf-card saude-nota" role="dialog" aria-modal="true" aria-label="Condição Física Atual" data-action="noop">'+
     '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
-    '<div class="saude-topo"><div class="saude-ico">👨‍⚕️</div><h2 class="saude-tit">Saúde do Craque</h2><span class="saude-chip">NOTA RÁPIDA</span></div>'+
+    '<div class="saude-topo"><div class="saude-ico">💪🏼</div><h2 class="saude-tit">Condição Física Atual</h2><span class="saude-chip">NOTA RÁPIDA</span></div>'+
     '<div class="saude-imc-card" style="--cor:'+d.cor+'">'+
       '<div class="saude-imc-linha"><span class="saude-imc-sigla">SEU IMC</span><span class="saude-imc-valor">'+imc.toFixed(1).replace('.',',')+'</span></div>'+
       '<div class="saude-class" style="color:'+d.cor+'">'+d.tit+'</div>'+
@@ -646,8 +646,8 @@ function zonaChipHtml(jogadorId){
 // cada card da tela inicial é uma "parte"; a ordem de exibição é escolhida pelo admin
 const ORDEM_INICIO_PADRAO = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
 const NOMES_CARDS_INICIO = {
-  rodada:'Rodada do Próximo Domingão', status_carreira:'Meu Desempenho', se_liga:'Se Liga - Craque',
-  departamento_medico:'Saúde do Craque', eventos:'Eventos', pagamento:'Dados para Pagamento do Aluguel da Quadra', gestao:'Gestão Atual',
+  rodada:'Rodada do Próximo Domingão', status_carreira:'Performance na Temporada', se_liga:'Se Liga - Craque',
+  departamento_medico:'Condição Física Atual', eventos:'Eventos', pagamento:'Dados para Pagamento do Aluguel da Quadra', gestao:'Gestão Atual',
 };
 function ordemCardsInicio(){
   const salva = (state.homeExtras && state.homeExtras.ordem) || [];
@@ -666,7 +666,7 @@ function renderExtrasIniciais(){
   // Meu Desempenho (tocar nas estrelas abre a Performance) e Saúde do Craque
   if(state.currentPlayer){
     const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
-    p.status_carreira = '<div class="card hz hz-dourado"><h3>Meu Desempenho em '+(new Date().getFullYear())+':</h3>'+
+    p.status_carreira = '<div class="card hz hz-dourado"><h3 class="titulo-uma-linha titulo-m">Performance na Temporada '+(new Date().getFullYear())+':</h3>'+
       '<div class="meu-score-box meu-score-click" data-action="ranking-jogador" data-id="'+state.currentPlayer.id+'" title="Toque para ver sua Performance">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
       '<p class="small muted" style="text-align:center;margin:6px 0 0;">Toque nas estrelas para ver sua Performance</p>'+
       renderMinhaPosicao()+
