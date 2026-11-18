@@ -1016,3 +1016,9 @@ details.evt-part-adm{margin:8px 0;border:1px solid rgba(167,123,255,.45);border-
 details.evt-part-adm > summary{cursor:pointer;padding:10px 12px;font-weight:700;font-family:var(--font-display);letter-spacing:.3px;font-size:clamp(12px,3.9vw,15px);overflow-wrap:anywhere;}
 .evt-part-corpo{padding:2px 8px 10px;}
 .evt-part-corpo .evt-novo{margin:8px 0;}
+
+/* v5.5: participantes como opção (chip) do evento */
+.badge.badge-btn{cursor:pointer;font-family:inherit;font-size:11px;line-height:1.4;padding:2px 7px;border:1px solid rgba(167,123,255,.7);background:rgba(167,123,255,.16);color:var(--text);white-space:nowrap}
+.badge.badge-btn.ativo{background:rgba(167,123,255,.4)}
+div.evt-part-adm{margin:8px 0;border:1px solid rgba(167,123,255,.45);border-radius:12px;background:rgba(167,123,255,.05);}
+.evt-part-tit{padding:10px 12px 0;font-weight:700;font-family:var(--font-display);letter-spacing:.3px;font-size:clamp(12px,3.9vw,15px);overflow-wrap:anywhere;color:var(--gold,#e8c14a)}

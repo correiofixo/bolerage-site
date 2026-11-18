@@ -156,6 +156,7 @@ const state = {
   trampos: [],
   eventoLista: null,
   eventoEditId: null,
+  eventoPartAberto: null,
   eventoSobreAberto: false,
   eventoLocalAberto: false,
   trampoFormAberto: false,
@@ -2493,22 +2494,8 @@ function participantesAdminHtml(tit){
   }else{
     h += '<p class="small muted">Não foi possível carregar a lista.</p>';
   }
-  return '<details class="evt-part-adm" open><summary>📋 PARTICIPANTES'+(tit?' — '+escapeHtml(tit):'')+(l?' ('+l.participantes.length+')':'')+'</summary><div class="evt-part-corpo">'+h+'</div></details>';
+  return '<div class="evt-part-adm"><div class="evt-part-tit">👥 PARTICIPANTES'+(tit?' — '+escapeHtml(tit):'')+(l?' ('+l.participantes.length+')':'')+'</div><div class="evt-part-corpo">'+h+'</div></div>';
 }
-// ---- configuração da aba Eventos (Resenha)
-function abaEventosAdminHtml(){
-  const l = state.eventoLista;
-  if(!l) return '';
-  let h = '';
-    const ab = l.aba || {};
-    h += '<div class="evt-novo"><div class="stack-tit">Aba Eventos (Resenha)</div>'+
-      '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Eventos" na tela Resenha</label>'+
-      '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="Eventos"></div>'+
-      '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Eventos do grupo: data, local, pagamento e a lista de participantes.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
-      '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Eventos</button></div>';
-  return '<details class="evt-part-adm"><summary>⚙️ ABA EVENTOS (Resenha)</summary><div class="evt-part-corpo">'+h+'</div></details>';
-}
-
 // ---- AGENDA DE EVENTOS (painel admin): lista + editor organizado em seções
 function eventoSecao(cor, titulo, sub, corpo){
   return '<div class="fin-zona fz-'+cor+' evt-secao"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
@@ -2557,16 +2544,16 @@ function renderAgendaAdminHtml(agenda, respOpc){
         '<div class="evt-item-badges"><span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':'<span class="badge">inativo</span>')+
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
           (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
-          (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+'</div></div>'+
+          (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
+          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn'+(state.eventoPartAberto===e.id?' ativo':'')+'" data-action="evento-part-toggle" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+' '+(state.eventoPartAberto===e.id?'▲':'▼')+'</button>':'')+'</div></div>'+
         '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
-      if(e.mostrarParticipantes) h += participantesAdminHtml(e.nome);
+      if(e.mostrarParticipantes && state.eventoPartAberto===e.id) h += participantesAdminHtml(e.nome);
     }
   });
   if(agenda.length && !agenda.some(e=>e.mostrarParticipantes)){
-    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento exibe a lista de participantes. Edite um evento e marque "Exibir a lista de participantes" para ela aparecer dentro dele.</p>'+participantesAdminHtml('');
+    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento exibe a lista de participantes. Edite um evento e marque "Exibir a lista de participantes"; aí aparece a opção "👥 participantes" dentro dele.</p>';
   }
-  h += abaEventosAdminHtml();
   return h + '</div>';
 }
 // campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
@@ -2784,6 +2771,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-jogador') return handleSalvarJogador(el.dataset.id);
   if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
+  if(action==='evento-part-toggle'){ state.eventoPartAberto = state.eventoPartAberto===el.dataset.id ? null : el.dataset.id; return render(); }
   if(action==='evento-novo'){ state.editingEventoId = 'novo'; return render(); }
   if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; return render(); }
   if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; return render(); }
