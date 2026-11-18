@@ -828,7 +828,7 @@ function eventoTotaisHtml(t){
     '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
     '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>'+
     '<div class="kpi kpi-sm kpi-dourado"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
-    '<div class="kpi kpi-sm kpi-azul"><div class="kpi-num">'+t.qtd+'</div><div class="kpi-rot">participante'+(t.qtd===1?'':'s')+' ('+t.pagos+' pago total • '+t.parciais+' pago parcial • '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+')</div></div>'+
+    '<div class="kpi kpi-sm kpi-azul kpi-full"><div class="kpi-num">'+t.qtd+' <span class="kpi-un">participante'+(t.qtd===1?'':'s')+'</span></div><div class="kpi-rot kpi-uma">'+t.pagos+' pago total · '+t.parciais+' pago parcial · '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+'</div></div>'+
   '</div>';
 }
 function pagamentoEventoHtml(pg){
@@ -846,7 +846,7 @@ function localEventoHtml(e){
   return '<details class="evento-local" data-evento-id="'+e.id+'"'+(state.eventoLocalAberto?' open':'')+'><summary>📍 '+escapeHtml(e.local)+' <small>• toque para ir</small></summary>'+
     '<div class="local-btns">'+
       '<a class="btn small local-btn local-waze" href="https://waze.com/ul?q='+q+'&navigate=yes" target="_blank" rel="noopener">🚗 Waze</a>'+
-      '<a class="btn small local-btn local-maps" href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener">🗺️ Google Maps</a>'+
+      '<a class="btn small local-btn local-maps" href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener">🗺️ Maps</a>'+
       '<a class="btn small local-btn local-uber" href="https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff%5Bformatted_address%5D='+q+'" target="_blank" rel="noopener">🚕 Uber</a>'+
     '</div></details>';
 }
@@ -863,26 +863,48 @@ function sobreEventoHtml(e, lista){
   }
   return '<details class="evento-sobre" data-evento-id="'+e.id+'"'+(state.eventoSobreAberto?' open':'')+'><summary>ℹ️ Sobre o Evento</summary><div class="evt-sobre-corpo">'+corpo+'</div></details>';
 }
-// aba "Evento" da Resenha
-function renderEventoAbaHtml(){
-  const l = state.eventoLista;
-  const evHome = ((state.homeExtras && state.homeExtras.eventos) || []).find(e=>e.mostrarParticipantes) || null;
-  const aba = (l && l.aba) || (state.homeExtras && state.homeExtras.eventoAba) || {};
-  const titulo = aba.titulo || ((l && l.eventoNome) ? l.eventoNome : 'Evento de Fim de Ano');
-  let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(titulo)+'</h3>'+
-    (l && l.eventoData ? '<p class="rodada-sub">'+formatDataBR(l.eventoData)+'</p>' : '')+
-    '<p class="small muted" style="white-space:pre-line;">'+escapeHtml(aba.texto || 'Lista de participantes e o status do pagamento de cada um.')+'</p></div>';
-  if(!l){ return h + '<div class="empty">Carregando…</div>'; }
-  if(!l.participantes.length) return h + '<div class="empty">A lista de participantes ainda não foi cadastrada pelo administrador.</div>';
+// botões do local do evento (Waze / Google Maps / Uber), sempre visíveis
+function localBotoesHtml(e){
+  if(!e.local) return '';
+  const q = encodeURIComponent(e.local);
+  return '<div class="evt-local"><div class="evt-local-end">📍 '+escapeHtml(e.local)+'</div><div class="local-btns" style="padding:6px 0 0;">'+
+    '<a class="btn small local-btn local-waze" href="https://waze.com/ul?q='+q+'&navigate=yes" target="_blank" rel="noopener">🚗 Waze</a>'+
+    '<a class="btn small local-btn local-maps" href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener">🗺️ Maps</a>'+
+    '<a class="btn small local-btn local-uber" href="https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff%5Bformatted_address%5D='+q+'" target="_blank" rel="noopener">🚕 Uber</a></div></div>';
+}
+function participantesBlocoHtml(l){
   const t = l.totais;
-  h += pagamentoEventoHtml(evHome && evHome.pagamento) ? '<div class="card hz hz-verde">'+pagamentoEventoHtml(evHome.pagamento)+'</div>' : '';
-  h += '<div class="card"><h3 class="titulo-centralizado">Resumo</h3>'+eventoTotaisHtml(t)+
+  return '<div class="evt-bloco"><div class="stack-tit">Resumo dos participantes</div>'+eventoTotaisHtml(t)+
     pizzaHtml('', [
       {label:'Pago Total', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
       {label:'Pago Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
       {label:'Pendente', valor:t.pendentes, cor:'#E2574C', txt:t.pendentes+' participante'+(t.pendentes===1?'':'s')},
-    ])+'</div>';
-  h += finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • status do pagamento', l.participantes.map(eventoLinhaHtml).join(''));
+    ])+'</div>'+
+    finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • status do pagamento', l.participantes.map(eventoLinhaHtml).join(''));
+}
+// aba "Eventos" da Resenha: todos os eventos da agenda (data, local, pagamento) e a lista de participantes do evento marcado
+function renderEventoAbaHtml(){
+  const l = state.eventoLista;
+  const eventos = (state.homeExtras && state.homeExtras.eventos) || [];
+  const aba = (l && l.aba) || (state.homeExtras && state.homeExtras.eventoAba) || {};
+  let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(aba.titulo || 'Eventos')+'</h3>'+
+    '<p class="small muted" style="white-space:pre-line;">'+escapeHtml(aba.texto || 'Eventos do grupo: data, local, pagamento e a lista de participantes.')+'</p></div>';
+  if(!eventos.length && !(l && l.participantes && l.participantes.length)){
+    return h + '<div class="empty">Nenhum evento cadastrado ainda.</div>';
+  }
+  eventos.forEach(e=>{
+    h += '<div class="card hz hz-verde evt-card"><div class="evt-card-topo"><h3 class="evt-card-nome">'+escapeHtml(e.nome)+'</h3><span class="badge">'+formatDataBR(e.data)+'</span></div>'+
+      (e.descricao ? '<p class="small avisos-text" style="margin:6px 0;">'+escapeHtml(e.descricao)+'</p>' : '')+
+      (e.responsavel ? '<div class="small muted">👤 Gestor: <strong style="color:var(--text)">'+escapeHtml(nomeExibicaoPorNomeReal(e.responsavel))+'</strong></div>' : '')+
+      localBotoesHtml(e)+
+      pagamentoEventoHtml(e.pagamento)+
+      ((e.mostrarParticipantes && l && l.participantes.length) ? participantesBlocoHtml(l) : (e.mostrarParticipantes ? '<p class="small muted">A lista de participantes ainda não foi cadastrada.</p>' : ''))+
+    '</div>';
+  });
+  // participantes cadastrados, mas nenhum evento marcado para exibir a lista
+  if(l && l.participantes && l.participantes.length && !eventos.some(e=>e.mostrarParticipantes)){
+    h += '<div class="card hz hz-roxo"><h3>Evento de Fim de Ano</h3>'+participantesBlocoHtml(l)+'</div>';
+  }
   return h;
 }
 
@@ -1000,7 +1022,7 @@ function renderResenha(){
       '<button data-action="resenha-aba" data-aba="rifas" class="'+(ab==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
       '<button data-action="resenha-aba" data-aba="redes" class="'+(ab==='redes'?'active':'')+'">📲 Redes Sociais</button>'+
       '<button data-action="resenha-aba" data-aba="trampos" class="'+(ab==='trampos'?'active':'')+'">💼 Trampos</button>'+
-      (abaEventoAtiva ? '<button data-action="resenha-aba" data-aba="evento" class="'+(ab==='evento'?'active':'')+'">🎉 '+'Evento'+'</button>' : '')+
+      (abaEventoAtiva ? '<button data-action="resenha-aba" data-aba="evento" class="'+(ab==='evento'?'active':'')+'">🎉 Eventos</button>' : '')+
     '</div>';
   if(ab==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
   if(ab==='redes'){ setContent(abasResenha + renderRedesHtml(), 'resenha-redes'); return; }
@@ -1835,44 +1857,20 @@ async function renderAdmin(){
       '</div>';
   }
   } /* fim !soEventos (acessos/ordem/rifas) */
-  html += '<div class="card"><h3>Agenda de eventos (tela inicial)</h3>';
-  agenda.forEach(e=>{
-    if(state.editingEventoId===e.id){
-      html += '<div class="list-row" style="flex-direction:column;align-items:stretch;gap:6px;">'+
-        '<div class="field"><label>Nome</label><input id="edit-ev-nome-'+e.id+'" value="'+escapeHtml(e.nome)+'"></div>'+
-        '<div class="field"><label>Data</label><input type="date" id="edit-ev-data-'+e.id+'" value="'+e.data+'"></div>'+
-        '<div class="field"><label>Descrição</label><textarea id="edit-ev-desc-'+e.id+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
-        '<div class="field"><label>Gestor do Evento</label><select id="edit-ev-resp-'+e.id+'">'+respOpc(e.responsavel||'')+'</select></div>'+
-        '<label class="small"><input type="checkbox" id="edit-ev-ativo-'+e.id+'" '+(e.ativo?'checked':'')+'> exibir na tela inicial</label>'+
-        eventoExtrasForm(e.id, e)+
-        '<div class="btn-row"><button class="btn small" data-action="salvar-evento" data-id="'+e.id+'">Salvar</button>'+
-        '<button class="btn secondary small" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
-    }else{
-      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+(e.local?' <span class="badge">📍 local</span>':'')+(e.mostrarParticipantes?' <span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?' <span class="badge">💳 pagamento</span>':'')+'</span>'+
-        '<span><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button> '+
-        '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
-    }
-  });
-  html += '<div class="divider"></div><h3>Adicionar evento</h3>'+
-    '<div class="field"><label>Nome do evento</label><input id="novo-evento-nome"></div>'+
-    '<div class="field"><label>Data</label><input type="date" id="novo-evento-data"></div>'+
-    '<div class="field"><label>Descrição</label><textarea id="novo-evento-desc" rows="3" style="'+taStyle+'"></textarea></div>'+
-    '<div class="field"><label>Gestor do Evento</label><select id="novo-evento-resp">'+respOpc('')+'</select></div>'+
-    eventoExtrasForm('novo', null)+
-    '<button class="btn secondary" data-action="adicionar-evento">Adicionar evento</button></div>';
+  html += renderAgendaAdminHtml(agenda, respOpc);
 
   // ---- card: gestão do evento de fim de ano (participantes, valor e status)
   {
     const l = state.eventoLista;
     let h = '<div class="card hz hz-roxo"><h3>🎉 EVENTO DE FIM DE ANO — PARTICIPANTES</h3>'+
-      '<p class="small muted">Cadastre quem vai ao evento, o valor e o status do pagamento. A lista aparece para todos em Resenha &gt; Evento e, se você ativar na Agenda de eventos, também em "Sobre o Evento" na tela inicial.</p>';
+      '<p class="small muted">Cadastre quem vai ao evento, o valor e o status do pagamento. A lista aparece para todos em Resenha &gt; Eventos e, se você ativar na Agenda de eventos, também em "Sobre o Evento" na tela inicial.</p>';
     if(l){
       const ab = l.aba || {};
-      h += '<div class="evt-novo"><div class="stack-tit">Aba Evento (Resenha)</div>'+
-        '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Evento" na tela Resenha</label>'+
-        '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="'+escapeHtml(l.eventoNome||'Evento de Fim de Ano')+'"></div>'+
-        '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Lista de participantes e o status do pagamento de cada um.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
-        '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Evento</button></div>';
+      h += '<div class="evt-novo"><div class="stack-tit">Aba Eventos (Resenha)</div>'+
+        '<label class="small"><input type="checkbox" id="evt-aba-ativa" '+(ab.ativa!==false?'checked':'')+'> Exibir a aba "Eventos" na tela Resenha</label>'+
+        '<div class="field"><label>Título da aba</label><input id="evt-aba-titulo" maxlength="80" value="'+escapeHtml(ab.titulo||'')+'" placeholder="Eventos"></div>'+
+        '<div class="field"><label>Texto de apresentação</label><textarea id="evt-aba-texto" rows="3" maxlength="500" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;" placeholder="Eventos do grupo: data, local, pagamento e a lista de participantes.">'+escapeHtml(ab.texto||'')+'</textarea></div>'+
+        '<button class="btn secondary" data-action="evt-aba-salvar">Salvar aba Eventos</button></div>';
       h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
       h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
         '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
@@ -2267,7 +2265,7 @@ async function handleEvtStatus(id, status){
 async function handleEvtRemover(id){ if(confirm('Remover este participante da lista?')) return evtApi('DELETE', '/api/admin/evento-participantes/'+id, undefined, 'Removido'); }
 function handleEvtValorPadrao(){ return evtApi('PUT', '/api/admin/evento-valor-padrao', {valor: document.getElementById('evt-valor-padrao').value}, 'Valor padrão salvo'); }
 function handleEvtAbaSalvar(){
-  return evtApi('PUT', '/api/admin/evento-aba', {ativa: document.getElementById('evt-aba-ativa').checked, titulo: document.getElementById('evt-aba-titulo').value, texto: document.getElementById('evt-aba-texto').value}, 'Aba Evento salva');
+  return evtApi('PUT', '/api/admin/evento-aba', {ativa: document.getElementById('evt-aba-ativa').checked, titulo: document.getElementById('evt-aba-titulo').value, texto: document.getElementById('evt-aba-texto').value}, 'Aba Eventos salva');
 }
 async function handleEvtTodos(){
   if(!confirm('Adicionar todos os jogadores ativos que ainda não estão na lista (valor padrão, status Pendente)?')) return;
@@ -2507,41 +2505,77 @@ async function handleSalvarAdminPin(){
   try{ await api('/api/admin/admin-pin', {method:'PUT', adminAuth:true, body:{pin}}); alert('PIN administrativo atualizado.'); await render(); }
   catch(e){ alert(e.message); }
 }
-// campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
-function eventoExtrasForm(key, e){
-  e = e || {};
-  return '<div class="field"><label>Local do evento (endereço) — abre no Waze, Google Maps ou Uber</label><input id="ev-local-'+key+'" maxlength="200" value="'+escapeHtml(e.local||'')+'" placeholder="Ex.: Sítio Boa Vista, Estrada do Sol, 1500 - Cotia"></div>'+
-    '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (valores pagos e status) — adiciona a opção "Sobre o Evento"</label>'+
-    '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
-    '<div class="field"><label>Responsável pelo pagamento</label><input id="ev-pg-nome-'+key+'" value="'+escapeHtml(e.pgtoNome||'')+'"></div>'+
-    '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'"></div>'+
-    '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" placeholder="Ex.: R$ 250,00"></div>';
+// ---- AGENDA DE EVENTOS (painel admin): lista + editor organizado em seções
+function eventoSecao(cor, titulo, sub, corpo){
+  return '<div class="fin-zona fz-'+cor+' evt-secao"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
 }
+function eventoEditorHtml(key, e, respOpc){
+  const novo = key==='novo';
+  e = e || {};
+  const taStyle = 'width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;box-sizing:border-box;';
+  return '<div class="evt-editor"><div class="evt-editor-tit">'+(novo ? '➕ NOVO EVENTO' : '✏️ EDITANDO: '+escapeHtml(e.nome||''))+'</div>'+
+    eventoSecao('azul', '📌 DADOS DO EVENTO', 'Nome, data, local e descrição',
+      '<div class="field"><label>Nome do evento *</label><input id="ev-nome-'+key+'" value="'+escapeHtml(e.nome||'')+'" maxlength="100"></div>'+
+      '<div class="field"><label>Data *</label><input type="date" id="ev-data-'+key+'" value="'+escapeHtml(e.data||'')+'"></div>'+
+      '<div class="field"><label>Local (endereço) — abre no Waze, Google Maps ou Uber</label><input id="ev-local-'+key+'" maxlength="200" value="'+escapeHtml(e.local||'')+'" placeholder="Ex.: Sítio Boa Vista, Estrada do Sol, 1500 - Cotia"></div>'+
+      '<div class="field"><label>Descrição</label><textarea id="ev-desc-'+key+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
+      '<label class="small"><input type="checkbox" id="ev-ativo-'+key+'" '+((novo || e.ativo)?'checked':'')+'> Exibir na tela inicial</label>')+
+    eventoSecao('roxo', '👤 RESPONSÁVEIS', 'Quem gere o evento e quem recebe o pagamento',
+      '<div class="field"><label>Gestor do Evento</label><select id="ev-resp-'+key+'">'+respOpc(e.responsavel||'')+'</select></div>'+
+      '<div class="field"><label>Responsável pelo pagamento</label><input id="ev-pg-nome-'+key+'" value="'+escapeHtml(e.pgtoNome||'')+'" maxlength="80" placeholder="Nome de quem recebe"></div>')+
+    eventoSecao('verde', '💳 DADOS PARA PAGAMENTO', 'Chave PIX e valor do evento',
+      '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
+      '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'" maxlength="120"></div>'+
+      '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" maxlength="40" placeholder="Ex.: R$ 250,00"></div>')+
+    eventoSecao('ciano', '📋 LISTA DE PARTICIPANTES', 'Cria a opção "Sobre o Evento" na tela inicial',
+      '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (status do pagamento)</label>'+
+      '<p class="small muted" style="margin:4px 0 0;">Só um evento por vez exibe a lista. Cadastre os participantes no card abaixo.</p>')+
+    '<div class="btn-row"><button class="btn" data-action="salvar-evento" data-id="'+key+'">'+(novo?'Criar evento':'Salvar alterações')+'</button>'+
+    '<button class="btn secondary" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
+}
+function renderAgendaAdminHtml(agenda, respOpc){
+  let h = '<div class="card hz hz-verde"><h3>📅 AGENDA DE EVENTOS (tela inicial)</h3>'+
+    '<p class="small muted">Inclua, altere e remova eventos. Em cada evento você define o local, os responsáveis, os dados de pagamento e se a lista de participantes aparece.</p>';
+  if(state.editingEventoId==='novo'){
+    h += eventoEditorHtml('novo', null, respOpc);
+  }else{
+    h += '<button class="btn" data-action="evento-novo">➕ Novo evento</button>';
+  }
+  if(!agenda.length){
+    h += '<p class="small muted" style="margin-top:10px;">Nenhum evento cadastrado.</p>';
+  }
+  agenda.forEach(e=>{
+    if(state.editingEventoId===e.id){
+      h += eventoEditorHtml(e.id, e, respOpc);
+    }else{
+      h += '<div class="evt-item"><div class="evt-item-info"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div>'+
+        '<div class="evt-item-badges"><span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':'<span class="badge">inativo</span>')+
+          (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
+          (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+'</div></div>'+
+        '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
+        '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
+    }
+  });
+  return h + '</div>';
+}
+// campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
 function lerEventoExtras(key){
   const g = id => document.getElementById(id+key);
   return {local:g('ev-local-').value, mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
 }
-async function handleAdicionarEvento(){
-  const nome = document.getElementById('novo-evento-nome').value.trim();
-  const data = document.getElementById('novo-evento-data').value;
-  const descricao = document.getElementById('novo-evento-desc').value;
-  const responsavel = document.getElementById('novo-evento-resp').value;
+async function handleSalvarEvento(key){
+  const g = x => document.getElementById(x+'-'+key);
+  const nome = g('ev-nome').value.trim();
+  const data = g('ev-data').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
-  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data,descricao,responsavel, ...lerEventoExtras('novo')}}); await refreshHomeExtras(); await render(); }
-  catch(e){ alert(e.message); }
-}
-async function handleSalvarEvento(id){
-  const nome = document.getElementById('edit-ev-nome-'+id).value.trim();
-  const data = document.getElementById('edit-ev-data-'+id).value;
-  const descricao = document.getElementById('edit-ev-desc-'+id).value;
-  const responsavel = document.getElementById('edit-ev-resp-'+id).value;
-  const ativo = document.getElementById('edit-ev-ativo-'+id).checked;
-  if(!nome || !data){ alert('Informe nome e data.'); return; }
+  const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-ativo').checked, ...lerEventoExtras(key)};
   try{
-    await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{nome,data,descricao,responsavel,ativo, ...lerEventoExtras(id)}});
+    if(key==='novo') await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:corpo});
+    else await api('/api/admin/agenda/'+key, {method:'PUT', adminAuth:true, body:corpo});
     state.editingEventoId = null;
     await refreshHomeExtras();
     await render();
+    showToast(key==='novo' ? 'Evento criado!' : 'Evento salvo!');
   }catch(e){ alert(e.message); }
 }
 async function handleToggleEventoAtivo(id, ativoAtual){
@@ -2608,7 +2642,7 @@ function startPolling(){
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
       if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
       if(state.tab==='resenha' && state.resenhaAba==='trampos' && !state.trampoFormAberto) await refreshTrampos();
-      if(state.tab==='resenha' && state.resenhaAba==='evento') await refreshEvento();
+      if(state.tab==='resenha' && state.resenhaAba==='evento'){ await refreshEvento(); await refreshHomeExtras(); }
       if((state.tab==='sorteio' || (state.tab==='votacao' && (state.votacaoAba==='votos' || state.votacaoAba==='historico'))) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
@@ -2739,7 +2773,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-jogador') return handleSalvarJogador(el.dataset.id);
   if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
-  if(action==='adicionar-evento') return handleAdicionarEvento();
+  if(action==='evento-novo'){ state.editingEventoId = 'novo'; return render(); }
   if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; return render(); }
   if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; return render(); }
   if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
