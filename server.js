@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 49;
+const APP_BUILD = 50;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -2111,6 +2111,22 @@ app.get('/api/ranking/jogador/:id', (req,res)=>{
   const j = getJogadorPorId(req.params.id);
   if(!j) return res.status(404).json({erro:'Jogador não encontrado.'});
   res.json({id:j.id, nome:j.nome, serie: calcularSerieJogador(j.id)});
+});
+// Votos dos Jogadores > filtro por jogador: as notas que o jogador LOGADO recebeu de um votante específico, rodada a rodada.
+// Só funciona com a aba "Votos dos Jogadores" habilitada pelo admin (mesma regra de privacidade da aba).
+app.get('/api/votos-recebidos', requireAuth, (req,res)=>{
+  if(!getConfig().mostrar_votos) return res.status(403).json({erro:'A consulta de votos não está habilitada.'});
+  const de = String(req.query.de||'');
+  if(!getJogadorPorId(de)) return res.status(404).json({erro:'Jogador não encontrado.'});
+  if(de===req.jogadorId) return res.status(400).json({erro:'Escolha outro jogador.'});
+  const votos = db.prepare("SELECT r.data AS data, v.nota AS nota FROM votos v JOIN rodadas r ON r.id=v.rodada_id WHERE v.jogador_avaliado_id=? AND v.jogador_avaliador_id=? AND r.status='sorteado' ORDER BY r.data DESC").all(req.jogadorId, de);
+  const geral = db.prepare("SELECT AVG(v.nota) AS m, COUNT(*) AS n FROM votos v JOIN rodadas r ON r.id=v.rodada_id WHERE v.jogador_avaliado_id=? AND r.status='sorteado'").get(req.jogadorId);
+  const distribuicao = {1:0,2:0,3:0,4:0,5:0};
+  votos.forEach(v=>{ distribuicao[v.nota] = (distribuicao[v.nota]||0) + 1; });
+  const soma = votos.reduce((t,v)=>t+v.nota,0);
+  res.json({de:{id:de}, votos:votos.map(v=>({data:v.data, nota:v.nota})), total:votos.length,
+    media: votos.length ? Math.round(soma/votos.length*100)/100 : null, distribuicao,
+    mediaGeral: (geral && geral.n) ? Math.round(geral.m*100)/100 : null, totalGeral: geral ? geral.n : 0});
 });
 app.get('/api/ranking-bola', (req,res)=>{
   res.json(calcularRankingBola());

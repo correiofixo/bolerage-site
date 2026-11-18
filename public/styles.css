@@ -1186,3 +1186,8 @@ body.na-tela-login #login-screen{
 .hist-jog-cheia .hist-jog-num{color:#7BD991;} .hist-jog-murcha .hist-jog-num{color:#FF8D84;}
 .hist-jog-rot{font-size:clamp(11px,3.4vw,13px);white-space:nowrap;margin-top:2px;}
 .fin-row.hist-sel{background:rgba(228,193,88,.16);border-radius:8px;outline:1px solid rgba(228,193,88,.55);}
+
+/* ---- v6.10: Votos dos Jogadores > filtro por jogador (notas que ele deu a mim) ---- */
+.votos-dist{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 0 6px;}
+.votos-dist .voto-nota{white-space:nowrap;}
+.votos-dist .voto-nota b{margin-left:2px;}

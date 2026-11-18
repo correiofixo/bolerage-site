@@ -147,6 +147,7 @@ const state = {
   ranking: {},
   rankingBola: {cheia:{}, murcha:{}, detalhe:{cheia:{}, murcha:{}}},
   histJogador: '',
+  votosJogador: '', votosRecebidos: null,
   rankingAba: 'geral',
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
@@ -479,7 +480,7 @@ async function handleLoginDigit(d){
 
 async function handleLogout(){
   try{ await api('/api/logout', {method:'POST', auth:true}); }catch(e){}
-  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null;
+  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null; state.votosJogador=''; state.votosRecebidos=null; state.histJogador='';
   localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player');
   // encerra também a sessão de admin: ela não pode sobreviver à troca de jogador neste navegador
   state.adminToken=null; state.isAdmin=false;
@@ -1330,10 +1331,43 @@ function seletorRodadaVisualizadaHtml(rotulo){
     .map(r=>'<option value="'+r.id+'" '+(r.id===state.rodadaVisualizadaId?'selected':'')+'>'+formatDataBR(r.data)+'</option>').join('');
   return '<div class="field"><label>'+rotulo+'</label><select data-action="mudar-rodada-visualizada">'+ops+'</select></div>';
 }
+// filtro por jogador: quais notas EU (jogador logado) recebi de um determinado votante, rodada a rodada
+function seletorVotanteHtml(){
+  const eu = state.currentPlayer && state.currentPlayer.id;
+  const ops = state.elenco.filter(j=>j.ativo && j.id!==eu).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'))
+    .map(j=>'<option value="'+j.id+'" '+(j.id===state.votosJogador?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
+  return '<div class="field"><label>Filtrar por jogador — notas que ele deu a você</label><select data-action="votos-jogador"><option value="">Todos os jogadores (ver por rodada)</option>'+ops+'</select></div>';
+}
+async function carregarVotosRecebidos(){
+  const id = state.votosJogador;
+  if(!id){ state.votosRecebidos = null; return; }
+  try{ state.votosRecebidos = await api('/api/votos-recebidos?de='+encodeURIComponent(id), {auth:true}); state.votosRecebidos.de = {id}; }
+  catch(e){ state.votosRecebidos = {de:{id}, erro:e.message}; }
+}
+function votosRecebidosHtml(){
+  const id = state.votosJogador;
+  if(!id) return '';
+  const d = state.votosRecebidos;
+  if(!d || !d.de || d.de.id!==id) return '<div class="empty">Carregando…</div>';
+  const nome = escapeHtml(jogadorNome(id))+timeCoracaoSuffixDoId(id);
+  if(d.erro) return finZona('cinza', '👤 '+nome, 'Não foi possível consultar', '<p class="small muted" style="margin:6px 0;">'+escapeHtml(d.erro)+'</p>');
+  if(!d.total) return finZona('cinza', '👤 '+nome+' → VOCÊ', 'Notas que ele deu a você', '<p class="small muted" style="margin:6px 0;text-align:center;">Você ainda não recebeu nenhuma nota desse jogador.</p>');
+  const fmt = v => v==null ? '—' : v.toFixed(1).replace('.',',');
+  const cor = d.media>=4 ? 'verde' : d.media>=3 ? 'dourado' : d.media>=2 ? 'laranja' : 'vermelho';
+  const dif = (d.mediaGeral!=null) ? d.media - d.mediaGeral : null;
+  const comp = dif==null ? '' : (Math.abs(dif)<0.05 ? 'Igual à média geral que você recebe ('+fmt(d.mediaGeral)+')' : (dif>0 ? '▲ ' : '▼ ')+fmt(Math.abs(dif))+' '+(dif>0?'acima':'abaixo')+' da média geral que você recebe ('+fmt(d.mediaGeral)+')');
+  const resumo = '<div class="hist-jog-resumo">'+
+    '<div class="hist-jog-kpi"><span class="hist-jog-num">'+d.total+'</span><span class="hist-jog-rot">nota'+(d.total===1?'':'s')+' recebida'+(d.total===1?'':'s')+'</span></div>'+
+    '<div class="hist-jog-kpi"><span class="hist-jog-num">'+fmt(d.media)+'</span><span class="hist-jog-rot">média das notas</span></div></div>'+
+    (comp ? '<p class="small" style="text-align:center;margin:6px 0;">'+comp+'</p>' : '')+
+    '<div class="votos-dist">'+[5,4,3,2,1].map(n=>'<span class="voto-nota n'+n+'">'+n+' ★ <b>'+(d.distribuicao[n]||0)+'×</b></span>').join('')+'</div>';
+  const linhas = d.votos.map((v,i)=>'<div class="fin-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">Rodada de '+formatDataBR(v.data)+'</span><span class="voto-nota n'+v.nota+'">'+v.nota+' ★</span></div>').join('');
+  return finZona(cor, '👤 '+nome+' → VOCÊ', 'Notas que ele deu a você, rodada a rodada', resumo+linhas);
+}
 // Tela VOTAÇÃO > aba "Votos dos Jogadores" (só aparece se o ADMIN habilitou no painel)
 function renderVotosDosJogadores(abasHtml){
   const rodV = state.rodadaVisualizada || state.rodadaAtual;
-  let h = abasHtml + seletorRodadaVisualizadaHtml('Rodada dos votos');
+  let h = abasHtml + seletorVotanteHtml() + votosRecebidosHtml() + seletorRodadaVisualizadaHtml('Rodada dos votos');
   if(!rodV){ setContent(h+'<div class="empty">Ainda sem votos.</div>', 'votacao-votos'); return; }
     const porAvaliador = {};
     (rodV.votos||[]).forEach(v=>{
@@ -2865,6 +2899,7 @@ function startPolling(){
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
       if(state.tab==='votacao' && state.votacaoAba==='historico') await refreshRankingBola();
+      if(state.tab==='votacao' && state.votacaoAba==='votos' && state.votosJogador) await carregarVotosRecebidos();
       if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
       if(state.tab==='resenha' && state.resenhaAba==='trampos' && !state.trampoFormAberto) await refreshTrampos();
       if(state.tab==='resenha' && state.resenhaAba==='evento'){ await refreshEvento(); await refreshHomeExtras(); }
@@ -2940,7 +2975,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='trampo-cancelar'){ state.trampoFormAberto = false; state._lastContentKey = null; return render(); }
   if(action==='trampo-publicar') return handlePublicarTrampo();
   if(action==='trampo-remover') return handleRemoverTrampo(el.dataset.id);
-  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); if(state.votacaoAba==='historico') await refreshRankingBola(); return render(); }
+  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); if(state.votacaoAba==='historico') await refreshRankingBola(); if(state.votacaoAba==='votos' && state.votosJogador) await carregarVotosRecebidos(); return render(); }
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
   if(action==='saude-dica') return abrirSaudeDica();
@@ -3051,6 +3086,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
     render();
   }
   if(e.target.dataset.action==='hist-jogador'){ state.histJogador = e.target.value; render(); }
+  if(e.target.dataset.action==='votos-jogador'){ state.votosJogador = e.target.value; state.votosRecebidos = null; render(); if(state.votosJogador){ await carregarVotosRecebidos(); render(); } }
   if(e.target.dataset.action==='rifa-rodada'){
     state.rifaRodadaId = e.target.value;
     render();
