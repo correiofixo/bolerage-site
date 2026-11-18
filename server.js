@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 39;
+const APP_BUILD = 40;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -185,7 +185,8 @@ try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_ativo INTEGER NOT NULL DEFAULT
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_nome TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_pix TEXT NOT NULL DEFAULT ''"); }catch(e){}
 try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_valor TEXT NOT NULL DEFAULT ''"); }catch(e){}
-try{ db.exec("ALTER TABLE eventos ADD COLUMN so_aba INTEGER NOT NULL DEFAULT 0"); }catch(e){}   // 1 = exibir só na aba Eventos da Resenha
+try{ db.exec("ALTER TABLE eventos ADD COLUMN so_aba INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("CREATE TABLE IF NOT EXISTS evento_despesas (id TEXT PRIMARY KEY, evento_id TEXT NOT NULL, despesa TEXT NOT NULL, fornecedor TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '', valor REAL NOT NULL DEFAULT 0, criado_em TEXT NOT NULL)"); }catch(e){}   // 1 = exibir só na aba Eventos da Resenha
 // acesso marketing: o jogador pode gerir os eventos (agenda, participantes e aba Evento)
 try{ db.exec("ALTER TABLE jogadores ADD COLUMN marketing INTEGER NOT NULL DEFAULT 0"); }catch(e){}
 // local do evento (endereço) para abrir no Waze / Google Maps / Uber
@@ -1435,6 +1436,9 @@ function gerarXlsxRelatorio(rel){
     {nome:'Saldo em Caixa',        xml:xlsxPlanilha(s4,[44,18])},
     {nome:'Custos da Quadra',      xml:xlsxPlanilha(s5,[34,18,14])},
   ];
+  return montarXlsx(abas);
+}
+function montarXlsx(abas){
   const H = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
   const arquivos = [
     {nome:'[Content_Types].xml', dados:Buffer.from(H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
@@ -1478,6 +1482,187 @@ app.get('/api/admin/relatorio-financeiro.xlsx', requireAdmin, (req,res)=>{
   res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.set('Content-Disposition','attachment; filename="relatorios-financeiros-'+rel.referencia+'.xlsx"');
   res.send(gerarXlsxRelatorio(rel));
+});
+
+/* ============================================================
+   DRE DO EVENTO (despesas + receitas dos participantes) — JSON, PDF e Excel
+   ============================================================ */
+function despesasDoEvento(id){
+  return db.prepare("SELECT id,despesa,fornecedor,data,valor FROM evento_despesas WHERE evento_id=? ORDER BY CASE WHEN data='' THEN 1 ELSE 0 END, data ASC, criado_em ASC").all(id)
+    .map(x=>({id:x.id, despesa:x.despesa, fornecedor:x.fornecedor||'', data:x.data||'', valor:x.valor}));
+}
+function validarDespesas(arr){
+  if(!Array.isArray(arr)) return {lista:null};
+  if(arr.length>300) return {erro:'Lista de despesas grande demais.'};
+  const lista = [];
+  for(const it of arr){
+    const despesa = String((it && it.despesa) || '').trim().slice(0,80);
+    if(despesa.length<2) return {erro:'Informe o nome da despesa.'};
+    const fornecedor = String((it && it.fornecedor) || '').trim().slice(0,80);
+    const data = String((it && it.data) || '').trim();
+    if(data && !/^\d{4}-\d{2}-\d{2}$/.test(data)) return {erro:'Data inválida na despesa "'+despesa+'".'};
+    const v = parseValorBR(it && it.valor);
+    if(v==null || v<0 || v>100000000) return {erro:'Valor inválido na despesa "'+despesa+'".'};
+    lista.push({despesa, fornecedor, data, valor:Math.round(v*100)/100});
+  }
+  return {lista};
+}
+function gravarDespesas(evId, lista){
+  db.prepare('DELETE FROM evento_despesas WHERE evento_id=?').run(evId);
+  lista.forEach(x=>db.prepare('INSERT INTO evento_despesas (id,evento_id,despesa,fornecedor,data,valor,criado_em) VALUES (?,?,?,?,?,?,?)').run(idGen('ed'), evId, x.despesa, x.fornecedor, x.data, x.valor, nowISO()));
+}
+const r2 = n => Math.round((Number(n)||0)*100)/100;
+function montarDreEvento(ev){
+  const lista = ev.mostrar_participantes ? montarEventoLista().participantes : [];
+  const por = {pago:{qtd:0,valor:0,recebido:0}, parcial:{qtd:0,valor:0,recebido:0}, pendente:{qtd:0,valor:0,recebido:0}};
+  lista.forEach(p=>{ const g = por[p.status] || por.pendente; g.qtd++; g.valor += p.valor; g.recebido += p.valorPago; });
+  Object.keys(por).forEach(k=>{ por[k].valor = r2(por[k].valor); por[k].recebido = r2(por[k].recebido); });
+  const previsto = r2(lista.reduce((t,p)=>t+p.valor,0));
+  const recebido = r2(lista.reduce((t,p)=>t+p.valorPago,0));
+  const itens = despesasDoEvento(ev.id);
+  const totalDesp = r2(itens.reduce((t,x)=>t+x.valor,0));
+  return {
+    evento:{id:ev.id, nome:ev.nome, data:ev.data, responsavel:ev.responsavel||'', local:ev.local||''},
+    geradoEm: spWallClockNow(),
+    qtd: lista.length,
+    receitas:{previsto, recebido, aReceber:r2(Math.max(0, previsto-recebido)), porStatus:por},
+    despesas:{itens, total:totalDesp},
+    saldoCaixa: r2(recebido-totalDesp),
+    resultadoPrevisto: r2(previsto-totalDesp),
+  };
+}
+// quem pode ver/exportar o DRE: gestão de eventos (super, admin com conteúdo, marketing) ou o GESTOR do próprio evento
+function dreEventoAcesso(req, res){
+  const sessao = getSessao(extrairToken(req));
+  if(!sessao){ res.status(401).json({erro:'Sessão inválida. Faça login novamente.'}); return null; }
+  const ev = db.prepare('SELECT * FROM eventos WHERE id=?').get(req.params.id);
+  if(!ev){ res.status(404).json({erro:'Evento não encontrado.'}); return null; }
+  let ok = false;
+  if(sessao.jogador_id){
+    const a = getJogadorAuth(sessao.jogador_id), j = getJogadorPorId(sessao.jogador_id);
+    ok = a.superAdmin || (a.admin && a.perms.includes('conteudo')) || !!(j && j.ativo && j.marketing) || !!(j && j.ativo && ev.responsavel && j.nome===ev.responsavel);
+  }else ok = !!sessao.is_admin;
+  if(!ok){ res.status(403).json({erro:'Só o gestor do evento ou a gestão de eventos acessa o DRE.'}); return null; }
+  return ev;
+}
+const semEmoji = s => String(s==null?'':s).replace(/[^\x20-\xFF]/g,'').replace(/\s+/g,' ').trim();
+const dataBRs = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s||'')) ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '';
+const slugArq = s => (semEmoji(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'evento');
+const COR_PDF_EV = {pago:[0.25,0.68,0.35], parcial:[0.94,0.56,0.18], pendente:[0.89,0.34,0.30]};
+function gerarPdfDreEvento(dre){
+  const d = novoPdf();
+  const gestor = semEmoji(dre.evento.responsavel);
+  d.texto(d.M, d.y, 'Bolerage F.D.', 18, true); d.y -= 20;
+  d.texto(d.M, d.y, 'DRE do Evento - Demonstrativo de Resultados', 13, true); d.y -= 18;
+  d.texto(d.M, d.y, semEmoji(dre.evento.nome), 11, true); d.y -= 14;
+  d.texto(d.M, d.y, 'Data do evento: '+dataBRs(dre.evento.data)+(gestor ? '     Gestor: '+gestor : ''), 10, false); d.y -= 14;
+  d.texto(d.M, d.y, 'Gerado em '+dataHoraBR(dre.geradoEm)+' (horário de São Paulo)', 9, false); d.y -= 8;
+  d.linha(d.M, d.y, d.RIGHT, d.y, 0.5); d.y -= 18;
+  const secao = t=>{ d.garantir(40, null); d.faixa(d.y-5, 18, 0.80); d.texto(d.M+4, d.y, t, 11, true); d.y -= 22; };
+  const item = (rot, val, neg)=>{ d.garantir(20, null); d.texto(d.M+10, d.y, rot, 10, !!neg); d.texto(d.RIGHT-4, d.y, fmtBRL(val), 10, !!neg, 'right'); d.y -= 16; };
+  const r = dre.receitas, ps = r.porStatus;
+  secao('RECEITAS (participantes)');
+  item('Pago Total ('+ps.pago.qtd+') - recebido', ps.pago.recebido);
+  item('Pago Parcial ('+ps.parcial.qtd+') - recebido', ps.parcial.recebido);
+  item('A receber (saldo dos parciais + pendentes '+ps.pendente.qtd+')', r.aReceber);
+  d.linha(d.M, d.y+11, d.RIGHT, d.y+11, 0.4);
+  item('Total de receitas (previsto) - '+dre.qtd+' participante'+(dre.qtd===1?'':'s'), r.previsto, true);
+  d.y -= 10;
+  secao('DESPESAS (do evento)');
+  const cab = ()=>{ d.faixa(d.y-4, 16, 0.92); d.texto(d.M+4, d.y, 'Despesa', 9, true); d.texto(215, d.y, 'Fornecedor', 9, true); d.texto(395, d.y, 'Data', 9, true); d.texto(d.RIGHT-4, d.y, 'Valor', 9, true, 'right'); d.y -= 18; };
+  if(dre.despesas.itens.length){
+    cab();
+    dre.despesas.itens.forEach((x,i)=>{
+      d.garantir(18, ()=>{ d.texto(d.M, d.y, 'Despesas (continuação)', 10, true); d.y -= 16; cab(); });
+      if(i%2===1) d.faixa(d.y-4, 15, 0.96);
+      d.texto(d.M+4, d.y, semEmoji(x.despesa).slice(0,28), 10, false);
+      d.texto(215, d.y, semEmoji(x.fornecedor).slice(0,30), 10, false);
+      d.texto(395, d.y, dataBRs(x.data), 10, false);
+      d.texto(d.RIGHT-4, d.y, fmtBRL(x.valor), 10, false, 'right');
+      d.y -= 15;
+    });
+  }else{ d.texto(d.M+10, d.y, 'Nenhuma despesa cadastrada.', 9, false); d.y -= 16; }
+  d.linha(d.M, d.y+11, d.RIGHT, d.y+11, 0.4);
+  item('Total de despesas', dre.despesas.total, true);
+  d.y -= 10;
+  secao('SALDO EM CAIXA (recebido - despesas)');
+  item('Saldo em caixa do evento', dre.saldoCaixa, true);
+  d.y -= 6;
+  d.garantir(50, null);
+  d.faixa(d.y-10, 30, dre.resultadoPrevisto<0 ? 0.85 : 0.88);
+  d.texto(d.M+8, d.y, 'SALDO PREVISTO', 12, true);
+  d.texto(d.RIGHT-8, d.y, fmtBRL(dre.resultadoPrevisto), 14, true, 'right');
+  d.y -= 40;
+  d.texto(d.M, d.y, 'GR\u00C1FICOS', 11, true); d.y -= 16;
+  pizzaPdf(d, 'Valor por status (R$)', [
+    {label:'Pago Total', valor:ps.pago.valor, cor:COR_PDF_EV.pago, txt:fmtBRL(ps.pago.valor)},
+    {label:'Pago Parcial', valor:ps.parcial.valor, cor:COR_PDF_EV.parcial, txt:fmtBRL(ps.parcial.valor)},
+    {label:'Pendente', valor:ps.pendente.valor, cor:COR_PDF_EV.pendente, txt:fmtBRL(ps.pendente.valor)},
+  ]);
+  pizzaPdf(d, 'Receitas x Despesas', [
+    {label:'Receitas (previsto)', valor:r.previsto, cor:COR_PDF.em_dia, txt:fmtBRL(r.previsto)},
+    {label:'Despesas', valor:dre.despesas.total, cor:COR_PDF.em_atraso, txt:fmtBRL(dre.despesas.total)},
+  ]);
+  d.texto(d.M, d.y, 'Saldo em caixa = recebido - despesas. Saldo previsto = receitas previstas (todos os participantes) - despesas.', 8, false);
+  return d.build();
+}
+function gerarXlsxDreEvento(dre){
+  const g = dre.geradoEm, r = dre.receitas, ps = r.porStatus;
+  const cab = t=>[
+    [{v:'Bolerage F.D. — '+t, s:XL.T}],
+    ['Evento', String(dre.evento.nome)],
+    ['Data do evento', dataBRs(dre.evento.data)],
+    ['Gestor', dre.evento.responsavel||''],
+    ['Gerado em', g.slice(8,10)+'/'+g.slice(5,7)+'/'+g.slice(0,4)+' '+g.slice(11,16)],
+    [],
+  ];
+  const s1 = [...cab('DRE do Evento — Demonstrativo de Resultados'),
+    [{v:'Item',s:XL.H},{v:'Valor (R$)',s:XL.H}],
+    ['Receitas — Pago Total ('+ps.pago.qtd+') recebido', {v:ps.pago.recebido,s:XL.M}],
+    ['Receitas — Pago Parcial ('+ps.parcial.qtd+') recebido', {v:ps.parcial.recebido,s:XL.M}],
+    ['Receitas — A receber (saldo dos parciais + pendentes)', {v:r.aReceber,s:XL.M}],
+    [{v:'Total de receitas (previsto)',s:XL.B}, {v:r.previsto,s:XL.MB}],
+    [{v:'Total de despesas',s:XL.B}, {v:dre.despesas.total,s:XL.MB}],
+    [{v:'SALDO EM CAIXA (recebido − despesas)',s:XL.B}, {v:dre.saldoCaixa,s:XL.MB}],
+    [{v:'SALDO PREVISTO (receitas previstas − despesas)',s:XL.B}, {v:dre.resultadoPrevisto,s:XL.MB}],
+    [],
+    [{v:'Valor por status',s:XL.B}],
+    [{v:'Status',s:XL.H},{v:'Participantes',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'% do total',s:XL.H}],
+    ['Pago Total', ps.pago.qtd, {v:ps.pago.valor,s:XL.M}, {v:r.previsto>0?ps.pago.valor/r.previsto:0,s:XL.P}],
+    ['Pago Parcial', ps.parcial.qtd, {v:ps.parcial.valor,s:XL.M}, {v:r.previsto>0?ps.parcial.valor/r.previsto:0,s:XL.P}],
+    ['Pendente', ps.pendente.qtd, {v:ps.pendente.valor,s:XL.M}, {v:r.previsto>0?ps.pendente.valor/r.previsto:0,s:XL.P}],
+  ];
+  const s2 = [...cab('Despesas do Evento'),
+    [{v:'Despesa',s:XL.H},{v:'Fornecedor',s:XL.H},{v:'Data',s:XL.H},{v:'Valor (R$)',s:XL.H}],
+    ...dre.despesas.itens.map(x=>[x.despesa, x.fornecedor, dataBRs(x.data), {v:x.valor,s:XL.M}]),
+    [{v:'Total de despesas',s:XL.B}, '', '', {v:dre.despesas.total,s:XL.MB}],
+  ];
+  const lista = dre.evento && db.prepare('SELECT mostrar_participantes FROM eventos WHERE id=?').get(dre.evento.id);
+  const parts = (lista && lista.mostrar_participantes) ? montarEventoLista().participantes : [];
+  const rot = {pago:'Pago Total', parcial:'Pago Parcial', pendente:'Pendente'};
+  const s3 = [...cab('Participantes do Evento'),
+    [{v:'Participante',s:XL.H},{v:'Status',s:XL.H},{v:'Valor (R$)',s:XL.H},{v:'Valor pago (R$)',s:XL.H}],
+    ...parts.map(p=>[p.nome, rot[p.status]||p.status, {v:p.valor,s:XL.M}, {v:p.valorPago,s:XL.M}]),
+    [{v:'Total ('+parts.length+')',s:XL.B}, '', {v:r.previsto,s:XL.MB}, {v:r.recebido,s:XL.MB}],
+  ];
+  return montarXlsx([
+    {nome:'DRE', xml:xlsxPlanilha(s1,[52,16,18,14])},
+    {nome:'Despesas', xml:xlsxPlanilha(s2,[34,30,14,18])},
+    {nome:'Participantes', xml:xlsxPlanilha(s3,[40,16,16,18])},
+  ]);
+}
+app.get('/api/evento-dre/:id', (req,res)=>{ const ev = dreEventoAcesso(req,res); if(!ev) return; res.json(montarDreEvento(ev)); });
+app.get('/api/evento-dre/:id/pdf', (req,res)=>{
+  const ev = dreEventoAcesso(req,res); if(!ev) return;
+  logEvento('DRE do evento "'+ev.nome+'" exportado em PDF.');
+  enviarPdf(res, gerarPdfDreEvento(montarDreEvento(ev)), 'dre-evento-'+slugArq(ev.nome)+'.pdf');
+});
+app.get('/api/evento-dre/:id/xlsx', (req,res)=>{
+  const ev = dreEventoAcesso(req,res); if(!ev) return;
+  logEvento('DRE do evento "'+ev.nome+'" exportado em Excel.');
+  res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.set('Content-Disposition','attachment; filename="dre-evento-'+slugArq(ev.nome)+'.xlsx"');
+  res.send(gerarXlsxDreEvento(montarDreEvento(ev)));
 });
 
 // lista enxuta p/ sub-admin com permissão de mensalidades (sem PIN, sem dados de admin)
@@ -2272,7 +2457,7 @@ function aplicarExtrasEvento(id, b){
 }
 app.get('/api/admin/agenda', requireEventos, (req,res)=>{
   res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||'',
-    local:e.local||'', mostrarParticipantes:!!e.mostrar_participantes, soAba:!!e.so_aba, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
+    local:e.local||'', despesas:despesasDoEvento(e.id), mostrarParticipantes:!!e.mostrar_participantes, soAba:!!e.so_aba, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
 });
 app.post('/api/admin/agenda', requireEventos, (req,res)=>{
   const nome = String(req.body.nome||'').trim();
@@ -2282,10 +2467,13 @@ app.post('/api/admin/agenda', requireEventos, (req,res)=>{
   const responsavel = String(req.body.responsavel||'');
   const vp = validarParticipantes(req.body.participantes);
   if(vp.erro) return res.status(400).json({erro:vp.erro});
+  const vd = validarDespesas(req.body.despesas);
+  if(vd.erro) return res.status(400).json({erro:vd.erro});
   const id = idGen('ev');
   db.prepare('INSERT INTO eventos (id,nome,data,ativo,descricao,responsavel) VALUES (?,?,?,1,?,?)').run(id, nome, data, descricao, responsavel);
   aplicarExtrasEvento(id, req.body);
   if(vp.lista) gravarParticipantes(vp.lista);
+  if(vd.lista) gravarDespesas(id, vd.lista);
   res.json({ok:true, id});
 });
 app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
@@ -2293,6 +2481,8 @@ app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   if(!ev) return res.status(404).json({erro:'Evento não encontrado.'});
   const vp = validarParticipantes(req.body.participantes);
   if(vp.erro) return res.status(400).json({erro:vp.erro});
+  const vd = validarDespesas(req.body.despesas);
+  if(vd.erro) return res.status(400).json({erro:vd.erro});
   const nome = req.body.nome!=null ? String(req.body.nome) : ev.nome;
   const data = req.body.data!=null ? String(req.body.data) : ev.data;
   const ativo = req.body.ativo!=null ? (req.body.ativo?1:0) : ev.ativo;
@@ -2301,9 +2491,11 @@ app.put('/api/admin/agenda/:id', requireEventos, (req,res)=>{
   db.prepare('UPDATE eventos SET nome=?,data=?,ativo=?,descricao=?,responsavel=? WHERE id=?').run(nome,data,ativo,descricao,responsavel,ev.id);
   aplicarExtrasEvento(ev.id, req.body);
   if(vp.lista) gravarParticipantes(vp.lista);
+  if(vd.lista) gravarDespesas(ev.id, vd.lista);
   res.json({ok:true});
 });
 app.delete('/api/admin/agenda/:id', requireEventos, (req,res)=>{
+  db.prepare('DELETE FROM evento_despesas WHERE evento_id=?').run(req.params.id);
   db.prepare('DELETE FROM eventos WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });

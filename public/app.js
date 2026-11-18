@@ -157,6 +157,8 @@ const state = {
   eventoLista: null,
   eventoEditId: null,
   eventoPartAberto: null,
+  despDraft: null, despDirty: false,
+  eventoDre: null, eventoDreAberto: null,
   eventoSobreAberto: false,
   eventoLocalAberto: false,
   trampoFormAberto: false,
@@ -442,7 +444,7 @@ async function handleLoginDigit(d){
 
 async function handleLogout(){
   try{ await api('/api/logout', {method:'POST', auth:true}); }catch(e){}
-  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false;
+  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null;
   localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player');
   // encerra também a sessão de admin: ela não pode sobreviver à troca de jogador neste navegador
   state.adminToken=null; state.isAdmin=false;
@@ -883,7 +885,70 @@ function participantesBlocoHtml(l){
       {label:'Pago Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
       {label:'Pendente', valor:t.pendentes, cor:'#E2574C', txt:t.pendentes+' participante'+(t.pendentes===1?'':'s')},
     ])+'</div>'+
-    finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • status do pagamento', l.participantes.map(eventoLinhaHtml).join(''));
+    [['pago','verde','✅ PAGO TOTAL'],['parcial','laranja','🟠 PAGO PARCIAL'],['pendente','vermelho','⏳ PENDENTE']].map(g=>{
+      const arr = l.participantes.filter(p=>p.status===g[0]);
+      if(!arr.length) return '';
+      return finZona(g[1], g[2], arr.length+' participante'+(arr.length===1?'':'s')+' • '+fmtPctFront(arr.length, t.qtd)+' da lista', arr.map(eventoLinhaGrupoHtml).join(''));
+    }).join('');
+}
+// linha de participante dentro do grupo de status (o status já é o título do grupo)
+function eventoLinhaGrupoHtml(p, i){
+  return '<div class="fin-row evt-row evt-row-g"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(p.nome)+'</span></div>';
+}
+function souGestorDoEvento(e){
+  const me = state.currentPlayer && (state.elenco||[]).find(x=>x.id===state.currentPlayer.id);
+  return !!(me && e.responsavel && me.nomeReal===e.responsavel);
+}
+// DRE do evento (mesma linguagem do DRE do painel Gestão): receitas, despesas, saldo em caixa, saldo previsto e pizza por status
+function dreEventoPainelHtml(d){
+  const r = d.receitas, ps = r.porStatus, desp = d.despesas;
+  const saldoCor = d.resultadoPrevisto < 0 ? 'vermelho' : 'verde';
+  const corTxt = d.resultadoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
+  const itens = desp.itens.length ? desp.itens.map(x=>
+    '<div class="dre-desp"><div class="dre-desp-l1"><span>'+escapeHtml(x.despesa)+'</span><strong>'+fmtBRLfront(x.valor)+'</strong></div>'+
+    ((x.fornecedor||x.data) ? '<div class="dre-desp-l2">'+(x.fornecedor?'🏷️ '+escapeHtml(x.fornecedor):'')+(x.fornecedor&&x.data?' • ':'')+(x.data?'📅 '+formatDataBR(x.data):'')+'</div>' : '')+'</div>').join('')
+    : '<p class="small muted" style="margin:6px 0;">Nenhuma despesa cadastrada.</p>';
+  return '<div class="evt-dre"><div class="stack-tit">DRE — '+escapeHtml(d.evento.nome)+'</div>'+
+    '<div class="btn-row evt-dre-exp"><button type="button" class="btn secondary" data-action="baixar-evento-dre" data-id="'+d.evento.id+'" data-fmt="pdf">📄 Exportar PDF</button>'+
+    '<button type="button" class="btn secondary" data-action="baixar-evento-dre" data-id="'+d.evento.id+'" data-fmt="xlsx">📊 Exportar Excel</button></div>'+
+    finZona('verde', '💰 RECEITAS', 'Participantes do evento',
+      relLinhaHtml('Pago Total <span class="rel-obs">(recebido)</span>', fmtBRLfront(ps.pago.recebido), 'rel-item')+
+      relLinhaHtml('Pago Parcial <span class="rel-obs">(recebido)</span>', fmtBRLfront(ps.parcial.recebido), 'rel-item')+
+      relLinhaHtml('A receber <span class="rel-obs">(parcial + pendentes)</span>', fmtBRLfront(r.aReceber), 'rel-item')+
+      relLinhaHtml('Total de receitas', fmtBRLfront(r.previsto), 'rel-sub'))+
+    finZona('vermelho', '💸 DESPESAS', 'Despesas do evento', itens+relLinhaHtml('Total de despesas', fmtBRLfront(desp.total), 'rel-sub'))+
+    finZona('dourado', '🏦 SALDO EM CAIXA', 'Recebido − despesas', relLinhaHtml('Saldo em caixa do evento', fmtBRLfront(d.saldoCaixa), 'rel-sub'))+
+    finZona(saldoCor, '📊 SALDO PREVISTO', 'Receitas previstas − despesas',
+      '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+corTxt+';">'+fmtBRLfront(d.resultadoPrevisto)+'</strong></div>')+
+    finZona('azul', '🥧 VALOR POR STATUS', 'Participação de cada status na receita',
+      pizzaHtml('', [
+        {label:'Pago Total', valor:ps.pago.valor, cor:'#3FAE58', txt:fmtBRLfront(ps.pago.valor)},
+        {label:'Pago Parcial', valor:ps.parcial.valor, cor:'#F0902E', txt:fmtBRLfront(ps.parcial.valor)},
+        {label:'Pendente', valor:ps.pendente.valor, cor:'#E2574C', txt:fmtBRLfront(ps.pendente.valor)},
+      ].filter(x=>x.valor>0)))+
+  '</div>';
+}
+async function handleEventoDreToggle(id){
+  if(state.eventoDreAberto===id){ state.eventoDreAberto = null; state.eventoDre = null; return render(); }
+  try{
+    state.eventoDre = await api('/api/evento-dre/'+id, {adminAuth:true});
+    state.eventoDreAberto = id;
+    await render();
+  }catch(e){ alert(e.message); }
+}
+async function handleBaixarEventoDre(id, fmt){
+  try{
+    const res = await fetch('/api/evento-dre/'+id+'/'+fmt, {headers:{Authorization:'Bearer '+(state.adminToken || state.token)}});
+    if(!res.ok){ let msg = 'Não foi possível gerar o arquivo.'; try{ msg = (await res.json()).erro || msg; }catch(e){} alert(msg); return; }
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = /filename="([^"]+)"/.exec(cd);
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href; a.download = m ? m[1] : ('dre-evento.'+fmt); a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(href), 60000);
+  }catch(e){ alert('Erro ao gerar o arquivo: '+e.message); }
 }
 // aba "Eventos" da Resenha: todos os eventos da agenda (data, local, pagamento) e a lista de participantes do evento marcado
 function renderEventoAbaHtml(){
@@ -908,6 +973,11 @@ function renderEventoAbaHtml(){
     // Cards 4 e 5: resumo + lista de participantes
     if(e.mostrarParticipantes){
       h += (l && l.participantes.length) ? participantesBlocoHtml(l) : '<div class="card hz hz-dourado"><p class="small muted" style="margin:0;text-align:center;">A lista de participantes ainda não foi cadastrada.</p></div>';
+    }
+    // DRE do evento: só o gestor do evento
+    if(souGestorDoEvento(e)){
+      const aberto = state.eventoDreAberto===e.id && state.eventoDre;
+      h += '<div class="card hz hz-dourado evt-c-dre"><button type="button" class="btn'+(aberto?' secondary':'')+'" data-action="evento-dre-toggle" data-id="'+e.id+'">📊 DRE do evento '+(aberto?'▲':'▼')+'</button>'+(aberto ? dreEventoPainelHtml(state.eventoDre) : '')+'</div>';
     }
   });
   return h;
@@ -2537,6 +2607,42 @@ function pdTodos(){
   pdRerender(); showToast(n+' jogador(es) adicionados à lista');
 }
 
+// ---- despesas do evento: rascunho dentro do cadastro do evento (gravado junto com o evento)
+function ddTotal(){ return (state.despDraft||[]).reduce((t,x)=>t+pdNum(x.valor), 0); }
+function despesasDraftListaHtml(){
+  const L = state.despDraft || [];
+  if(!L.length) return '<p class="small muted" style="margin:8px 0 0;">Nenhuma despesa cadastrada ainda.</p>';
+  return L.map((x,i)=>
+    '<div class="pd-row"><div class="pd-l1"><span class="pd-n">'+(i+1)+'. Despesa</span><button type="button" class="btn danger small" data-action="dd-del" data-i="'+i+'">remover</button></div>'+
+    '<div class="field"><input data-dd="despesa" data-i="'+i+'" maxlength="80" value="'+escapeHtml(x.despesa)+'" placeholder="Despesa"></div>'+
+    '<div class="field"><input data-dd="fornecedor" data-i="'+i+'" maxlength="80" value="'+escapeHtml(x.fornecedor)+'" placeholder="Fornecedor"></div>'+
+    '<div class="pd-l2"><input type="date" data-dd="data" data-i="'+i+'" value="'+escapeHtml(x.data)+'" aria-label="Data"><input inputmode="decimal" data-dd="valor" data-i="'+i+'" value="'+escapeHtml(x.valor)+'" placeholder="Valor (R$)" aria-label="Valor"></div></div>'
+  ).join('') + relLinhaHtml('Total de despesas', fmtBRLfront(ddTotal()), 'rel-sub');
+}
+function despesasDraftHtml(e){
+  if(state.despDraft == null){
+    state.despDraft = ((e && e.despesas) || []).map(x=>({despesa:x.despesa, fornecedor:x.fornecedor||'', data:x.data||'', valor:inputValorBRL(x.valor)}));
+    state.despDirty = false;
+  }
+  return '<div class="evt-novo pd-add"><div class="stack-tit">Adicionar despesa</div>'+
+    '<div class="field"><label>Despesa</label><input id="dd-desp" maxlength="80" placeholder="Ex.: Aluguel do salão"></div>'+
+    '<div class="field"><label>Fornecedor</label><input id="dd-forn" maxlength="80" placeholder="Ex.: Kanja\'s Resort"></div>'+
+    '<div class="pd-l2"><div class="field"><label>Data</label><input type="date" id="dd-data"></div>'+
+    '<div class="field"><label>Valor (R$)</label><input id="dd-valor" inputmode="decimal" placeholder="0,00"></div></div>'+
+    '<div class="btn-row"><button type="button" class="btn" data-action="dd-add">Adicionar despesa</button></div></div>'+
+    '<div id="dd-lista">'+despesasDraftListaHtml()+'</div>';
+}
+function ddRerender(){ const el = document.getElementById('dd-lista'); if(el) el.innerHTML = despesasDraftListaHtml(); }
+function ddAdicionar(){
+  const g = id => document.getElementById(id);
+  const despesa = g('dd-desp').value.trim();
+  if(despesa.length < 2){ alert('Informe o nome da despesa.'); return; }
+  if(!g('dd-valor').value.trim()){ alert('Informe o valor da despesa.'); return; }
+  state.despDraft.push({despesa, fornecedor:g('dd-forn').value.trim(), data:g('dd-data').value, valor:g('dd-valor').value.trim()});
+  state.despDirty = true;
+  g('dd-desp').value = ''; g('dd-forn').value = ''; g('dd-valor').value = '';
+  ddRerender(); g('dd-desp').focus();
+}
 // ---- AGENDA DE EVENTOS (painel admin): lista + editor organizado em seções
 function eventoSecao(cor, titulo, sub, corpo){
   return '<div class="fin-zona fz-'+cor+' evt-secao"><div class="fin-zona-tit">'+titulo+'</div>'+(sub?'<div class="fin-zona-sub">'+sub+'</div>':'')+corpo+'</div>';
@@ -2564,6 +2670,7 @@ function eventoEditorHtml(key, e, respOpc){
       '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (nome e status) em "Sobre o Evento" e na aba Eventos</label>'+
       '<p class="small muted" style="margin:4px 0 8px;">Só um evento por vez exibe a lista. Os participantes são gravados ao tocar em "'+(novo?'Criar evento':'Salvar alterações')+'".</p>'+
       partDraftHtml(e))+
+    eventoSecao('vermelho', '💸 DESPESAS', 'Despesa, fornecedor, data e valor (alimentam o DRE do evento)', despesasDraftHtml(e))+
     '<div class="btn-row"><button class="btn" data-action="salvar-evento" data-id="'+key+'">'+(novo?'Criar evento':'Salvar alterações')+'</button>'+
     '<button class="btn secondary" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
 }
@@ -2587,9 +2694,12 @@ function renderAgendaAdminHtml(agenda, respOpc){
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
           (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
           (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
-          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn" data-action="editar-evento" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+'</button>':'')+'</div></div>'+
+          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn" data-action="editar-evento" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+'</button>':'')+
+          '<button type="button" class="badge badge-btn'+(state.eventoDreAberto===e.id?' ativo':'')+'" data-action="evento-dre-toggle" data-id="'+e.id+'">📊 DRE '+(state.eventoDreAberto===e.id?'▲':'▼')+'</button>'+
+          ((e.despesas&&e.despesas.length)?'<span class="badge">💸 '+e.despesas.length+' despesa'+(e.despesas.length===1?'':'s')+'</span>':'')+'</div></div>'+
         '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
+      if(state.eventoDreAberto===e.id && state.eventoDre) h += '<div class="evt-dre-box">'+dreEventoPainelHtml(state.eventoDre)+'</div>';
     }
   });
   if(agenda.length && !agenda.some(e=>e.mostrarParticipantes)){
@@ -2608,11 +2718,12 @@ async function handleSalvarEvento(key){
   const data = g('ev-data').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
   const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-exib').value!=='oculto', soAba:g('ev-exib').value==='aba', ...lerEventoExtras(key)};
+  if(state.despDirty) corpo.despesas = (state.despDraft||[]).map(x=>({despesa:x.despesa, fornecedor:x.fornecedor, data:x.data, valor:x.valor}));
   if(state.partDirty) corpo.participantes = (state.partDraft||[]).map(p=>({nome:p.nome, valor:p.valor, status:p.status, valorPago:p.pago}));
   try{
     if(key==='novo') await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:corpo});
     else await api('/api/admin/agenda/'+key, {method:'PUT', adminAuth:true, body:corpo});
-    state.editingEventoId = null; state.partDraft = null; state.partDirty = false;
+    state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.eventoDre = null; state.eventoDreAberto = null;
     await refreshEvento();
     await refreshHomeExtras();
     await render();
@@ -2741,7 +2852,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-perfil') return handleSalvarPerfil();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){
-    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; state.partDraft=null; state.partDirty=false;
+    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; state.partDraft=null; state.partDirty=false; state.despDraft=null; state.despDirty=false; state.eventoDre=null; state.eventoDreAberto=null;
     if(['sorteio','resenha','votacao'].includes(state.tab)) await irParaRodadaMaisRecente();
     return render();
   }
@@ -2817,9 +2928,13 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='pd-add') return pdAdicionar();
   if(action==='pd-todos') return pdTodos();
   if(action==='pd-del'){ state.partDraft.splice(Number(el.dataset.i), 1); state.partDirty = true; return pdRerender(); }
-  if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; return render(); }
-  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; state.partDraft = null; state.partDirty = false; return render(); }
-  if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; return render(); }
+  if(action==='dd-add') return ddAdicionar();
+  if(action==='dd-del'){ state.despDraft.splice(Number(el.dataset.i), 1); state.despDirty = true; return ddRerender(); }
+  if(action==='evento-dre-toggle') return handleEventoDreToggle(el.dataset.id);
+  if(action==='baixar-evento-dre') return handleBaixarEventoDre(el.dataset.id, el.dataset.fmt);
+  if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
+  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
+  if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
   if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
   if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
   if(action==='remover-evento') return handleRemoverEvento(el.dataset.id);
@@ -2836,9 +2951,15 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
 
 document.getElementById('shell').addEventListener('input', (e)=>{
   const t = e.target;
+  if(t && t.dataset && t.dataset.dd && state.despDraft && state.despDraft[Number(t.dataset.i)]){ state.despDraft[Number(t.dataset.i)][t.dataset.dd] = t.value; state.despDirty = true; }
   if(t && t.dataset && t.dataset.pd && state.partDraft && state.partDraft[Number(t.dataset.i)]){ state.partDraft[Number(t.dataset.i)][t.dataset.pd] = t.value; state.partDirty = true; }
 });
 document.getElementById('shell').addEventListener('change', async (e)=>{
+  if(e.target.dataset && e.target.dataset.dd && state.despDraft && state.despDraft[Number(e.target.dataset.i)]){
+    state.despDraft[Number(e.target.dataset.i)][e.target.dataset.dd] = e.target.value; state.despDirty = true;
+    if(e.target.dataset.dd==='valor') ddRerender();
+    return;
+  }
   if(e.target.id==='pd-status'){ const c = document.getElementById('pd-pago-campo'); if(c) c.hidden = e.target.value!=='parcial'; return; }
   if(e.target.dataset && e.target.dataset.pd && state.partDraft && state.partDraft[Number(e.target.dataset.i)]){
     state.partDraft[Number(e.target.dataset.i)][e.target.dataset.pd] = e.target.value; state.partDirty = true; pdRerender(); return;

@@ -1052,3 +1052,20 @@ div.evt-part-adm{margin:8px 0;border:1px solid rgba(167,123,255,.45);border-radi
 .evt-row{grid-template-columns:32px minmax(0,1fr) auto;}
 .evt-c3 .evt-local,.evt-c-pgto .evt-pgto{border:0;background:none;box-shadow:none;padding:0;}
 .evt-c3 .evt-local-end{text-align:center;}
+
+/* v5.10: DRE do evento + participantes agrupados por status + despesas */
+.evt-dre{margin-top:8px;}
+.evt-dre .stack-tit{text-align:center;overflow-wrap:anywhere;}
+.evt-dre-exp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0;}
+.evt-dre-exp .btn{white-space:nowrap;font-size:clamp(11px,3.4vw,14px);padding-left:6px;padding-right:6px;}
+.evt-dre-box{margin:4px 0 10px;padding:8px;border:1px solid rgba(201,162,39,.5);border-radius:12px;background:rgba(201,162,39,.05);}
+.dre-desp{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.dre-desp-l1{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.dre-desp-l1 span{flex:1 1 0;min-width:0;overflow-wrap:anywhere;font-weight:700;}
+.dre-desp-l1 strong{white-space:nowrap;}
+.dre-desp-l2{font-size:12px;color:var(--text-muted);margin-top:2px;overflow-wrap:anywhere;}
+.evt-c-dre .btn{width:100%;}
+.pd-row .field{margin:0 0 6px;}
+.pd-row .field input{width:100%;box-sizing:border-box;}
+.evt-row-g{grid-template-columns:32px minmax(0,1fr);}
+.pd-row input[type=date],.pd-add input[type=date]{font-size:12.5px;padding-left:6px;padding-right:2px;min-width:0;}
