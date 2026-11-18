@@ -830,11 +830,12 @@ function statusEventoPill(st){ const x = ST_EVENTO[st] || ST_EVENTO.pendente; re
 function eventoLinhaHtml(p, i){
   return '<div class="fin-row evt-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(p.nome)+'</span>'+statusEventoPill(p.status)+'</div>';
 }
-function eventoTotaisHtml(t){
+function eventoTotaisHtml(t, semValores){
   return '<div class="kpi-grid">'+
     '<div class="kpi kpi-sm kpi-azul kpi-full"><div class="kpi-num">'+t.qtd+' <span class="kpi-un">participante'+(t.qtd===1?'':'s')+'</span></div><div class="kpi-rot kpi-uma">'+t.pagos+' pago total · '+t.parciais+' pago parcial · '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+'</div></div>'+
-    '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
-    '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>'+
+    (semValores ? '' :
+      '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
+      '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>')+
     '<div class="kpi kpi-sm kpi-dourado kpi-full kpi-centro"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
   '</div>';
 }
@@ -866,7 +867,7 @@ function sobreEventoHtml(e, lista){
   let corpo = pagamentoEventoHtml(e.pagamento);
   if(e.mostrarParticipantes){
     if(lista && lista.participantes && lista.participantes.length){
-      corpo += eventoTotaisHtml(lista.totais)+lista.participantes.map(eventoLinhaHtml).join('');
+      corpo += eventoTotaisHtml(lista.totais, e.ocultarValores)+lista.participantes.map(eventoLinhaHtml).join('');
     }else{
       corpo += '<p class="small muted">A lista de participantes ainda não foi cadastrada.</p>';
     }
@@ -882,10 +883,10 @@ function localBotoesHtml(e){
     '<a class="btn small local-btn local-maps" href="https://www.google.com/maps/search/?api=1&query='+q+'" target="_blank" rel="noopener">🗺️ Maps</a>'+
     '<a class="btn small local-btn local-uber" href="https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff%5Bformatted_address%5D='+q+'" target="_blank" rel="noopener">🚕 Uber</a></div></div>';
 }
-function participantesBlocoHtml(l){
+function participantesBlocoHtml(l, semValores){
   const t = l.totais;
   // Card 4: resumo (centralizado) + gráfico; Card 5: lista de participantes
-  return '<div class="card hz hz-dourado evt-resumo"><div class="stack-tit">Resumo dos participantes</div>'+eventoTotaisHtml(t)+
+  return '<div class="card hz hz-dourado evt-resumo"><div class="stack-tit">Resumo dos participantes</div>'+eventoTotaisHtml(t, semValores)+
     pizzaHtml('', [
       {label:'Pago Total', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
       {label:'Pago Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
@@ -978,7 +979,7 @@ function renderEventoAbaHtml(){
     if(e.pagamento && (e.pagamento.nome || e.pagamento.chavePix || e.pagamento.valor)) h += '<div class="card hz hz-verde evt-c-pgto">'+pagamentoEventoHtml(e.pagamento)+'</div>';
     // Cards 4 e 5: resumo + lista de participantes
     if(e.mostrarParticipantes){
-      h += (l && l.participantes.length) ? participantesBlocoHtml(l) : '<div class="card hz hz-dourado"><p class="small muted" style="margin:0;text-align:center;">A lista de participantes ainda não foi cadastrada.</p></div>';
+      h += (l && l.participantes.length) ? participantesBlocoHtml(l, e.ocultarValores) : '<div class="card hz hz-dourado"><p class="small muted" style="margin:0;text-align:center;">A lista de participantes ainda não foi cadastrada.</p></div>';
     }
     // DRE do evento: só o gestor do evento
     if(souGestorDoEvento(e)){
@@ -2674,6 +2675,7 @@ function eventoEditorHtml(key, e, respOpc){
       '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" maxlength="40" placeholder="Ex.: R$ 250,00"></div>')+
     eventoSecao('ciano', '👥 PARTICIPANTES', 'Quem vai, valor e status do pagamento',
       '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (nome e status) em "Sobre o Evento" e na aba Eventos</label>'+
+      '<label class="small" style="display:block;margin-top:6px;"><input type="checkbox" id="ev-ocultar-'+key+'" '+(e.ocultarValores?'':'checked')+'> Mostrar os valores <strong>arrecadado</strong> e <strong>a receber</strong> no resumo dos participantes</label>'+
       '<p class="small muted" style="margin:4px 0 8px;">Só um evento por vez exibe a lista. Os participantes são gravados ao tocar em "'+(novo?'Criar evento':'Salvar alterações')+'".</p>'+
       partDraftHtml(e))+
     eventoSecao('vermelho', '💸 DESPESAS', 'Despesa, fornecedor, data e valor (alimentam o DRE do evento)', despesasDraftHtml(e))+
@@ -2707,7 +2709,7 @@ function renderAgendaAdminHtml(agenda, respOpc){
         '<div class="evt-cad-chips">'+(e.ativo?'':'<span class="badge">🚫 inativo</span>')+
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+'</div>'+
         '<div class="evt-cad-chips">'+(!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
-          (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
+          (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.mostrarParticipantes&&e.ocultarValores?'<span class="badge">🙈 sem valores</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
           ((e.despesas&&e.despesas.length)?'<span class="badge">💸 '+e.despesas.length+' despesa'+(e.despesas.length===1?'':'s')+'</span>':'')+'</div>'+
         '<div class="evt-cad-acoes">'+
           (e.mostrarParticipantes?'<button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">👥 Participantes'+nPart+'</button>':'')+
@@ -2726,7 +2728,7 @@ function renderAgendaAdminHtml(agenda, respOpc){
 // campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
 function lerEventoExtras(key){
   const g = id => document.getElementById(id+key);
-  return {local:g('ev-local-').value, mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
+  return {local:g('ev-local-').value, ocultarValores:!g('ev-ocultar-').checked, mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
 }
 async function handleSalvarEvento(key){
   const g = x => document.getElementById(x+'-'+key);
