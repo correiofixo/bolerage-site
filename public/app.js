@@ -145,7 +145,8 @@ const state = {
   pollHandle: null,
   appVersion: null,
   ranking: {},
-  rankingBola: {cheia:{}, murcha:{}},
+  rankingBola: {cheia:{}, murcha:{}, detalhe:{cheia:{}, murcha:{}}},
+  histJogador: '',
   rankingAba: 'geral',
   votacaoAba: 'votar',
   elencoAba: 'jogadores',
@@ -222,7 +223,7 @@ function renderCardSaude(){
   const cl = classificarIMC(imc);
   const pct = Math.max(0, Math.min(100, (imc-15)/(40-15)*100));
   const valorFmt = imc.toFixed(1).replace('.',',');
-  return '<div class="card hz hz-vermelho"><h3>🩺 Departamento Médico:</h3>'+
+  return '<div class="card hz hz-vermelho saude-click" data-action="saude-dica" role="button" tabindex="0" title="Toque para ver dicas de saúde"><h3>👨‍⚕️ Saúde do Craque:</h3>'+
     '<div class="imc-box">'+
       '<div class="imc-linha"><span class="imc-sigla">IMC</span><span class="imc-valor"'+(menor?'':' style="color:'+cl.cor+'"')+'>'+valorFmt+'</span></div>'+
       (menor
@@ -232,7 +233,38 @@ function renderCardSaude(){
       '<div class="imc-escala small muted"><span style="left:0">15</span><span style="left:14%">18,5</span><span style="left:40%">25</span><span style="left:60%">30</span><span style="left:80%">35</span><span style="left:100%">40</span></div>'+
     '</div>'+
     '<p class="small muted" style="margin-top:8px;">'+Number(p.idade)+' anos • '+String(p.peso).replace('.',',')+' kg • '+p.altura+' cm. IMC = peso ÷ altura². Referência geral da OMS — não substitui avaliação médica.</p>'+
+    '<div class="saude-toque">👆 Toque para ver dicas de saúde</div>'+
   '</div>';
+}
+// nota rápida com sugestões de saúde de acordo com o resultado do IMC (orientação geral, não substitui avaliação médica)
+function dicasSaudePorIMC(imc, menor){
+  if(menor) return {tit:'Atenção à idade', cor:'#4EA1FF', itens:['Para menores de 18 anos a avaliação do peso é feita por idade e sexo — procure um pediatra ou médico do esporte.','Mantenha alimentação variada, com frutas, legumes e proteínas.','Beba água antes, durante e depois do jogo e durma bem (8 a 10 horas).','Faça aquecimento e alongamento antes do racha.']};
+  if(imc < 18.5) return {tit:'Abaixo do peso', cor:'#4EA1FF', itens:['Faça refeições regulares, com boa fonte de proteína (ovos, carnes, leite, feijão).','Inclua lanches nutritivos entre as refeições (frutas, castanhas, iogurte).','Treino de força ajuda a ganhar massa muscular e proteger as articulações.','Se o peso baixo persistir, procure um médico ou nutricionista para investigar a causa.']};
+  if(imc < 25) return {tit:'Peso normal', cor:'#3FAE58', itens:['Parabéns! Mantenha a rotina: alimentação variada, com frutas, verduras e pouco ultraprocessado.','Hidrate-se bem durante o racha e evite exagerar no álcool depois do jogo.','Aquecimento e alongamento antes de jogar reduzem o risco de lesões.','Durma de 7 a 8 horas e faça um check-up médico uma vez por ano.']};
+  if(imc < 30) return {tit:'Sobrepeso', cor:'#E4C158', itens:['Reduza refrigerantes, doces, frituras e o álcool depois do racha.','Capriche nas porções de verduras e legumes e controle o tamanho do prato.','Some uma caminhada ou corrida leve 2 a 3 vezes por semana ao racha de domingo.','Beba bastante água e durma bem — o sono ajuda no controle do peso.']};
+  if(imc < 35) return {tit:'Obesidade grau I', cor:'#F0902E', itens:['Marque uma avaliação com médico e nutricionista para montar um plano seguro.','Priorize atividades de baixo impacto (caminhada, bicicleta, natação) além do racha.','Evite jogar em horários de calor extremo e hidrate-se com frequência.','Troque bebidas açucaradas e alimentos ultraprocessados por comida de verdade.']};
+  return {tit:imc < 40 ? 'Obesidade grau II' : 'Obesidade grau III', cor:imc < 40 ? '#E2574C' : '#C93A3A', itens:['Procure um médico antes de aumentar a intensidade dos exercícios; um check-up cardiológico é recomendado.','Faça acompanhamento com nutricionista e, se indicado, com equipe multiprofissional.','Comece com atividades leves e progressivas (caminhada, bicicleta, hidroginástica).','No racha, respeite seus limites: troque de posição, faça pausas e hidrate-se.']};
+}
+function fecharSaudeDica(){ const m = document.getElementById('perf-modal'); if(m) m.remove(); }
+function abrirSaudeDica(){
+  const p = state.currentPlayer;
+  if(!p || !p.idade || !p.peso || !p.altura) return;
+  const imc = calcIMC(p.peso, p.altura); if(imc==null) return;
+  const menor = Number(p.idade) < 18;
+  const d = dicasSaudePorIMC(imc, menor);
+  fecharSaudeDica();
+  const m = document.createElement('div');
+  m.id = 'perf-modal'; m.className = 'perf-backdrop'; m.setAttribute('data-action','fechar-performance');
+  m.innerHTML = '<div class="perf-card saude-nota" role="dialog" aria-modal="true" data-action="noop">'+
+    '<button class="perf-close" data-action="fechar-performance" aria-label="Fechar">×</button>'+
+    '<h2 class="perf-nome">👨‍⚕️ Saúde do Craque</h2>'+
+    '<p class="perf-sub">Nota rápida</p>'+
+    '<div class="saude-imc"><span class="imc-sigla">IMC</span> <span class="imc-valor" style="color:'+d.cor+'">'+imc.toFixed(1).replace('.',',')+'</span></div>'+
+    '<div class="saude-class" style="color:'+d.cor+'">'+d.tit+'</div>'+
+    '<ul class="saude-dicas">'+d.itens.map(t=>'<li>'+escapeHtml(t)+'</li>').join('')+'</ul>'+
+    '<p class="small muted" style="margin:10px 0 0;">Orientações gerais, baseadas no IMC (referência da OMS). Não substituem a avaliação de um médico ou nutricionista.</p>'+
+  '</div>';
+  document.getElementById('shell').appendChild(m);
 }
 
 function jogadorNome(id){ const j = state.elenco.find(x=>x.id===id); return j ? j.nome : '?'; }
@@ -356,7 +388,7 @@ function renderTopbar(){
     : '';
   const whoHtml = '<div class="who-row1">'+
       '<span class="who-name">'+saudacao()+', '+escapeHtml(nomeExibicaoMeu())+' !&nbsp;&nbsp;'+timeCoracaoSuffix(state.currentPlayer.timeCoracao)+
-        (state.currentPlayer.deptoMedico ? ' 🚑' : '')+'</span>'+
+        (state.currentPlayer.deptoMedico ? ' 👨‍⚕️' : '')+'</span>'+
     '</div>'+
     mensLine;
   // só escreve no DOM se o conteúdo realmente mudou — render() roda a cada clique
@@ -573,8 +605,8 @@ function posicaoNoRankingGeral(jogadorId){
 // cada card da tela inicial é uma "parte"; a ordem de exibição é escolhida pelo admin
 const ORDEM_INICIO_PADRAO = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
 const NOMES_CARDS_INICIO = {
-  rodada:'Rodada do Próximo Domingão', status_carreira:'Minha Temporada', se_liga:'Se Liga - Craque',
-  departamento_medico:'Departamento Médico', eventos:'Eventos', pagamento:'Dados para Pagamento do Aluguel da Quadra', gestao:'Gestão Atual',
+  rodada:'Rodada do Próximo Domingão', status_carreira:'Meu Desempenho', se_liga:'Se Liga - Craque',
+  departamento_medico:'Saúde do Craque', eventos:'Eventos', pagamento:'Dados para Pagamento do Aluguel da Quadra', gestao:'Gestão Atual',
 };
 function ordemCardsInicio(){
   const salva = (state.homeExtras && state.homeExtras.ordem) || [];
@@ -590,10 +622,10 @@ function renderExtrasIniciais(){
   if(ex.noticia && ex.noticia.descricao){
     p.se_liga = '<div class="card hz hz-laranja"><h3>📣 Se Liga - Craque:</h3><p class="small avisos-text">'+escapeHtml(ex.noticia.descricao)+'</p></div>';
   }
-  // Minha Temporada (tocar nas estrelas abre a Performance) e Departamento Médico
+  // Meu Desempenho (tocar nas estrelas abre a Performance) e Saúde do Craque
   if(state.currentPlayer){
     const minhaMedia = mediaDoJogador(state.currentPlayer.id, state.currentPlayer.posicaoPadrao);
-    p.status_carreira = '<div class="card hz hz-dourado"><h3>Minha Temporada em '+(new Date().getFullYear())+':</h3>'+
+    p.status_carreira = '<div class="card hz hz-dourado"><h3>Meu Desempenho em '+(new Date().getFullYear())+':</h3>'+
       '<div class="meu-score-box meu-score-click" data-action="ranking-jogador" data-id="'+state.currentPlayer.id+'" title="Toque para ver sua Performance">'+starsHtml(minhaMedia, true, 'stars-xl')+'</div>'+
       '<p class="small muted" style="text-align:center;margin:6px 0 0;">Toque nas estrelas para ver sua Performance</p>'+
       renderMinhaPosicao()+
@@ -1336,10 +1368,32 @@ function renderVotosDosJogadores(abasHtml){
     }
   setContent(h, 'votacao-votos');
 }
+// filtro por jogador do Histórico: quantas e quais rodadas ele foi Bola Cheia / Bola Murcha
+function seletorJogadorHistoricoHtml(){
+  const ops = state.elenco.filter(j=>j.ativo).slice().sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'))
+    .map(j=>'<option value="'+j.id+'" '+(j.id===state.histJogador?'selected':'')+'>'+escapeHtml(j.nome)+'</option>').join('');
+  return '<div class="field"><label>Filtrar por jogador</label><select data-action="hist-jogador"><option value="">Todos os jogadores (ver por rodada)</option>'+ops+'</select></div>';
+}
+function bolaDoJogadorHtml(id){
+  const det = (state.rankingBola && state.rankingBola.detalhe) || {cheia:{}, murcha:{}};
+  const cheias = (det.cheia||{})[id] || [], murchas = (det.murcha||{})[id] || [];
+  const vezes = k => k+' vez'+(k===1?'':'es');
+  const linhas = arr => arr.slice().sort((a,b)=>a.data<b.data?1:-1).map((r,i)=>
+    '<div class="fin-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">Rodada de '+formatDataBR(r.data)+'</span><span class="fin-valor">'+starsHtml(r.media)+'</span></div>').join('');
+  const resumo = '<div class="hist-jog-resumo">'+
+    '<div class="hist-jog-kpi hist-jog-cheia"><span class="hist-jog-num">'+cheias.length+'</span><span class="hist-jog-rot">🏆 Bola Cheia</span></div>'+
+    '<div class="hist-jog-kpi hist-jog-murcha"><span class="hist-jog-num">'+murchas.length+'</span><span class="hist-jog-rot">🏈 Bola Murcha</span></div></div>';
+  const nome = escapeHtml(jogadorNome(id))+timeCoracaoSuffixDoId(id);
+  let h = finZona('dourado', '👤 '+nome, 'Resumo de todas as rodadas com votos', resumo+(!cheias.length && !murchas.length ? '<p class="small muted" style="text-align:center;margin:8px 0 0;">Ainda não foi Bola Cheia nem Bola Murcha em nenhuma rodada.</p>' : ''));
+  if(cheias.length) h += finZona('verde', '🏆 BOLA CHEIA — '+vezes(cheias.length).toUpperCase(), 'Rodadas em que teve a melhor média', linhas(cheias));
+  if(murchas.length) h += finZona('vermelho', '🏈 BOLA MURCHA — '+vezes(murchas.length).toUpperCase(), 'Rodadas em que teve a pior média', linhas(murchas));
+  return h;
+}
 // Tela VOTAÇÃO > "Histórico Bola Cheia x Bola Murcha": quem foi Bola Cheia/Murcha em cada rodada
 function renderHistoricoBola(abasHtml){
   const rod = state.rodadaVisualizada || state.rodadaAtual;
-  let html = abasHtml + seletorRodadaVisualizadaHtml('Histórico Bola Cheia x Bola Murcha — escolha a rodada');
+  let html = abasHtml + seletorJogadorHistoricoHtml() + seletorRodadaVisualizadaHtml('Histórico Bola Cheia x Bola Murcha — escolha a rodada');
+  if(state.histJogador) html += bolaDoJogadorHtml(state.histJogador);
   if(!rod){ setContent(html+'<div class="empty">Nenhuma rodada agendada ainda.</div>', 'votacao-historico'); return; }
   // só com os votos DA RODADA ESCOLHIDA (ignora o ranking geral)
   const aggRod = {};
@@ -1365,7 +1419,7 @@ function renderHistoricoBola(abasHtml){
     let lista = '';
     rankRod.forEach((r,i)=>{
       const cls = i===0 ? 'hist-top' : (i===rankRod.length-1 && rankRod.length>=2) ? 'hist-ultimo' : '';
-      lista += '<div class="fin-row '+cls+'"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(nomeDe(r.id))+timeCoracaoSuffixDoId(r.id)+'</span><span class="fin-valor">'+starsHtml(r.media)+'</span></div>';
+      lista += '<div class="fin-row '+cls+(r.id===state.histJogador?' hist-sel':'')+'"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(nomeDe(r.id))+timeCoracaoSuffixDoId(r.id)+'</span><span class="fin-valor">'+starsHtml(r.media)+'</span></div>';
     });
     html += finZona('dourado', '📋 CLASSIFICAÇÃO DA RODADA', rankRod.length+' jogador'+(rankRod.length===1?'':'es')+' avaliado'+(rankRod.length===1?'':'s'), lista);
   }else{
@@ -1862,7 +1916,7 @@ async function renderAdmin(){
         '<select id="edit-pos-'+j.id+'"><option value="linha" '+(j.posicaoPadrao==='linha'?'selected':'')+'>Linha</option><option value="goleiro" '+(j.posicaoPadrao==='goleiro'?'selected':'')+'>Goleiro</option></select>'+
         '<label class="small"><input type="checkbox" id="edit-ativo-'+j.id+'" '+(j.ativo?'checked':'')+'> ativo</label>'+
         '<label class="small"><input type="checkbox" id="edit-corneta-'+j.id+'" '+(j.corneta?'checked':'')+'> Corneta (faz check-in e vota, mas não entra no sorteio dos times)</label>'+
-        '<label class="small"><input type="checkbox" id="edit-depto-medico-'+j.id+'" '+(j.deptoMedico?'checked':'')+'> Depto. Médico (mostra 🚑 ao lado do nome na tela inicial)</label>'+
+        '<label class="small"><input type="checkbox" id="edit-depto-medico-'+j.id+'" '+(j.deptoMedico?'checked':'')+'> Saúde do Craque (mostra 👨‍⚕️ ao lado do nome na tela inicial)</label>'+
         '<label class="small"><input type="checkbox" id="edit-marketing-'+j.id+'" '+(j.marketing?'checked':'')+'> Acesso marketing (pode gerir os eventos: agenda, participantes e aba Evento)</label>'+
         (j.superAdmin
           ? '<div class="small muted">Super Admin — acesso total, não editável aqui.</div>'
@@ -1878,7 +1932,7 @@ async function renderAdmin(){
       html += '<div class="list-row"><span>'+escapeHtml(j.nome)+timeCoracaoSuffix(j.timeCoracao)+' <span class="badge '+(j.posicaoPadrao==='goleiro'?'gk':'')+'">'+j.posicaoPadrao+'</span>'+
         (j.superAdmin?' <span class="badge gk">super</span>':(j.admin?' <span class="badge gk">admin</span>':''))+
         (j.corneta?' <span class="badge">🎺🥜 corneta</span>':'')+
-        (j.deptoMedico?' <span class="badge">🚑 depto. médico</span>':'')+
+        (j.deptoMedico?' <span class="badge">👨‍⚕️ saúde do craque</span>':'')+
         (j.marketing?' <span class="badge">📣 marketing</span>':'')+
         (MENS_INFO[j.mensalidade]?' <span class="badge mens-'+MENS_INFO[j.mensalidade].cls+'">'+MENS_INFO[j.mensalidade].emoji+' '+MENS_INFO[j.mensalidade].lbl+((j.mensalidade==='em_atraso' && j.diasAtraso!=null)?' • '+j.diasAtraso+' dia'+(j.diasAtraso===1?'':'s'):'')+'</span>':'')+
         (j.valorMensalidade!==''?' <span class="badge">'+fmtBRLfront(Number(j.valorMensalidade))+'</span>':'')+
@@ -2810,6 +2864,7 @@ function startPolling(){
       await refreshRodadaAtual();
       await refreshRodadasLista();
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
+      if(state.tab==='votacao' && state.votacaoAba==='historico') await refreshRankingBola();
       if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
       if(state.tab==='resenha' && state.resenhaAba==='trampos' && !state.trampoFormAberto) await refreshTrampos();
       if(state.tab==='resenha' && state.resenhaAba==='evento'){ await refreshEvento(); await refreshHomeExtras(); }
@@ -2885,9 +2940,10 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='trampo-cancelar'){ state.trampoFormAberto = false; state._lastContentKey = null; return render(); }
   if(action==='trampo-publicar') return handlePublicarTrampo();
   if(action==='trampo-remover') return handleRemoverTrampo(el.dataset.id);
-  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); return render(); }
+  if(action==='votacao-aba'){ state.votacaoAba = el.dataset.aba; state._lastContentKey = null; if(state.votacaoAba==='votos' || state.votacaoAba==='historico') await irParaRodadaMaisRecente(); if(state.votacaoAba==='historico') await refreshRankingBola(); return render(); }
   if(action==='ranking-jogador') return abrirPerformance(el.dataset.id);
   if(action==='fechar-performance') return fecharPerformance();
+  if(action==='saude-dica') return abrirSaudeDica();
   if(action==='noop') return;
   if(action==='ranking-aba'){ state.rankingAba = el.dataset.aba; return render(); }
   if(action==='votar') return handleVotar(el.dataset.avaliado, parseInt(el.dataset.nota,10));
@@ -2994,6 +3050,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
     await carregarRodadaVisualizada(e.target.value);
     render();
   }
+  if(e.target.dataset.action==='hist-jogador'){ state.histJogador = e.target.value; render(); }
   if(e.target.dataset.action==='rifa-rodada'){
     state.rifaRodadaId = e.target.value;
     render();

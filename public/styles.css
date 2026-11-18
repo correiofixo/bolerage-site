@@ -1168,3 +1168,21 @@ body.na-tela-login #login-screen{
 .evt-cad-acoes .btn{width:100%;white-space:nowrap;font-size:clamp(12px,3.7vw,14px);padding-left:6px;padding-right:6px;}
 .evt-cad-acoes .btn.ativo{background:rgba(167,123,255,.35);border-color:#A77BFF;}
 .evt-cad .evt-dre-box{margin-top:12px;}
+
+/* ---- v6.9: Saúde do Craque (card clicável + nota rápida) e filtro por jogador no Histórico Bola Cheia/Murcha ---- */
+.saude-click{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.saude-click:active{transform:scale(.995);}
+.saude-toque{margin-top:8px;text-align:center;font-size:12px;color:var(--gold-bright,#E4C158);font-weight:600;}
+.saude-nota{text-align:left;}
+.saude-imc{display:flex;align-items:baseline;justify-content:center;gap:10px;margin-top:6px;}
+.saude-class{text-align:center;font-weight:800;font-size:clamp(15px,4.4vw,18px);margin:2px 0 10px;}
+.saude-dicas{margin:0;padding:0 0 0 18px;display:grid;gap:8px;font-size:clamp(13.5px,3.9vw,15px);line-height:1.35;}
+.saude-dicas li::marker{color:var(--gold-bright,#E4C158);}
+.hist-jog-resumo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:6px 0;}
+.hist-jog-kpi{display:flex;flex-direction:column;align-items:center;padding:8px 6px;border-radius:12px;border:1px solid var(--line);text-align:center;}
+.hist-jog-cheia{border-color:var(--green);background:rgba(63,174,88,.13);}
+.hist-jog-murcha{border-color:var(--red);background:rgba(226,87,76,.14);}
+.hist-jog-num{font-family:var(--font-display);font-size:clamp(28px,9vw,38px);font-weight:800;line-height:1;}
+.hist-jog-cheia .hist-jog-num{color:#7BD991;} .hist-jog-murcha .hist-jog-num{color:#FF8D84;}
+.hist-jog-rot{font-size:clamp(11px,3.4vw,13px);white-space:nowrap;margin-top:2px;}
+.fin-row.hist-sel{background:rgba(228,193,88,.16);border-radius:8px;outline:1px solid rgba(228,193,88,.55);}

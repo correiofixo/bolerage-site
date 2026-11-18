@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 48;
+const APP_BUILD = 49;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -422,8 +422,9 @@ function calcularRanking(){
 // lógica de "Craque Bola Cheia x Craque Bola Murcha" da aba Resenha, só que somada
 // rodada a rodada (histórico completo, não é a média geral do jogador).
 function calcularRankingBola(){
-  const rodadas = db.prepare("SELECT id FROM rodadas WHERE status='sorteado'").all();
+  const rodadas = db.prepare("SELECT id, data FROM rodadas WHERE status='sorteado' ORDER BY data ASC").all();
   const cheia = {}, murcha = {};
+  const detalhe = {cheia:{}, murcha:{}};   // por jogador: em quais rodadas (data + média) foi Bola Cheia / Murcha
   rodadas.forEach(r=>{
     const votos = db.prepare("SELECT jogador_avaliado_id as id, nota FROM votos WHERE rodada_id=?").all(r.id)
       .filter(v=>v.id && v.id.indexOf('conv:')!==0);
@@ -436,12 +437,14 @@ function calcularRankingBola(){
     const entries = Object.keys(agg).map(id=>({id, media:agg[id].soma/agg[id].n, n:agg[id].n}))
       .sort((a,b)=> (b.media-a.media) || (b.n-a.n));
     cheia[entries[0].id] = (cheia[entries[0].id]||0) + 1;
+    (detalhe.cheia[entries[0].id] = detalhe.cheia[entries[0].id] || []).push({data:r.data, media:Math.round(entries[0].media*100)/100, n:entries[0].n});
     if(entries.length >= 2){
       const pior = entries[entries.length-1];
       murcha[pior.id] = (murcha[pior.id]||0) + 1;
+      (detalhe.murcha[pior.id] = detalhe.murcha[pior.id] || []).push({data:r.data, media:Math.round(pior.media*100)/100, n:pior.n});
     }
   });
-  return {cheia, murcha};
+  return {cheia, murcha, detalhe};
 }
 
 function mediaGlobalDoPapel(ranking, papel){
