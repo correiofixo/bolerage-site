@@ -635,6 +635,14 @@ function posicaoNoRankingGeral(jogadorId){
   const zona = i<5 ? 'top5' : i<10 ? 'top10' : (n>10 && i>=Math.max(10, n-5)) ? 'under5' : 'meio';
   return {pos:i+1, total:n, zona};
 }
+// selo curto da zona do jogador no Ranking Geral (usado nos times sorteados)
+const ZONA_CURTA = {top5:['chip-top5','🏆 Lendas'], top10:['chip-top10','⭐ Craques'], meio:['chip-meio','⚔️ Guerreiros'], under5:['chip-under5','⚠️ Degola']};
+function zonaChipHtml(jogadorId){
+  const p = posicaoNoRankingGeral(jogadorId);
+  if(!p) return '<span class="small muted">sem ranking</span>';
+  const z = ZONA_CURTA[p.zona];
+  return '<span class="rank-chip zona-mini '+z[0]+'">'+z[1]+'</span>';
+}
 // cada card da tela inicial é uma "parte"; a ordem de exibição é escolhida pelo admin
 const ORDEM_INICIO_PADRAO = ['rodada','status_carreira','se_liga','departamento_medico','eventos','pagamento','gestao'];
 const NOMES_CARDS_INICIO = {
@@ -1268,10 +1276,10 @@ function renderSorteio(){
     // jogador só pra buscar a média certa no ranking (linha ou goleiro).
     const jr = isAlternar && !isConv ? state.elenco.find(x=>x.id===j.jogadorId) : null;
     const papelMedia = isAlternar ? (jr ? jr.posicaoPadrao : 'linha') : j.papel;
-    const media = isConv ? null : mediaDoJogador(j.jogadorId, papelMedia);
+    const nomeJ = nomeParaExibicao(j.jogadorId);
     return '<div class="pitch-player'+(j.papel==='goleiro'?' pitch-player-gk':'')+'">'+
-      '<span class="pitch-player-name">'+escapeHtml(nomeParaExibicao(j.jogadorId))+timeCoracaoSuffixDoId(j.jogadorId)+'</span>'+
-      (isConv ? '<span class="small muted">convidado</span>' : starsHtml(media))+
+      '<span class="pitch-player-name" style="--n:'+Math.max(8, nomeJ.length+3)+'">'+escapeHtml(nomeJ)+timeCoracaoSuffixDoId(j.jogadorId)+'</span>'+
+      (isConv ? '<span class="small muted">convidado</span>' : zonaChipHtml(j.jogadorId))+
     '</div>';
   };
 
@@ -1333,7 +1341,7 @@ function renderSorteio(){
     if(formLabel || craqueDestaque){
       html += '<div class="team-footer">'+
         (formLabel ? '<p class="team-footer-line"><span class="team-footer-label">Plano Tático = </span><strong class="team-footer-valor">'+formLabel+'</strong></p>' : '')+
-        (craqueDestaque ? '<p class="team-footer-line"><span class="team-footer-label">Destaque = </span><strong class="team-footer-valor">'+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+'</strong> '+starsHtml(craqueDestaque.media, true)+'</p>' : '')+
+        (craqueDestaque ? '<p class="team-footer-line"><span class="team-footer-label">Destaque = </span><strong class="team-footer-valor">'+escapeHtml(nomeParaExibicao(craqueDestaque.jogadorId))+timeCoracaoSuffixDoId(craqueDestaque.jogadorId)+'</strong> '+zonaChipHtml(craqueDestaque.jogadorId)+'</p>' : '')+
       '</div>';
     }
     if(alternarPlayers.length){
@@ -1348,7 +1356,7 @@ function renderSorteio(){
       const jr = state.elenco.find(x=>x.id===id);
       const media = (isConv || !jr) ? null : mediaDoJogador(id, jr.posicaoPadrao);
       html += '<div class="list-row"><span>'+escapeHtml(nomeParaExibicao(id))+timeCoracaoSuffixDoId(id)+'</span>'+
-        ((isConv||!jr)?'':'<span class="row-right">'+starsHtml(media, true)+'</span>')+'</div>';
+        ((isConv||!jr)?'':'<span class="row-right">'+zonaChipHtml(id)+'</span>')+'</div>';
     });
     html += '</div>';
   }
@@ -1752,7 +1760,6 @@ async function renderRanking(){
           '</div><div class="rank-avg">'+starsHtml(l.media, true)+'</div></div>';
       });
       html += '</div>';
-      html += '<p class="small muted" style="margin:6px 2px 0;">Toque em um jogador para ver o gráfico de desempenho dele. <strong style="color:var(--text)">1 ponto = 0,1 estrela</strong> (ex.: 4,4 → 4,2 = 2 pontos).</p>';
     }
     html += '<p class="small muted" style="margin:10px 2px 0;">Jogadores AUSENTES perdem 10% dos pontos acumulados a cada rodada em que não estiverem presentes.</p>';
     if(semNota.length){
@@ -2505,7 +2512,8 @@ function renderAcessosHtml(d){
   const periodos = [[7,'7 dias'],[30,'30 dias'],[90,'90 dias'],[0,'Tudo']];
   let h = '<div class="card"><h3>📊 Controle de acessos</h3>'+
     '<p class="small muted">Quem entra no app, quando e quais telas usa. Considera cada visita (PIN ou app reaberto), horário de São Paulo.</p>'+
-    '<div class="filtros-fin">'+periodos.map(p=>'<button data-action="acessos-periodo" data-d="'+p[0]+'" class="'+(d.dias===p[0]?'active':'')+'">'+p[1]+'</button>').join('')+'</div>';
+    '<div class="filtros-fin">'+periodos.map(p=>'<button data-action="acessos-periodo" data-d="'+p[0]+'" class="'+(d.dias===p[0]?'active':'')+'">'+p[1]+'</button>').join('')+'</div>'+
+    '<div class="acessos-zerar"><button type="button" class="btn danger small" data-action="acessos-zerar">🗑️ Zerar estatística de acessos</button></div>';
 
   // KPIs
   h += '<div class="kpi-grid">'+
@@ -2567,10 +2575,17 @@ function renderAcessosHtml(d){
 
   // sem acesso
   const sumidos = d.jogadores.filter(j=>j.entradas===0);
-  h += finZona(sumidos.length?'vermelho':'verde', '🕵️ SEM ACESSO NO PERÍODO', sumidos.length ? sumidos.length+' jogador'+(sumidos.length===1?'':'es')+' não entrou'+(sumidos.length===1?'':'ram')+' no app' : 'Todo mundo entrou pelo menos uma vez!',
+  h += finZona(sumidos.length?'vermelho':'verde', '🕵️ SEM ACESSO NO PERÍODO', sumidos.length ? sumidos.length+' jogador'+(sumidos.length===1?' não entrou':'es não entraram')+' no app' : 'Todo mundo entrou pelo menos uma vez!',
     sumidos.length ? '<div class="ac-sumidos">'+sumidos.map(j=>'<span class="badge">'+escapeHtml(j.nome)+'</span>').join('')+'</div>' : '');
-  h += '<p class="small muted" style="margin-top:6px;">Os acessos passam a ser contados a partir desta versão do app.</p></div>';
+  const zer = d.zeradoEm ? 'Estatística zerada em '+d.zeradoEm.slice(8,10)+'/'+d.zeradoEm.slice(5,7)+'/'+d.zeradoEm.slice(0,4)+' às '+d.zeradoEm.slice(11,16)+' — os acessos são contados a partir daí.' : 'Os acessos passam a ser contados a partir desta versão do app.';
+  h += '<p class="small muted" style="margin-top:6px;">'+zer+'</p></div>';
   return h;
+}
+async function handleZerarAcessos(){
+  if(!confirm('Zerar a estatística de acessos?\n\nIsso apaga TODO o histórico de acessos (visitas, dias, horários e telas) de todos os jogadores. A contagem recomeça do zero. Não dá para desfazer.')) return;
+  if(!confirm('Confirma mesmo zerar a estatística de acessos?')) return;
+  try{ const r = await api('/api/admin/acessos', {method:'DELETE', adminAuth:true}); state.acessoAberto = null; await render(); showToast('Estatística zerada ('+r.apagados+' registros apagados)'); }
+  catch(e){ alert(e.message); }
 }
 async function handleSalvarSaldoCaixa(){
   try{
@@ -3075,6 +3090,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   }
   if(action==='rifa-remover'){ if(confirm('Remover o ganhador e o prêmio desta rifa?')) return handleSalvarRifa(true, el.dataset.id); return; }
   if(action==='limpar-rifa'){ if(confirm('Remover o ganhador e o prêmio desta rodada?')) return handleSalvarRifa(true); return; }
+  if(action==='acessos-zerar') return handleZerarAcessos();
   if(action==='acessos-periodo'){ state.acessosPeriodo = parseInt(el.dataset.d,10); return render(); }
   if(action==='acesso-abrir'){ state.acessoAberto = (state.acessoAberto===el.dataset.id) ? null : el.dataset.id; return render(); }
   if(action==='gestao-sub'){ state.gestaoSub = el.dataset.sub; return render(); }

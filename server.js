@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 54;
+const APP_BUILD = 55;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -199,6 +199,7 @@ try{ db.exec("ALTER TABLE config ADD COLUMN evento_aba_texto TEXT NOT NULL DEFAU
 // CONTROLE DE ACESSOS: cada entrada no app (login/abertura) e cada troca de tela de cada jogador
 try{ db.exec("CREATE TABLE IF NOT EXISTS acessos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, ts TEXT NOT NULL, tipo TEXT NOT NULL, tela TEXT)"); }catch(e){}
 try{ db.exec("CREATE INDEX IF NOT EXISTS idx_acessos_jog_ts ON acessos (jogador_id, ts)"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN acessos_zerado_em TEXT"); }catch(e){}   // quando a estatística de acessos foi zerada pela última vez
 // TRAMPOS: vagas de emprego que os amigos indicam para o grupo
 try{ db.exec("CREATE TABLE IF NOT EXISTS trampos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, titulo TEXT NOT NULL, empresa TEXT NOT NULL DEFAULT '', local TEXT NOT NULL DEFAULT '', descricao TEXT NOT NULL DEFAULT '', contato TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '', criado_em TEXT NOT NULL)"); }catch(e){}
 // ordem dos cards da tela inicial (chaves separadas por vírgula; vazio = ordem padrão)
@@ -2386,13 +2387,22 @@ app.get('/api/admin/acessos', requireSuper, (req,res)=>{
   }).sort((a,b)=> (b.entradas-a.entradas) || a.nome.localeCompare(b.nome,'pt-BR'));
   const ativosN = jogadores.filter(j=>j.entradas>0).length;
   res.json({
-    dias, geradoEm: spWallClockNow(), nomesTelas: NOMES_TELAS,
+    dias, geradoEm: spWallClockNow(), nomesTelas: NOMES_TELAS, zeradoEm: (getConfig()||{}).acessos_zerado_em || null,
     totais: {entradas:totalEntradas, jogadoresAtivos:ativosN, totalJogadores:jogadores.length,
       mediaPorJogador: ativosN ? Math.round(totalEntradas/ativosN*10)/10 : 0,
       horaPico: topo(heat.reduce((acc,l)=>acc.map((v,i)=>v+l[i]), Array(24).fill(0))),
       diaPico: topo(heat.map(l=>l.reduce((a,b)=>a+b,0))), telas: telasGeral},
     heat, jogadores,
   });
+});
+
+// Zera a estatística de acessos (backlog): apaga todo o histórico de visitas/telas. Só o Super Admin.
+app.delete('/api/admin/acessos', requireSuper, (req,res)=>{
+  const n = db.prepare('SELECT COUNT(*) c FROM acessos').get().c;
+  db.prepare('DELETE FROM acessos').run();
+  db.prepare('UPDATE config SET acessos_zerado_em=? WHERE id=1').run(spWallClockNow());
+  logEvento('Estatística de acessos zerada pelo Super Admin ('+n+' registros apagados).');
+  res.json({ok:true, apagados:n});
 });
 
 /* ---- TRAMPOS (vagas indicadas pelos amigos) ---- */

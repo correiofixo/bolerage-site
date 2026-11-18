@@ -1253,3 +1253,12 @@ body.na-tela-login #login-screen{
 .saude-passo-txt span{font-size:clamp(12px,3.4vw,13px);line-height:1.3;}
 .saude-ok{font-size:clamp(14px,4vw,16px);padding:9px 8px;}
 .saude-aviso{font-size:10.5px;margin:8px 4px 0;}
+
+/* ---- v6.15: acessos (zerar), nota Saúde (espaço no cabeçalho), times sorteados (selo de zona e nome que cabe no card) ---- */
+.acessos-zerar{display:flex;justify-content:flex-end;margin:0 0 8px;}
+.saude-topo{row-gap:10px;}
+.rank-chip.zona-mini{padding:2px 8px;font-size:10.5px;white-space:nowrap;}
+.pitch-player-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;max-width:128px;line-height:1.15;text-align:center;overflow:hidden;text-overflow:ellipsis;overflow-wrap:anywhere;
+  font-size:min(11.5px,max(8.5px,calc(128px * 1.8 / var(--n,12))));}
+.saude-topo{row-gap:16px;}
+.saude-tit{margin-bottom:0;}
