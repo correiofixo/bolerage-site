@@ -1069,3 +1069,25 @@ div.evt-part-adm{margin:8px 0;border:1px solid rgba(167,123,255,.45);border-radi
 .pd-row .field input{width:100%;box-sizing:border-box;}
 .evt-row-g{grid-template-columns:32px minmax(0,1fr);}
 .pd-row input[type=date],.pd-add input[type=date]{font-size:12.5px;padding-left:6px;padding-right:2px;min-width:0;}
+
+/* ---- v6.1: tela de login centralizada (celulares iOS/Android), sem "piscar" ao digitar ---- */
+/* o login não tem barra inferior: tira o espaço reservado dela e centraliza na altura toda da tela */
+body.na-tela-login #content{padding:0;}
+body.na-tela-login #login-screen{
+  min-height:100vh;min-height:100dvh;box-sizing:border-box;justify-content:center;
+  padding-top:calc(clamp(4px,1.4dvh,28px) + env(safe-area-inset-top));
+  padding-bottom:calc(clamp(4px,1.4dvh,28px) + env(safe-area-inset-bottom));
+}
+.login-logo{width:clamp(76px,17dvh,200px);height:clamp(76px,17dvh,200px);}
+.keypad{grid-template-columns:repeat(3,clamp(46px,10.4dvh,78px));gap:clamp(7px,1.5dvh,16px);}
+.keypad button{width:clamp(46px,10.4dvh,78px);height:clamp(46px,10.4dvh,78px);font-size:clamp(20px,3.3dvh,28px);}
+/* toque: sem zoom por duplo toque, sem seleção, e resposta de pressionar instantânea e discreta (sem clarão dourado) */
+.keypad button,.keypad button:active{touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+.keypad button{transition:none;}
+.keypad button:active{background:linear-gradient(180deg,rgba(78,161,255,.34),rgba(78,161,255,.14));border-color:rgba(228,193,88,.85);transform:scale(.95);}
+#login-screen{touch-action:manipulation;-webkit-user-select:none;user-select:none;}
+.pin-dot{transition:none;}
+/* versão: "V6.0" discreto, no mesmo lugar (embaixo do aviso do PIN) */
+.login-versao{padding:2px 12px;gap:0;background:rgba(201,162,39,.10);animation:none;
+  border:1px solid rgba(201,162,39,.35);box-shadow:none;}
+.login-versao-num{font-size:clamp(11px,1.7dvh,13px);letter-spacing:1.2px;font-weight:700;color:rgba(228,193,88,.85);}

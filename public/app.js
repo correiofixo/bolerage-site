@@ -340,6 +340,7 @@ async function irParaRodadaMaisRecente(){
 function renderTopbar(){
   const topbar = document.getElementById('topbar');
   const bottomnav = document.getElementById('bottomnav');
+  document.body.classList.toggle('na-tela-login', !state.currentPlayer);   // login ocupa a tela toda, centralizado
   if(!state.currentPlayer){ topbar.style.display='none'; bottomnav.style.display='none'; return; }
   topbar.style.display='block';
   bottomnav.style.display='flex';
@@ -390,8 +391,10 @@ function renderLogin(){
   // sem recriar a <img> do logo (recriá-la a cada tecla fazia o logo "piscar").
   const existing = document.getElementById('login-screen');
   if(existing){
-    existing.querySelector('.pin-dots').innerHTML = dots;
-    existing.querySelector('.login-error').textContent = state.loginError;
+    // os pontos são só marcados/desmarcados (não recriados), para não piscar a cada tecla
+    [...existing.querySelectorAll('.pin-dot')].forEach((el,i)=> el.classList.toggle('filled', i < state.pinBuffer.length));
+    const erroEl = existing.querySelector('.login-error');
+    if(erroEl.textContent !== state.loginError) erroEl.textContent = state.loginError;
     return;
   }
   const keys = ['1','2','3','4','5','6','7','8','9','','0','back'];
@@ -410,7 +413,7 @@ function renderLogin(){
       '<div class="login-hint">Caso ainda não tenha um PIN, solicite ao administrador do grupo Bolerage'+
         ' <a class="wa-link wa-link-destaque" href="whatsapp://" title="Abrir o WhatsApp">'+WA_ICON+'</a>'+
       '</div>'+
-      (state.appVersion ? '<div class="login-versao"><span class="login-versao-rot">VERSÃO</span><span class="login-versao-num">'+escapeHtml(state.appVersion)+'</span></div>' : '')+
+      (state.appVersion ? '<div class="login-versao"><span class="login-versao-num">V'+escapeHtml(state.appVersion)+'</span></div>' : '')+
 
     '</div>';
 }
