@@ -2700,17 +2700,22 @@ function renderAgendaAdminHtml(agenda, respOpc){
     if(state.editingEventoId===e.id){
       h += eventoEditorHtml(e.id, e, respOpc);
     }else{
-      h += '<div class="evt-item evt-cad"><div class="evt-item-info"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div>'+
-        '<div class="evt-item-badges"><span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':'<span class="badge">inativo</span>')+
-          (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+
-          (!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
+      const nPart = state.eventoLista ? ' ('+state.eventoLista.participantes.length+')' : '';
+      const dreAb = state.eventoDreAberto===e.id;
+      h += '<div class="evt-item evt-cad">'+
+        '<div class="evt-cad-topo"><div class="evt-item-nome">'+escapeHtml(e.nome)+'</div><span class="evt-cad-data">📅 '+formatDataBR(e.data)+'</span></div>'+
+        '<div class="evt-cad-chips">'+(e.ativo?'':'<span class="badge">🚫 inativo</span>')+
+          (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+'</div>'+
+        '<div class="evt-cad-chips">'+(!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
           (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
-          (e.mostrarParticipantes?'<button type="button" class="badge badge-btn" data-action="editar-evento" data-id="'+e.id+'">👥 participantes'+(state.eventoLista?' ('+state.eventoLista.participantes.length+')':'')+'</button>':'')+
-          '<button type="button" class="badge badge-btn'+(state.eventoDreAberto===e.id?' ativo':'')+'" data-action="evento-dre-toggle" data-id="'+e.id+'">📊 DRE '+(state.eventoDreAberto===e.id?'▲':'▼')+'</button>'+
-          ((e.despesas&&e.despesas.length)?'<span class="badge">💸 '+e.despesas.length+' despesa'+(e.despesas.length===1?'':'s')+'</span>':'')+'</div></div>'+
-        '<div class="evt-item-acoes"><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button>'+
-        '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></div></div>';
-      if(state.eventoDreAberto===e.id && state.eventoDre) h += '<div class="evt-dre-box">'+dreEventoPainelHtml(state.eventoDre)+'</div>';
+          ((e.despesas&&e.despesas.length)?'<span class="badge">💸 '+e.despesas.length+' despesa'+(e.despesas.length===1?'':'s')+'</span>':'')+'</div>'+
+        '<div class="evt-cad-acoes">'+
+          (e.mostrarParticipantes?'<button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">👥 Participantes'+nPart+'</button>':'')+
+          '<button type="button" class="btn secondary small'+(dreAb?' ativo':'')+'" data-action="evento-dre-toggle" data-id="'+e.id+'">📊 DRE '+(dreAb?'▲':'▼')+'</button></div>'+
+        '<div class="evt-cad-acoes"><button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">✏️ Editar</button>'+
+          '<button type="button" class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">🗑️ Remover</button></div>'+
+        (dreAb && state.eventoDre ? '<div class="evt-dre-box">'+dreEventoPainelHtml(state.eventoDre)+'</div>' : '')+
+      '</div>';
     }
   });
   if(agenda.length && !agenda.some(e=>e.mostrarParticipantes)){

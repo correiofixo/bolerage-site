@@ -1155,3 +1155,16 @@ body.na-tela-login #login-screen{
 .evt-divisor::before,.evt-divisor::after{content:"";flex:1 1 0;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,rgba(78,161,255,.75),transparent);}
 .evt-divisor span{flex:0 0 auto;max-width:78%;padding:5px 14px;border-radius:999px;border:1px solid rgba(78,161,255,.6);background:rgba(78,161,255,.14);color:#BBD9FF;font-family:var(--font-display);font-weight:700;letter-spacing:.5px;font-size:clamp(11px,3.5vw,14px);text-align:center;overflow-wrap:anywhere;}
 .evt-item.evt-cad{margin:0 0 10px;padding:10px;border:1px solid rgba(78,161,255,.4);border-radius:14px;background:rgba(78,161,255,.06);}
+
+/* ---- v6.6: cartão do evento cadastrado (admin) organizado em blocos, responsivo ---- */
+.evt-item.evt-cad{display:block;}
+.evt-cad-topo{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding-bottom:8px;border-bottom:1px solid rgba(78,161,255,.25);}
+.evt-cad .evt-item-nome{flex:1 1 160px;min-width:0;margin:0;font-size:clamp(15px,4.6vw,18px);line-height:1.2;overflow-wrap:anywhere;}
+.evt-cad-data{flex:0 0 auto;white-space:nowrap;padding:3px 10px;border-radius:999px;border:1px solid rgba(78,161,255,.5);background:rgba(78,161,255,.12);font-weight:700;font-size:clamp(12px,3.6vw,14px);}
+.evt-cad-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.evt-cad-chips:empty{display:none;}
+.evt-cad-chips .badge{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
+.evt-cad-acoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin-top:10px;}
+.evt-cad-acoes .btn{width:100%;white-space:nowrap;font-size:clamp(12px,3.7vw,14px);padding-left:6px;padding-right:6px;}
+.evt-cad-acoes .btn.ativo{background:rgba(167,123,255,.35);border-color:#A77BFF;}
+.evt-cad .evt-dre-box{margin-top:12px;}
