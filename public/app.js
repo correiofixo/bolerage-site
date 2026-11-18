@@ -152,6 +152,9 @@ const state = {
   rifasAdmin: [],
   resenhaAba: 'resenha',
   trampos: [],
+  eventoLista: null,
+  eventoEditId: null,
+  eventoSobreAberto: false,
   trampoFormAberto: false,
   acessosPeriodo: 30,
   acessos: null,
@@ -593,7 +596,7 @@ function renderExtrasIniciais(){
     ex.eventos.forEach(e=>{
       const desc = (e.descricao||'').trim();
       const resp = (e.responsavel||'').trim();
-      if(desc || resp){
+      if(desc || resp || e.mostrarParticipantes || e.pagamento){
         const wa = waLink(e.responsavelTel);
         const aberto = state.eventoAbertoId===String(e.id) && Date.now() < state.eventoAbertoExp;
         html += '<details class="evento-item" data-evento-id="'+e.id+'"'+(aberto?' open':'')+'>'+
@@ -601,6 +604,7 @@ function renderExtrasIniciais(){
           (desc ? '<p class="small avisos-text" style="margin-top:8px;">'+escapeHtml(desc)+'</p>' : '')+
           (resp ? '<div class="list-row"><span>Gestor do Evento</span><span class="row-right">'+escapeHtml(nomeExibicaoPorNomeReal(resp))+
             (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</span></div>' : '')+
+        sobreEventoHtml(e, ex.eventoLista)+
         '</details>';
       }else{
         html += '<div class="list-row"><span>'+escapeHtml(e.nome)+'</span><span class="badge">'+formatDataBR(e.data)+'</span></div>';
@@ -808,6 +812,66 @@ async function handleTogglePresenca(atual){
 /* ============================================================
    RENDER: TAB RESENHA
    ============================================================ */
+// ---- EVENTO DE FIM DE ANO: lista de participantes (valor pago e status)
+async function refreshEvento(){ try{ state.eventoLista = await api('/api/evento', {auth:true}); }catch(e){} }
+const ST_EVENTO = {pago:{rot:'Pago', cls:'st-pago', ico:'✅'}, parcial:{rot:'Parcial', cls:'st-parcial', ico:'🟠'}, pendente:{rot:'Pendente', cls:'st-pendente', ico:'⏳'}};
+function statusEventoPill(st){ const x = ST_EVENTO[st] || ST_EVENTO.pendente; return '<span class="st-pill '+x.cls+'">'+x.ico+' '+x.rot+'</span>'; }
+function eventoLinhaHtml(p, i){
+  const pagoTxt = fmtBRLfront(p.valorPago) + (p.status!=='pago' ? ' <small>de '+fmtBRLfront(p.valor)+'</small>' : '');
+  return '<div class="fin-row evt-row"><span class="fin-pos">'+(i+1)+'</span><span class="fin-nome">'+escapeHtml(p.nome)+'</span>'+
+    '<span class="evt-pago">'+pagoTxt+'</span>'+statusEventoPill(p.status)+'</div>';
+}
+function eventoTotaisHtml(t){
+  return '<div class="kpi-grid">'+
+    '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
+    '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>'+
+    '<div class="kpi kpi-sm kpi-dourado"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
+    '<div class="kpi kpi-sm kpi-azul"><div class="kpi-num">'+t.qtd+'</div><div class="kpi-rot">participante'+(t.qtd===1?'':'s')+' ('+t.pagos+' '+(t.pagos===1?'pago':'pagos')+' • '+t.parciais+' '+(t.parciais===1?'parcial':'parciais')+' • '+t.pendentes+' '+(t.pendentes===1?'pendente':'pendentes')+')</div></div>'+
+  '</div>';
+}
+function pagamentoEventoHtml(pg){
+  if(!pg || (!pg.nome && !pg.chavePix && !pg.valor)) return '';
+  return '<div class="evt-pgto"><div class="evt-pgto-tit">💳 Dados para pagamento do evento</div>'+
+    (pg.nome ? '<div class="list-row"><span>Responsável</span><span>'+escapeHtml(pg.nome)+'</span></div>' : '')+
+    (pg.chavePix ? '<div class="list-row"><span>Chave PIX</span><span class="row-right"><span class="pix-code">'+escapeHtml(pg.chavePix)+'</span><button class="btn small" data-action="copiar-pix" data-pix="'+escapeHtml(pg.chavePix)+'">Copiar</button></span></div>' : '')+
+    (pg.valor ? '<div class="list-row"><span>Valor</span><span><strong>'+escapeHtml(pg.valor)+'</strong></span></div>' : '')+
+  '</div>';
+}
+// nota "Sobre o Evento" (tela inicial): dados para pagamento + lista de participantes
+function sobreEventoHtml(e, lista){
+  if(!e.mostrarParticipantes && !e.pagamento) return '';
+  let corpo = pagamentoEventoHtml(e.pagamento);
+  if(e.mostrarParticipantes){
+    if(lista && lista.participantes && lista.participantes.length){
+      corpo += eventoTotaisHtml(lista.totais)+lista.participantes.map(eventoLinhaHtml).join('');
+    }else{
+      corpo += '<p class="small muted">A lista de participantes ainda não foi cadastrada.</p>';
+    }
+  }
+  return '<details class="evento-sobre" data-evento-id="'+e.id+'"'+(state.eventoSobreAberto?' open':'')+'><summary>ℹ️ Sobre o Evento</summary><div class="evt-sobre-corpo">'+corpo+'</div></details>';
+}
+// aba "Evento" da Resenha
+function renderEventoAbaHtml(){
+  const l = state.eventoLista;
+  const evHome = ((state.homeExtras && state.homeExtras.eventos) || []).find(e=>e.mostrarParticipantes) || null;
+  const titulo = (l && l.eventoNome) ? l.eventoNome : 'Evento de Fim de Ano';
+  let h = '<div class="card hz hz-roxo" style="text-align:center;"><div class="rede-ico">🎉</div><h3>'+escapeHtml(titulo)+'</h3>'+
+    (l && l.eventoData ? '<p class="rodada-sub">'+formatDataBR(l.eventoData)+'</p>' : '')+
+    '<p class="small muted">Lista de participantes com o valor já pago e o status de cada um.</p></div>';
+  if(!l){ return h + '<div class="empty">Carregando…</div>'; }
+  if(!l.participantes.length) return h + '<div class="empty">A lista de participantes ainda não foi cadastrada pelo administrador.</div>';
+  const t = l.totais;
+  h += pagamentoEventoHtml(evHome && evHome.pagamento) ? '<div class="card hz hz-verde">'+pagamentoEventoHtml(evHome.pagamento)+'</div>' : '';
+  h += '<div class="card"><h3 class="titulo-centralizado">Resumo</h3>'+eventoTotaisHtml(t)+
+    pizzaHtml('', [
+      {label:'Pago', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
+      {label:'Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
+      {label:'Pendente', valor:t.pendentes, cor:'#E2574C', txt:t.pendentes+' participante'+(t.pendentes===1?'':'s')},
+    ])+'</div>';
+  h += finZona('azul', '📋 PARTICIPANTES', t.qtd+' na lista • valor pago e status', l.participantes.map(eventoLinhaHtml).join(''));
+  return h;
+}
+
 // ---- REDES SOCIAIS (aba da Resenha)
 const LINK_SPOTIFY = 'https://open.spotify.com/playlist/5yrAcmZ6MYoaUUAT18IFOY?si=33d454bc5e824902';
 const LINK_INSTAGRAM = 'https://www.instagram.com/boleragefd/';
@@ -920,10 +984,12 @@ function renderResenha(){
       '<button data-action="resenha-aba" data-aba="rifas" class="'+(ab==='rifas'?'active':'')+'">🎟️ Rifas</button>'+
       '<button data-action="resenha-aba" data-aba="redes" class="'+(ab==='redes'?'active':'')+'">📲 Redes Sociais</button>'+
       '<button data-action="resenha-aba" data-aba="trampos" class="'+(ab==='trampos'?'active':'')+'">💼 Trampos</button>'+
+      '<button data-action="resenha-aba" data-aba="evento" class="'+(ab==='evento'?'active':'')+'">🎉 Evento</button>'+
     '</div>';
   if(ab==='rifas'){ setContent(abasResenha + renderRifasHtml(), 'resenha-rifas'); return; }
   if(ab==='redes'){ setContent(abasResenha + renderRedesHtml(), 'resenha-redes'); return; }
   if(ab==='trampos'){ setContent(abasResenha + renderTramposHtml(), 'resenha-trampos'); return; }
+  if(ab==='evento'){ setContent(abasResenha + renderEventoAbaHtml(), 'resenha-evento'); return; }
 
   let html = abasResenha + '<div class="card">'+
     '<h2 class="titulo-centralizado">Resenha com Churrasco do Próximo Domingão</h2>'+
@@ -1575,7 +1641,7 @@ async function renderAdmin(){
   if(can('conteudo')){
     try{ agenda = (await api('/api/admin/agenda', {adminAuth:true})).eventos; }catch(e){ if(on401(e)) return; }
     try{ noticia = await api('/api/admin/noticia', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
-    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista(); await refreshHomeExtras();
+    await refreshRifas(); await refreshRifasAdmin(); await refreshRodadasLista(); await refreshHomeExtras(); await refreshEvento();
     try{ aluguel = await api('/api/admin/aluguel', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
     try{ gestao = await api('/api/admin/gestao', {adminAuth:true}); }catch(e){ if(on401(e)) return; }
   }
@@ -1751,10 +1817,11 @@ async function renderAdmin(){
         '<div class="field"><label>Descrição</label><textarea id="edit-ev-desc-'+e.id+'" rows="3" style="'+taStyle+'">'+escapeHtml(e.descricao||'')+'</textarea></div>'+
         '<div class="field"><label>Gestor do Evento</label><select id="edit-ev-resp-'+e.id+'">'+respOpc(e.responsavel||'')+'</select></div>'+
         '<label class="small"><input type="checkbox" id="edit-ev-ativo-'+e.id+'" '+(e.ativo?'checked':'')+'> exibir na tela inicial</label>'+
+        eventoExtrasForm(e.id, e)+
         '<div class="btn-row"><button class="btn small" data-action="salvar-evento" data-id="'+e.id+'">Salvar</button>'+
         '<button class="btn secondary small" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
     }else{
-      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+'</span>'+
+      html += '<div class="list-row"><span>'+escapeHtml(e.nome)+' <span class="badge">'+formatDataBR(e.data)+'</span>'+(e.ativo?'':' <span class="badge">inativo</span>')+(e.responsavel?' <span class="badge">'+escapeHtml(e.responsavel)+'</span>':'')+(e.mostrarParticipantes?' <span class="badge">📋 lista</span>':'')+(e.pgtoAtivo?' <span class="badge">💳 pagamento</span>':'')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">editar</button> '+
         '<button class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">remover</button></span></div>';
     }
@@ -1764,7 +1831,46 @@ async function renderAdmin(){
     '<div class="field"><label>Data</label><input type="date" id="novo-evento-data"></div>'+
     '<div class="field"><label>Descrição</label><textarea id="novo-evento-desc" rows="3" style="'+taStyle+'"></textarea></div>'+
     '<div class="field"><label>Gestor do Evento</label><select id="novo-evento-resp">'+respOpc('')+'</select></div>'+
+    eventoExtrasForm('novo', null)+
     '<button class="btn secondary" data-action="adicionar-evento">Adicionar evento</button></div>';
+
+  // ---- card: gestão do evento de fim de ano (participantes, valor e status)
+  {
+    const l = state.eventoLista;
+    let h = '<div class="card hz hz-roxo"><h3>🎉 EVENTO DE FIM DE ANO — PARTICIPANTES</h3>'+
+      '<p class="small muted">Cadastre quem vai ao evento, o valor e o status do pagamento. A lista aparece para todos em Resenha &gt; Evento e, se você ativar na Agenda de eventos, também em "Sobre o Evento" na tela inicial.</p>';
+    if(l){
+      h += '<div class="field"><label>Valor padrão por pessoa (R$)</label><div class="evt-inline"><input id="evt-valor-padrao" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"><button class="btn secondary small" data-action="evt-valor-padrao">Salvar</button></div></div>';
+      h += '<div class="evt-novo"><div class="stack-tit">Adicionar participante</div>'+
+        '<div class="field"><label>Nome</label><input id="evt-nome" maxlength="80" list="evt-jogadores" placeholder="Digite ou escolha um jogador"><datalist id="evt-jogadores">'+state.elenco.filter(j=>j.ativo).map(j=>'<option value="'+escapeHtml(j.nomeReal||j.nome)+'"></option>').join('')+'</datalist></div>'+
+        '<div class="field"><label>Valor (R$)</label><input id="evt-valor" inputmode="decimal" value="'+inputValorBRL(l.valorPadrao)+'"></div>'+
+        '<div class="field"><label>Status</label><select id="evt-status"><option value="pendente">Pendente</option><option value="parcial">Parcial</option><option value="pago">Pago</option></select></div>'+
+        '<div class="field" id="evt-pago-campo"><label>Valor pago (só no status Parcial)</label><input id="evt-pago" inputmode="decimal" placeholder="0,00"></div>'+
+        '<div class="btn-row"><button class="btn" data-action="evt-adicionar">Adicionar</button><button class="btn secondary" data-action="evt-todos">Adicionar todos os jogadores</button></div></div>';
+      if(l.participantes.length){
+        h += '<div class="divider"></div>'+eventoTotaisHtml(l.totais);
+        l.participantes.forEach((p,i)=>{
+          if(state.eventoEditId===p.id){
+            h += '<div class="evt-edit"><div class="field"><label>Nome</label><input id="evt-e-nome-'+p.id+'" value="'+escapeHtml(p.nome)+'" maxlength="80"></div>'+
+              '<div class="field"><label>Valor (R$)</label><input id="evt-e-valor-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.valor)+'"></div>'+
+              '<div class="field"><label>Status</label><select id="evt-e-status-'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select></div>'+
+              '<div class="field"><label>Valor pago (só no status Parcial)</label><input id="evt-e-pago-'+p.id+'" inputmode="decimal" value="'+inputValorBRL(p.status==='parcial'?p.valorPago:0)+'"></div>'+
+              '<div class="btn-row"><button class="btn small" data-action="evt-salvar" data-id="'+p.id+'">Salvar</button><button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">Cancelar</button></div></div>';
+          }else{
+            h += '<div class="evt-adm-item"><div class="evt-adm-info"><span class="evt-adm-nome">'+(i+1)+'. '+escapeHtml(p.nome)+'</span>'+
+              '<span class="evt-pago">'+fmtBRLfront(p.valorPago)+(p.status!=='pago'?' <small>de '+fmtBRLfront(p.valor)+'</small>':'')+'</span></div>'+
+              '<div class="evt-adm-acoes"><select data-action="evt-status" data-id="'+p.id+'">'+['pendente','parcial','pago'].map(st=>'<option value="'+st+'" '+(p.status===st?'selected':'')+'>'+ST_EVENTO[st].rot+'</option>').join('')+'</select>'+
+              '<button class="btn secondary small" data-action="evt-editar" data-id="'+p.id+'">editar</button><button class="btn danger small" data-action="evt-remover" data-id="'+p.id+'">remover</button></div></div>';
+          }
+        });
+      }else{
+        h += '<p class="small muted" style="margin-top:8px;">Nenhum participante cadastrado ainda.</p>';
+      }
+    }else{
+      h += '<p class="small muted">Não foi possível carregar a lista.</p>';
+    }
+    html += h + '</div>';
+  }
 
   html += '<div class="card"><h3>Notícia (tela inicial)</h3>'+
     '<div class="field"><label>Descrição</label><textarea id="noticia-descricao" rows="3" style="width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg-elevated-2);color:var(--text);font-family:var(--font-body);font-size:14.5px;">'+escapeHtml(noticia.descricao)+'</textarea></div>'+
@@ -2102,6 +2208,34 @@ async function handleOrdemPadraoInicio(){
     await refreshHomeExtras(); await render(); showToast('Ordem padrão restaurada');
   }catch(e){ alert(e.message); }
 }
+async function evtApi(metodo, caminho, corpo, msg){
+  try{ await api(caminho, {method:metodo, adminAuth:true, body:corpo}); await refreshEvento(); await refreshHomeExtras(); await render(); if(msg) showToast(msg); }
+  catch(e){ alert(e.message); }
+}
+function handleEvtAdicionar(){
+  const g = id => document.getElementById(id).value;
+  return evtApi('POST', '/api/admin/evento-participantes', {nome:g('evt-nome'), valor:g('evt-valor'), status:g('evt-status'), valorPago:g('evt-pago')}, 'Participante adicionado');
+}
+function handleEvtSalvar(id){
+  const g = x => document.getElementById(x+id).value;
+  state.eventoEditId = null;
+  return evtApi('PUT', '/api/admin/evento-participantes/'+id, {nome:g('evt-e-nome-'), valor:g('evt-e-valor-'), status:g('evt-e-status-'), valorPago:g('evt-e-pago-')}, 'Salvo!');
+}
+async function handleEvtStatus(id, status){
+  // "Parcial" precisa do valor pago: abre a edição depois de trocar
+  try{
+    await api('/api/admin/evento-participantes/'+id, {method:'PUT', adminAuth:true, body:{status}});
+    if(status==='parcial') state.eventoEditId = id;
+    await refreshEvento(); await refreshHomeExtras(); await render();
+  }catch(e){ alert(e.message); await render(); }
+}
+async function handleEvtRemover(id){ if(confirm('Remover este participante da lista?')) return evtApi('DELETE', '/api/admin/evento-participantes/'+id, undefined, 'Removido'); }
+function handleEvtValorPadrao(){ return evtApi('PUT', '/api/admin/evento-valor-padrao', {valor: document.getElementById('evt-valor-padrao').value}, 'Valor padrão salvo'); }
+async function handleEvtTodos(){
+  if(!confirm('Adicionar todos os jogadores ativos que ainda não estão na lista (valor padrão, status Pendente)?')) return;
+  try{ const r = await api('/api/admin/evento-participantes-todos', {method:'POST', adminAuth:true}); await refreshEvento(); await render(); showToast(r.adicionados+' jogador(es) adicionados'); }
+  catch(e){ alert(e.message); }
+}
 async function handleSalvarRifa(limpar, rodadaId){
   const rid = rodadaId || state.rifaRodadaId;
   if(!rid){ alert('Nenhuma rodada selecionada.'); return; }
@@ -2334,13 +2468,26 @@ async function handleSalvarAdminPin(){
   try{ await api('/api/admin/admin-pin', {method:'PUT', adminAuth:true, body:{pin}}); alert('PIN administrativo atualizado.'); await render(); }
   catch(e){ alert(e.message); }
 }
+// campos extras do evento: lista de participantes ("Sobre o Evento") e dados para pagamento
+function eventoExtrasForm(key, e){
+  e = e || {};
+  return '<label class="small"><input type="checkbox" id="ev-lista-'+key+'" '+(e.mostrarParticipantes?'checked':'')+'> Exibir a lista de participantes (valores pagos e status) — adiciona a opção "Sobre o Evento"</label>'+
+    '<label class="small"><input type="checkbox" id="ev-pg-ativo-'+key+'" '+(e.pgtoAtivo?'checked':'')+'> Exibir dados para pagamento do evento</label>'+
+    '<div class="field"><label>Responsável pelo pagamento</label><input id="ev-pg-nome-'+key+'" value="'+escapeHtml(e.pgtoNome||'')+'"></div>'+
+    '<div class="field"><label>Chave PIX</label><input id="ev-pg-pix-'+key+'" value="'+escapeHtml(e.pgtoPix||'')+'"></div>'+
+    '<div class="field"><label>Valor do evento</label><input id="ev-pg-valor-'+key+'" value="'+escapeHtml(e.pgtoValor||'')+'" placeholder="Ex.: R$ 250,00"></div>';
+}
+function lerEventoExtras(key){
+  const g = id => document.getElementById(id+key);
+  return {mostrarParticipantes:g('ev-lista-').checked, pgtoAtivo:g('ev-pg-ativo-').checked, pgtoNome:g('ev-pg-nome-').value, pgtoPix:g('ev-pg-pix-').value, pgtoValor:g('ev-pg-valor-').value};
+}
 async function handleAdicionarEvento(){
   const nome = document.getElementById('novo-evento-nome').value.trim();
   const data = document.getElementById('novo-evento-data').value;
   const descricao = document.getElementById('novo-evento-desc').value;
   const responsavel = document.getElementById('novo-evento-resp').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
-  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data,descricao,responsavel}}); await refreshHomeExtras(); await render(); }
+  try{ await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:{nome,data,descricao,responsavel, ...lerEventoExtras('novo')}}); await refreshHomeExtras(); await render(); }
   catch(e){ alert(e.message); }
 }
 async function handleSalvarEvento(id){
@@ -2351,7 +2498,7 @@ async function handleSalvarEvento(id){
   const ativo = document.getElementById('edit-ev-ativo-'+id).checked;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
   try{
-    await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{nome,data,descricao,responsavel,ativo}});
+    await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{nome,data,descricao,responsavel,ativo, ...lerEventoExtras(id)}});
     state.editingEventoId = null;
     await refreshHomeExtras();
     await render();
@@ -2421,6 +2568,7 @@ function startPolling(){
       if(state.tab==='inicio'){ await refreshRanking(); await refreshHomeExtras(); }
       if(state.tab==='resenha' && state.resenhaAba==='rifas') await refreshRifas();
       if(state.tab==='resenha' && state.resenhaAba==='trampos' && !state.trampoFormAberto) await refreshTrampos();
+      if(state.tab==='resenha' && state.resenhaAba==='evento') await refreshEvento();
       if((state.tab==='sorteio' || (state.tab==='votacao' && (state.votacaoAba==='votos' || state.votacaoAba==='historico'))) && state.rodadaVisualizadaId && (!state.rodadaAtual || state.rodadaVisualizadaId!==state.rodadaAtual.id)){
         await carregarRodadaVisualizada(state.rodadaVisualizadaId);
       }
@@ -2488,7 +2636,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='toggle-vinho') return handleToggleVinho(el.dataset.atual);
   if(action==='abrir-admin'){ state.tab='admin'; state.editingJogadorId=null; state.editingEventoId=null; return render(); }
   if(action==='copiar-pix') return handleCopiarPix(el.dataset.pix);
-  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; if(state.resenhaAba==='rifas') await refreshRifas(); if(state.resenhaAba==='trampos') await refreshTrampos(); return render(); }
+  if(action==='resenha-aba'){ state.resenhaAba = el.dataset.aba; state._lastContentKey = null; if(state.resenhaAba==='rifas') await refreshRifas(); if(state.resenhaAba==='trampos') await refreshTrampos(); if(state.resenhaAba==='evento'){ await refreshEvento(); await refreshHomeExtras(); } return render(); }
   if(action==='trampo-abrir'){ state.trampoFormAberto = true; state._lastContentKey = null; return render(); }
   if(action==='trampo-cancelar'){ state.trampoFormAberto = false; state._lastContentKey = null; return render(); }
   if(action==='trampo-publicar') return handlePublicarTrampo();
@@ -2511,6 +2659,12 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='home-ordem-subir') return handleMoverCardInicio(el.dataset.k, -1);
   if(action==='home-ordem-descer') return handleMoverCardInicio(el.dataset.k, 1);
   if(action==='home-ordem-padrao') return handleOrdemPadraoInicio();
+  if(action==='evt-adicionar') return handleEvtAdicionar();
+  if(action==='evt-salvar') return handleEvtSalvar(el.dataset.id);
+  if(action==='evt-editar'){ state.eventoEditId = (state.eventoEditId===el.dataset.id) ? null : el.dataset.id; return render(); }
+  if(action==='evt-remover') return handleEvtRemover(el.dataset.id);
+  if(action==='evt-valor-padrao') return handleEvtValorPadrao();
+  if(action==='evt-todos') return handleEvtTodos();
   if(action==='salvar-rifa') return handleSalvarRifa(false);
   if(action==='rifa-editar'){
     state.rifaRodadaId = el.dataset.id; await render();
@@ -2570,6 +2724,9 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
     state.rifaRodadaId = e.target.value;
     render();
   }
+  if(e.target.dataset.action==='evt-status'){
+    await handleEvtStatus(e.target.dataset.id, e.target.value);
+  }
   if(e.target.dataset.action==='salvar-mensalidade'){
     await handleSalvarMensalidade(e.target.dataset.id, e.target.value);
   }
@@ -2579,6 +2736,7 @@ document.getElementById('shell').addEventListener('change', async (e)=>{
    e recolhe sozinho se o usuário não fechar antes disso. */
 document.getElementById('shell').addEventListener('toggle', (e)=>{
   const d = e.target;
+  if(d && d.classList && d.classList.contains('evento-sobre')){ state.eventoSobreAberto = !!d.open; return; }
   if(!d || !d.classList || !d.classList.contains('evento-item')) return;
   const id = d.dataset.eventoId || '';
   if(d._autoCloseTimer){ clearTimeout(d._autoCloseTimer); d._autoCloseTimer = null; }

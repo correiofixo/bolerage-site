@@ -913,3 +913,34 @@ select{background:var(--bg-elevated-2);color:var(--text);border:1px solid var(--
 .rel-linha.rel-total .rel-rot{font-size:clamp(11px,3.4vw,15px);}
 .rel-linha.rel-total .rel-val{font-size:clamp(14px,4.3vw,20px);}
 .rel-linha.rel-sub .rel-rot{font-size:clamp(11px,3.5vw,14.5px);}
+
+/* v5.1 — evento de fim de ano: participantes, status e "Sobre o Evento" */
+.tabtoggle-grid button:last-child:nth-child(odd){grid-column:1 / -1;}
+.st-pill{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid var(--line);white-space:nowrap;}
+.st-pago{color:#9BE7AC;background:rgba(63,174,88,.18);border-color:var(--green);}
+.st-parcial{color:#FFD7A8;background:rgba(240,144,46,.18);border-color:#F0902E;}
+.st-pendente{color:#FFB3AD;background:rgba(226,87,76,.18);border-color:var(--red);}
+.evt-row{flex-wrap:wrap;row-gap:4px;}
+.evt-row .fin-nome{flex:1 1 120px;}
+.evt-pago{flex:0 1 auto;font-weight:700;white-space:nowrap;color:var(--gold-bright);}
+.evt-pago small{font-weight:500;color:var(--text-muted);}
+.evt-pgto{margin:6px 0 4px;padding:8px 10px;border-radius:10px;border:1px dashed rgba(63,174,88,.6);background:rgba(63,174,88,.08);}
+.evt-pgto-tit{font-family:var(--font-display);letter-spacing:.5px;color:#7BD991;margin-bottom:2px;}
+details.evento-sobre{margin-top:10px;border:1px solid #A77BFF;border-radius:12px;background:linear-gradient(180deg,rgba(167,123,255,.16),rgba(167,123,255,.03));}
+details.evento-sobre > summary{cursor:pointer;padding:9px 12px;font-weight:700;color:#C7A9FF;list-style:none;}
+details.evento-sobre > summary::-webkit-details-marker{display:none;}
+.evt-sobre-corpo{padding:2px 10px 10px;}
+.evt-inline{display:flex;gap:8px;align-items:center;}
+.evt-inline input{flex:1;min-width:0;}
+.evt-novo,.evt-edit{padding:10px;margin:8px 0;border-radius:12px;border:1px dashed rgba(167,123,255,.6);background:rgba(167,123,255,.06);}
+.evt-adm-item{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line);}
+.evt-adm-info{flex:1 1 150px;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.evt-adm-nome{font-weight:700;overflow-wrap:anywhere;}
+.evt-adm-acoes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+/* evento: linha em grade (nome em cima, valor pago embaixo, status à direita) e KPIs sem quebra */
+.evt-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:10px;row-gap:1px;align-items:center;}
+.evt-row .fin-pos{grid-column:1;grid-row:1 / span 2;align-self:center;}
+.evt-row .fin-nome{grid-column:2;grid-row:1;flex:none;}
+.evt-row .evt-pago{grid-column:2;grid-row:2;font-size:13px;}
+.evt-row .st-pill{grid-column:3;grid-row:1 / span 2;align-self:center;}
+.kpi-sm .kpi-num{font-size:clamp(17px,5.8vw,25px);white-space:nowrap;}

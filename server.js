@@ -7,7 +7,7 @@
 // Contador de release: soma 1 a cada deploy. A virada de "major" é automática —
 // no máximo 9 releases por major (0 a 9), minor com um dígito só: 2.0 -> 2.1 ... 2.9 -> 3.0 -> 3.1 ...
 // (reiniciado nesta versão: build 0 = 2.0, ciclo de 10 a partir daqui.)
-const APP_BUILD = 30;
+const APP_BUILD = 31;
 function computeVersion(b){
   const minor = b % 10;
   const major = 2 + Math.floor(b / 10);
@@ -176,6 +176,15 @@ try{ db.exec("ALTER TABLE config ADD COLUMN custo_higienizacao REAL NOT NULL DEF
 try{ db.exec("ALTER TABLE config ADD COLUMN custo_carvao REAL NOT NULL DEFAULT 0"); }catch(e){}
 // RIFAS: ganhador e prêmio da rifa de cada rodada (cadastrado pelo admin, exibido na aba Rifas da Resenha)
 try{ db.exec("CREATE TABLE IF NOT EXISTS rifas (rodada_id TEXT PRIMARY KEY, ganhador TEXT NOT NULL DEFAULT '', premio TEXT NOT NULL DEFAULT '', atualizado_em TEXT)"); }catch(e){}
+// EVENTO DE FIM DE ANO: participantes com valor e status de pagamento (Pago / Parcial / Pendente)
+try{ db.exec("CREATE TABLE IF NOT EXISTS evento_participantes (id TEXT PRIMARY KEY, nome TEXT NOT NULL, valor REAL NOT NULL DEFAULT 250, valor_pago REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pendente', criado_em TEXT NOT NULL)"); }catch(e){}
+try{ db.exec("ALTER TABLE config ADD COLUMN evento_valor_padrao REAL NOT NULL DEFAULT 250"); }catch(e){}
+// opções por evento da agenda: exibir a lista de participantes ("Sobre o Evento") e dados para pagamento
+try{ db.exec("ALTER TABLE eventos ADD COLUMN mostrar_participantes INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_ativo INTEGER NOT NULL DEFAULT 0"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_nome TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_pix TEXT NOT NULL DEFAULT ''"); }catch(e){}
+try{ db.exec("ALTER TABLE eventos ADD COLUMN pgto_valor TEXT NOT NULL DEFAULT ''"); }catch(e){}
 // CONTROLE DE ACESSOS: cada entrada no app (login/abertura) e cada troca de tela de cada jogador
 try{ db.exec("CREATE TABLE IF NOT EXISTS acessos (id TEXT PRIMARY KEY, jogador_id TEXT NOT NULL, ts TEXT NOT NULL, tipo TEXT NOT NULL, tela TEXT)"); }catch(e){}
 try{ db.exec("CREATE INDEX IF NOT EXISTS idx_acessos_jog_ts ON acessos (jogador_id, ts)"); }catch(e){}
@@ -1925,6 +1934,91 @@ app.post('/api/admin/reset', requireSuper, (req,res)=>{
   res.json({ok:true});
 });
 
+/* ---- EVENTO DE FIM DE ANO (participantes) ---- */
+const STATUS_EVENTO = ['pago','parcial','pendente'];
+function montarEventoLista(){
+  const cfg = getConfig() || {};
+  const linhas = db.prepare('SELECT * FROM evento_participantes ORDER BY nome COLLATE NOCASE ASC').all();
+  const participantes = linhas.map(p=>({
+    id:p.id, nome:p.nome, valor:p.valor, status:p.status,
+    valorPago: p.status==='pago' ? p.valor : (p.status==='pendente' ? 0 : Math.min(p.valor_pago, p.valor)),
+  }));
+  const previsto = participantes.reduce((t,p)=>t+p.valor,0);
+  const arrecadado = participantes.reduce((t,p)=>t+p.valorPago,0);
+  const ev = db.prepare('SELECT nome, data FROM eventos WHERE mostrar_participantes=1 AND ativo=1 LIMIT 1').get();
+  return {
+    valorPadrao: Number(cfg.evento_valor_padrao)||250,
+    eventoNome: ev ? ev.nome : '', eventoData: ev ? ev.data : '',
+    participantes,
+    totais: {qtd:participantes.length, previsto, arrecadado, aReceber: Math.max(0, previsto-arrecadado),
+      pctPago: previsto>0 ? Math.round(arrecadado/previsto*1000)/10 : 0,
+      pagos: participantes.filter(p=>p.status==='pago').length, parciais: participantes.filter(p=>p.status==='parcial').length, pendentes: participantes.filter(p=>p.status==='pendente').length},
+  };
+}
+function lerParticipante(b, atual){
+  const nome = String(b.nome==null ? (atual?atual.nome:'') : b.nome).trim().slice(0,80);
+  if(nome.length<2) return {erro:'Informe o nome do participante.'};
+  let valor = atual ? atual.valor : (Number(getConfig().evento_valor_padrao)||250);
+  if(b.valor!==undefined && String(b.valor).trim()!==''){
+    const v = parseValorBR(b.valor);
+    if(v==null || v<0 || v>100000) return {erro:'Valor inválido.'};
+    valor = Math.round(v*100)/100;
+  }
+  const status = b.status===undefined ? (atual?atual.status:'pendente') : String(b.status);
+  if(!STATUS_EVENTO.includes(status)) return {erro:'Status inválido (use Pago, Parcial ou Pendente).'};
+  let pago = atual ? atual.valor_pago : 0;
+  if(b.valorPago!==undefined && String(b.valorPago).trim()!==''){
+    const v = parseValorBR(b.valorPago);
+    if(v==null || v<0 || v>100000) return {erro:'Valor pago inválido.'};
+    pago = Math.round(v*100)/100;
+  }
+  if(status==='pago') pago = valor;
+  else if(status==='pendente') pago = 0;
+  else if(pago>=valor) return {erro:'No status Parcial o valor pago precisa ser menor que o valor total.'};
+  return {nome, valor, status, pago};
+}
+// lista visível para qualquer jogador logado (aba Evento da Resenha)
+app.get('/api/evento', requireAuth, (req,res)=>{ res.json(montarEventoLista()); });
+app.post('/api/admin/evento-participantes', requirePerm('conteudo'), (req,res)=>{
+  const r = lerParticipante(req.body||{}, null);
+  if(r.erro) return res.status(400).json({erro:r.erro});
+  if(db.prepare('SELECT 1 FROM evento_participantes WHERE lower(nome)=lower(?)').get(r.nome)) return res.status(409).json({erro:'Esse participante já está na lista.'});
+  db.prepare('INSERT INTO evento_participantes (id,nome,valor,valor_pago,status,criado_em) VALUES (?,?,?,?,?,?)').run(idGen('ep'), r.nome, r.valor, r.pago, r.status, nowISO());
+  res.json({ok:true});
+});
+app.put('/api/admin/evento-participantes/:id', requirePerm('conteudo'), (req,res)=>{
+  const p = db.prepare('SELECT * FROM evento_participantes WHERE id=?').get(req.params.id);
+  if(!p) return res.status(404).json({erro:'Participante não encontrado.'});
+  const r = lerParticipante(req.body||{}, p);
+  if(r.erro) return res.status(400).json({erro:r.erro});
+  const dup = db.prepare('SELECT id FROM evento_participantes WHERE lower(nome)=lower(?) AND id<>?').get(r.nome, p.id);
+  if(dup) return res.status(409).json({erro:'Já existe outro participante com esse nome.'});
+  db.prepare('UPDATE evento_participantes SET nome=?, valor=?, valor_pago=?, status=? WHERE id=?').run(r.nome, r.valor, r.pago, r.status, p.id);
+  res.json({ok:true});
+});
+app.delete('/api/admin/evento-participantes/:id', requirePerm('conteudo'), (req,res)=>{
+  db.prepare('DELETE FROM evento_participantes WHERE id=?').run(req.params.id);
+  res.json({ok:true});
+});
+// adiciona todos os jogadores ativos que ainda não estão na lista (valor padrão, status Pendente)
+app.post('/api/admin/evento-participantes-todos', requirePerm('conteudo'), (req,res)=>{
+  const valor = Number(getConfig().evento_valor_padrao)||250;
+  const ja = new Set(db.prepare('SELECT lower(nome) n FROM evento_participantes').all().map(r=>r.n));
+  let n = 0;
+  getJogadores().filter(j=>j.ativo).forEach(j=>{
+    if(ja.has(j.nome.toLowerCase())) return;
+    db.prepare('INSERT INTO evento_participantes (id,nome,valor,valor_pago,status,criado_em) VALUES (?,?,?,?,?,?)').run(idGen('ep'), j.nome, valor, 0, 'pendente', nowISO()); n++;
+  });
+  logEvento('Evento de fim de ano: '+n+' jogador(es) adicionados à lista de participantes.');
+  res.json({ok:true, adicionados:n});
+});
+app.put('/api/admin/evento-valor-padrao', requirePerm('conteudo'), (req,res)=>{
+  const v = parseValorBR((req.body||{}).valor);
+  if(v==null || v<0 || v>100000) return res.status(400).json({erro:'Valor inválido.'});
+  db.prepare('UPDATE config SET evento_valor_padrao=? WHERE id=1').run(Math.round(v*100)/100);
+  res.json({ok:true});
+});
+
 /* ---- rifas ---- */
 // últimas rifas com ganhador cadastrado (mais recente primeiro) — tela Resenha > Rifas
 app.get('/api/rifas', (req,res)=>{
@@ -2086,8 +2180,11 @@ app.put('/api/admin/home-ordem', requirePerm('conteudo'), (req,res)=>{
 /* ---- extras da tela inicial: eventos, notícia, aluguel da quadra ---- */
 app.get('/api/home-extras', (req,res)=>{
   const telDoNome = nm => { if(!nm) return ''; const j = db.prepare('SELECT telefone FROM jogadores WHERE nome=? AND ativo=1').get(nm); return (j && j.telefone) ? j.telefone : ''; };
-  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
-    .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel)}));
+  const eventos = db.prepare('SELECT id,nome,data,descricao,responsavel,mostrar_participantes,pgto_ativo,pgto_nome,pgto_pix,pgto_valor FROM eventos WHERE ativo=1 ORDER BY data ASC').all()
+    .map(e=>({id:e.id, nome:e.nome, data:e.data, descricao:e.descricao||'', responsavel:e.responsavel||'', responsavelTel: telDoNome(e.responsavel),
+      mostrarParticipantes:!!e.mostrar_participantes,
+      pagamento: e.pgto_ativo ? {nome:e.pgto_nome||'', chavePix:e.pgto_pix||'', valor:e.pgto_valor||''} : null}));
+  const algumComLista = eventos.some(e=>e.mostrarParticipantes);
   const noticiaRow = db.prepare('SELECT descricao,ativo FROM noticia WHERE id=1').get();
   const aluguelRow = db.prepare('SELECT nome,chave_pix,valor_mensalidade,ativo FROM aluguel_quadra WHERE id=1').get();
   const gestaoRow = db.prepare('SELECT presidente,vice_presidente,ativo FROM gestao WHERE id=1').get();
@@ -2097,11 +2194,25 @@ app.get('/api/home-extras', (req,res)=>{
     aluguel: (aluguelRow && aluguelRow.ativo) ? {nome:aluguelRow.nome, chavePix:aluguelRow.chave_pix, valorMensalidade:aluguelRow.valor_mensalidade} : null,
     gestao: (gestaoRow && gestaoRow.ativo) ? {presidente:gestaoRow.presidente, vicePresidente:gestaoRow.vice_presidente, presidenteTel:telDoNome(gestaoRow.presidente), viceTel:telDoNome(gestaoRow.vice_presidente)} : null,
     ordem: normalizarOrdemHome((getConfig()||{}).home_ordem),
+    eventoLista: algumComLista ? montarEventoLista() : null,
   });
 });
 
+// salva as opções extras de um evento (lista de participantes + dados para pagamento), se vierem no corpo
+function aplicarExtrasEvento(id, b){
+  if(b.mostrarParticipantes!==undefined){
+    const v = b.mostrarParticipantes ? 1 : 0;
+    if(v) db.prepare('UPDATE eventos SET mostrar_participantes=0').run();     // só um evento exibe a lista
+    db.prepare('UPDATE eventos SET mostrar_participantes=? WHERE id=?').run(v, id);
+  }
+  if(b.pgtoAtivo!==undefined) db.prepare('UPDATE eventos SET pgto_ativo=? WHERE id=?').run(b.pgtoAtivo?1:0, id);
+  if(b.pgtoNome!==undefined)  db.prepare('UPDATE eventos SET pgto_nome=? WHERE id=?').run(String(b.pgtoNome).trim().slice(0,80), id);
+  if(b.pgtoPix!==undefined)   db.prepare('UPDATE eventos SET pgto_pix=? WHERE id=?').run(String(b.pgtoPix).trim().slice(0,120), id);
+  if(b.pgtoValor!==undefined) db.prepare('UPDATE eventos SET pgto_valor=? WHERE id=?').run(String(b.pgtoValor).trim().slice(0,40), id);
+}
 app.get('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
-  res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||''}))});
+  res.json({eventos: db.prepare('SELECT * FROM eventos ORDER BY data ASC').all().map(e=>({id:e.id,nome:e.nome,data:e.data,ativo:!!e.ativo,descricao:e.descricao||'',responsavel:e.responsavel||'',
+    mostrarParticipantes:!!e.mostrar_participantes, pgtoAtivo:!!e.pgto_ativo, pgtoNome:e.pgto_nome||'', pgtoPix:e.pgto_pix||'', pgtoValor:e.pgto_valor||''}))});
 });
 app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   const nome = String(req.body.nome||'').trim();
@@ -2111,6 +2222,7 @@ app.post('/api/admin/agenda', requirePerm('conteudo'), (req,res)=>{
   const responsavel = String(req.body.responsavel||'');
   const id = idGen('ev');
   db.prepare('INSERT INTO eventos (id,nome,data,ativo,descricao,responsavel) VALUES (?,?,?,1,?,?)').run(id, nome, data, descricao, responsavel);
+  aplicarExtrasEvento(id, req.body);
   res.json({ok:true, id});
 });
 app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
@@ -2122,6 +2234,7 @@ app.put('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
   const descricao = req.body.descricao!=null ? String(req.body.descricao) : (ev.descricao||'');
   const responsavel = req.body.responsavel!=null ? String(req.body.responsavel) : (ev.responsavel||'');
   db.prepare('UPDATE eventos SET nome=?,data=?,ativo=?,descricao=?,responsavel=? WHERE id=?').run(nome,data,ativo,descricao,responsavel,ev.id);
+  aplicarExtrasEvento(ev.id, req.body);
   res.json({ok:true});
 });
 app.delete('/api/admin/agenda/:id', requirePerm('conteudo'), (req,res)=>{
