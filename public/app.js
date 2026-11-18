@@ -1050,7 +1050,7 @@ async function handlePublicarTrampo(){
   }catch(e){ alert(e.message); }
 }
 async function handleRemoverTrampo(id){
-  if(!confirm('Remover esta vaga?')) return;
+  if(!confirm('Remover esta vaga?\n\nEssa ação não pode ser desfeita.')) return;
   try{ await api('/api/trampos/'+id, {method:'DELETE', auth:true}); await refreshTrampos(); render(); }
   catch(e){ alert(e.message); }
 }
@@ -1884,7 +1884,7 @@ async function renderAdmin(){
         (j.valorMensalidade!==''?' <span class="badge">'+fmtBRLfront(Number(j.valorMensalidade))+'</span>':'')+
         (j.ativo?'':' <span class="badge">inativo</span>')+'</span>'+
         '<span><button class="btn secondary small" data-action="editar-jogador" data-id="'+j.id+'">editar</button> '+
-        (j.superAdmin?'':'<button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'">remover</button>')+'</span></div>';
+        (j.superAdmin?'':'<button class="btn danger small" data-action="remover-jogador" data-id="'+j.id+'" data-nome="'+escapeHtml(j.nome)+'">remover</button>')+'</span></div>';
     }
   });
   html += '<div class="divider"></div><h3>Adicionar jogador</h3>'+
@@ -2534,8 +2534,8 @@ async function handleSalvarMensalidade(id, valor){
   try{ await api('/api/admin/jogadores/'+id+'/mensalidade', {method:'PUT', adminAuth:true, body:{mensalidade:valor}}); await render(); }
   catch(e){ alert(e.message); }
 }
-async function handleRemoverJogador(id){
-  if(!confirm('Remover este jogador do elenco?')) return;
+async function handleRemoverJogador(id, nome){
+  if(!confirm('Remover '+(nome?'"'+nome+'"':'este jogador')+' do elenco?\n\nEssa ação não pode ser desfeita.')) return;
   try{ await api('/api/admin/jogadores/'+id, {method:'DELETE', adminAuth:true}); await refreshElenco(); await render(); }
   catch(e){ alert(e.message); }
 }
@@ -2715,7 +2715,7 @@ function renderAgendaAdminHtml(agenda, respOpc){
           (e.mostrarParticipantes?'<button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">👥 Participantes'+nPart+'</button>':'')+
           '<button type="button" class="btn secondary small'+(dreAb?' ativo':'')+'" data-action="evento-dre-toggle" data-id="'+e.id+'">📊 DRE '+(dreAb?'▲':'▼')+'</button></div>'+
         '<div class="evt-cad-acoes"><button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">✏️ Editar</button>'+
-          '<button type="button" class="btn danger small" data-action="remover-evento" data-id="'+e.id+'">🗑️ Remover</button></div>'+
+          '<button type="button" class="btn danger small" data-action="remover-evento" data-id="'+e.id+'" data-nome="'+escapeHtml(e.nome)+'">🗑️ Remover</button></div>'+
         (dreAb && state.eventoDre ? '<div class="evt-dre-box">'+dreEventoPainelHtml(state.eventoDre)+'</div>' : '')+
       '</div>';
     }
@@ -2752,8 +2752,8 @@ async function handleToggleEventoAtivo(id, ativoAtual){
   try{ await api('/api/admin/agenda/'+id, {method:'PUT', adminAuth:true, body:{ativo: ativoAtual!=='1'}}); await refreshHomeExtras(); await render(); }
   catch(e){ alert(e.message); }
 }
-async function handleRemoverEvento(id){
-  if(!confirm('Remover este evento?')) return;
+async function handleRemoverEvento(id, nome){
+  if(!confirm('Remover o evento "'+(nome||'')+'"?\n\nAs despesas cadastradas nele também serão apagadas. Não dá para desfazer.')) return;
   try{ await api('/api/admin/agenda/'+id, {method:'DELETE', adminAuth:true}); await refreshHomeExtras(); await render(); }
   catch(e){ alert(e.message); }
 }
@@ -2941,13 +2941,21 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='editar-jogador'){ state.editingJogadorId = el.dataset.id; return render(); }
   if(action==='cancelar-edicao'){ state.editingJogadorId = null; return render(); }
   if(action==='salvar-jogador') return handleSalvarJogador(el.dataset.id);
-  if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id);
+  if(action==='remover-jogador') return handleRemoverJogador(el.dataset.id, el.dataset.nome);
   if(action==='salvar-admin-pin') return handleSalvarAdminPin();
   if(action==='pd-add') return pdAdicionar();
   if(action==='pd-todos') return pdTodos();
-  if(action==='pd-del'){ state.partDraft.splice(Number(el.dataset.i), 1); state.partDirty = true; return pdRerender(); }
+  if(action==='pd-del'){
+    const p = state.partDraft[Number(el.dataset.i)];
+    if(!p || !confirm('Remover "'+p.nome+'" da lista de participantes?\n\nA alteração só é gravada quando você tocar em "Criar evento" ou "Salvar alterações".')) return;
+    state.partDraft.splice(Number(el.dataset.i), 1); state.partDirty = true; return pdRerender();
+  }
   if(action==='dd-add') return ddAdicionar();
-  if(action==='dd-del'){ state.despDraft.splice(Number(el.dataset.i), 1); state.despDirty = true; return ddRerender(); }
+  if(action==='dd-del'){
+    const x = state.despDraft[Number(el.dataset.i)];
+    if(!x || !confirm('Remover a despesa "'+(x.despesa||'sem nome')+'"'+(x.valor?' ('+x.valor+')':'')+'?\n\nA alteração só é gravada quando você tocar em "Criar evento" ou "Salvar alterações".')) return;
+    state.despDraft.splice(Number(el.dataset.i), 1); state.despDirty = true; return ddRerender();
+  }
   if(action==='evento-dre-toggle') return handleEventoDreToggle(el.dataset.id);
   if(action==='baixar-evento-dre') return handleBaixarEventoDre(el.dataset.id, el.dataset.fmt);
   if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
@@ -2955,7 +2963,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
   if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
   if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
-  if(action==='remover-evento') return handleRemoverEvento(el.dataset.id);
+  if(action==='remover-evento') return handleRemoverEvento(el.dataset.id, el.dataset.nome);
   if(action==='salvar-noticia') return handleSalvarNoticia();
   if(action==='salvar-aluguel') return handleSalvarAluguel();
   if(action==='salvar-gestao') return handleSalvarGestao();
