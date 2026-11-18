@@ -161,6 +161,7 @@ const state = {
   eventoEditId: null,
   eventoPartAberto: null,
   despDraft: null, despDirty: false,
+  recDraft: null, recDirty: false,
   eventoDre: null, eventoDreAberto: null,
   eventoSobreAberto: false,
   eventoLocalAberto: false,
@@ -512,7 +513,7 @@ async function handleLoginDigit(d){
 
 async function handleLogout(){
   try{ await api('/api/logout', {method:'POST', auth:true}); }catch(e){}
-  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null; state.votosJogador=''; state.votosRecebidos=null; state.histJogador=''; state.histModo='rodada'; state.votosModo='rodada';
+  state.token=null; state.currentPlayer=null; state.tab='inicio'; state.mostrouDicaPin=false; state.eventoDre=null; state.eventoDreAberto=null; state.despDraft=null; state.despDirty=false; state.recDraft=null; state.recDirty=false; state.partDraft=null; state.partDirty=false; state.editingEventoId=null; state.votosJogador=''; state.votosRecebidos=null; state.histJogador=''; state.histModo='rodada'; state.votosModo='rodada';
   localStorage.removeItem('bolerage_token'); localStorage.removeItem('bolerage_player');
   // encerra também a sessão de admin: ela não pode sobreviver à troca de jogador neste navegador
   state.adminToken=null; state.isAdmin=false;
@@ -984,6 +985,12 @@ function dreEventoPainelHtml(d){
   const r = d.receitas, ps = r.porStatus, desp = d.despesas;
   const saldoCor = d.resultadoPrevisto < 0 ? 'vermelho' : 'verde';
   const corTxt = d.resultadoPrevisto < 0 ? 'var(--red)' : 'var(--green)';
+  const outras = r.outras || {itens:[], total:0};
+  const itensRec = outras.itens.length ? outras.itens.map(x=>
+    '<div class="dre-desp"><div class="dre-desp-l1"><span>'+escapeHtml(x.origem)+'</span><strong>'+fmtBRLfront(x.valor)+'</strong></div>'+
+    ((x.doador||x.data) ? '<div class="dre-desp-l2">'+(x.doador?'🙋 '+escapeHtml(x.doador):'')+(x.doador&&x.data?' • ':'')+(x.data?'📅 '+formatDataBR(x.data):'')+'</div>' : '')+'</div>').join('')
+    : '<p class="small muted" style="margin:6px 0;">Nenhuma outra receita cadastrada.</p>';
+  const totalRec = (r.total!=null) ? r.total : r.previsto;
   const itens = desp.itens.length ? desp.itens.map(x=>
     '<div class="dre-desp"><div class="dre-desp-l1"><span>'+escapeHtml(x.despesa)+'</span><strong>'+fmtBRLfront(x.valor)+'</strong></div>'+
     ((x.fornecedor||x.data) ? '<div class="dre-desp-l2">'+(x.fornecedor?'🏷️ '+escapeHtml(x.fornecedor):'')+(x.fornecedor&&x.data?' • ':'')+(x.data?'📅 '+formatDataBR(x.data):'')+'</div>' : '')+'</div>').join('')
@@ -991,20 +998,29 @@ function dreEventoPainelHtml(d){
   return '<div class="evt-dre"><div class="stack-tit">DRE — '+escapeHtml(d.evento.nome)+'</div>'+
     '<div class="btn-row evt-dre-exp"><button type="button" class="btn secondary" data-action="baixar-evento-dre" data-id="'+d.evento.id+'" data-fmt="pdf">📄 Exportar PDF</button>'+
     '<button type="button" class="btn secondary" data-action="baixar-evento-dre" data-id="'+d.evento.id+'" data-fmt="xlsx">📊 Exportar Excel</button></div>'+
-    finZona('verde', '💰 RECEITAS', 'Participantes do evento',
+    finZona('verde', '💰 RECEITAS', 'Participantes + outras receitas',
       relLinhaHtml('Pago Total <span class="rel-obs">(recebido)</span>', fmtBRLfront(ps.pago.recebido), 'rel-item')+
       relLinhaHtml('Pago Parcial <span class="rel-obs">(recebido)</span>', fmtBRLfront(ps.parcial.recebido), 'rel-item')+
       relLinhaHtml('A receber <span class="rel-obs">(parcial + pendentes)</span>', fmtBRLfront(r.aReceber), 'rel-item')+
-      relLinhaHtml('Total de receitas', fmtBRLfront(r.previsto), 'rel-sub'))+
+      relLinhaHtml('Participantes <span class="rel-obs">(previsto)</span>', fmtBRLfront(r.previsto), 'rel-sub')+
+      '<div class="stack-tit" style="margin-top:8px;">Outras receitas</div>'+itensRec+
+      relLinhaHtml('Total de outras receitas', fmtBRLfront(outras.total), 'rel-sub')+
+      '<div class="rel-linha rel-total"><span class="rel-rot">TOTAL DE RECEITAS</span><strong class="rel-val">'+fmtBRLfront(totalRec)+'</strong></div>')+
     finZona('vermelho', '💸 DESPESAS', 'Despesas do evento', itens+relLinhaHtml('Total de despesas', fmtBRLfront(desp.total), 'rel-sub'))+
-    finZona('dourado', '🏦 SALDO EM CAIXA', 'Recebido − despesas', relLinhaHtml('Saldo em caixa do evento', fmtBRLfront(d.saldoCaixa), 'rel-sub'))+
-    finZona(saldoCor, '📊 SALDO PREVISTO', 'Receitas previstas − despesas',
+    finZona('dourado', '🏦 SALDO EM CAIXA', 'Recebido + outras receitas − despesas', relLinhaHtml('Saldo em caixa do evento', fmtBRLfront(d.saldoCaixa), 'rel-sub'))+
+    finZona(saldoCor, '📊 SALDO PREVISTO', 'Receitas previstas (participantes + outras) − despesas',
       '<div class="rel-linha rel-total"><span class="rel-rot">SALDO PREVISTO</span><strong class="rel-val" style="color:'+corTxt+';">'+fmtBRLfront(d.resultadoPrevisto)+'</strong></div>')+
-    finZona('azul', '🥧 VALOR POR STATUS', 'Participação de cada status na receita',
+    finZona('azul', '🥧 COMPOSIÇÃO DAS RECEITAS', 'Participação de cada status e das outras receitas',
       pizzaHtml('', [
         {label:'Pago Total', valor:ps.pago.valor, cor:'#3FAE58', txt:fmtBRLfront(ps.pago.valor)},
         {label:'Pago Parcial', valor:ps.parcial.valor, cor:'#F0902E', txt:fmtBRLfront(ps.parcial.valor)},
         {label:'Pendente', valor:ps.pendente.valor, cor:'#E2574C', txt:fmtBRLfront(ps.pendente.valor)},
+        {label:'Outras receitas', valor:outras.total, cor:'#4EA1FF', txt:fmtBRLfront(outras.total)},
+      ].filter(x=>x.valor>0)))+
+    finZona('roxo', '⚖️ RECEITAS x DESPESAS', 'Receitas (participantes + outras) contra as despesas',
+      pizzaHtml('', [
+        {label:'Receitas', valor:totalRec, cor:'#3FAE58', txt:fmtBRLfront(totalRec)},
+        {label:'Despesas', valor:desp.total, cor:'#E2574C', txt:fmtBRLfront(desp.total)},
       ].filter(x=>x.valor>0)))+
   '</div>';
 }
@@ -2777,6 +2793,42 @@ function pdTodos(){
   pdRerender(); showToast(n+' jogador(es) adicionados à lista');
 }
 
+// ---- outras receitas do evento: rascunho dentro do cadastro do evento (gravado junto com o evento)
+function rdTotal(){ return (state.recDraft||[]).reduce((t,x)=>t+pdNum(x.valor), 0); }
+function receitasDraftListaHtml(){
+  const L = state.recDraft || [];
+  if(!L.length) return '<p class="small muted" style="margin:8px 0 0;">Nenhuma outra receita cadastrada ainda.</p>';
+  return L.map((x,i)=>
+    '<div class="pd-row"><div class="pd-l1"><span class="pd-n">'+(i+1)+'. Receita</span><button type="button" class="btn danger small" data-action="rd-del" data-i="'+i+'">remover</button></div>'+
+    '<div class="field"><input data-rd="origem" data-i="'+i+'" maxlength="80" value="'+escapeHtml(x.origem)+'" placeholder="Origem da receita"></div>'+
+    '<div class="field"><input data-rd="doador" data-i="'+i+'" maxlength="80" value="'+escapeHtml(x.doador)+'" placeholder="Doador"></div>'+
+    '<div class="pd-l2"><input type="date" data-rd="data" data-i="'+i+'" value="'+escapeHtml(x.data)+'" aria-label="Data da receita"><input inputmode="decimal" data-rd="valor" data-i="'+i+'" value="'+escapeHtml(x.valor)+'" placeholder="Valor (R$)" aria-label="Valor da receita"></div></div>'
+  ).join('') + relLinhaHtml('Total de outras receitas', fmtBRLfront(rdTotal()), 'rel-sub');
+}
+function receitasDraftHtml(e){
+  if(state.recDraft == null){
+    state.recDraft = ((e && e.receitas) || []).map(x=>({origem:x.origem, doador:x.doador||'', data:x.data||'', valor:inputValorBRL(x.valor)}));
+    state.recDirty = false;
+  }
+  return '<div class="evt-novo pd-add"><div class="stack-tit">Adicionar outra receita</div>'+
+    '<div class="field"><label>Origem da receita</label><input id="rd-orig" maxlength="80" placeholder="Ex.: Patrocínio, doação, rifa"></div>'+
+    '<div class="field"><label>Doador</label><input id="rd-doad" maxlength="80" placeholder="Quem doou / pagou"></div>'+
+    '<div class="pd-l2"><div class="field"><label>Data da receita</label><input type="date" id="rd-data"></div>'+
+    '<div class="field"><label>Valor da receita (R$)</label><input id="rd-valor" inputmode="decimal" placeholder="0,00"></div></div>'+
+    '<div class="btn-row"><button type="button" class="btn" data-action="rd-add">Adicionar receita</button></div></div>'+
+    '<div id="rd-lista">'+receitasDraftListaHtml()+'</div>';
+}
+function rdRerender(){ const el = document.getElementById('rd-lista'); if(el) el.innerHTML = receitasDraftListaHtml(); }
+function rdAdicionar(){
+  const g = id => document.getElementById(id);
+  const origem = g('rd-orig').value.trim();
+  if(origem.length < 2){ alert('Informe a origem da receita.'); return; }
+  if(!g('rd-valor').value.trim()){ alert('Informe o valor da receita.'); return; }
+  state.recDraft.push({origem, doador:g('rd-doad').value.trim(), data:g('rd-data').value, valor:g('rd-valor').value.trim()});
+  state.recDirty = true;
+  g('rd-orig').value = ''; g('rd-doad').value = ''; g('rd-valor').value = '';
+  rdRerender(); g('rd-orig').focus();
+}
 // ---- despesas do evento: rascunho dentro do cadastro do evento (gravado junto com o evento)
 function ddTotal(){ return (state.despDraft||[]).reduce((t,x)=>t+pdNum(x.valor), 0); }
 function despesasDraftListaHtml(){
@@ -2841,6 +2893,7 @@ function eventoEditorHtml(key, e, respOpc){
       '<label class="small" style="display:block;margin-top:6px;"><input type="checkbox" id="ev-ocultar-'+key+'" '+(e.ocultarValores?'':'checked')+'> Mostrar os valores <strong>arrecadado</strong> e <strong>a receber</strong> no resumo dos participantes</label>'+
       '<p class="small muted" style="margin:4px 0 8px;">Só um evento por vez exibe a lista. Os participantes são gravados ao tocar em "'+(novo?'Criar evento':'Salvar alterações')+'".</p>'+
       partDraftHtml(e))+
+    eventoSecao('verde', '💰 OUTRAS RECEITAS', 'Origem, valor, data e doador (somam no DRE e nos gráficos do evento)', receitasDraftHtml(e))+
     eventoSecao('vermelho', '💸 DESPESAS', 'Despesa, fornecedor, data e valor (alimentam o DRE do evento)', despesasDraftHtml(e))+
     '<div class="btn-row"><button class="btn" data-action="salvar-evento" data-id="'+key+'">'+(novo?'Criar evento':'Salvar alterações')+'</button>'+
     '<button class="btn secondary" data-action="cancelar-edicao-evento">Cancelar</button></div></div>';
@@ -2873,6 +2926,7 @@ function renderAgendaAdminHtml(agenda, respOpc){
           (e.local?'<span class="badge">📍 local</span>':'')+(e.responsavel?'<span class="badge">👤 '+escapeHtml(e.responsavel)+'</span>':'')+'</div>'+
         '<div class="evt-cad-chips">'+(!e.ativo?'':(e.soAba?'<span class="badge">🎉 só na aba Eventos</span>':'<span class="badge">🏠 início + aba</span>'))+
           (e.mostrarParticipantes?'<span class="badge">📋 lista</span>':'')+(e.mostrarParticipantes&&e.ocultarValores?'<span class="badge">🙈 sem valores</span>':'')+(e.pgtoAtivo?'<span class="badge">💳 pagamento</span>':'')+
+          ((e.receitas&&e.receitas.length)?'<span class="badge">💰 '+e.receitas.length+' receita'+(e.receitas.length===1?'':'s')+'</span>':'')+
           ((e.despesas&&e.despesas.length)?'<span class="badge">💸 '+e.despesas.length+' despesa'+(e.despesas.length===1?'':'s')+'</span>':'')+'</div>'+
         '<div class="evt-cad-acoes">'+
           (e.mostrarParticipantes?'<button type="button" class="btn secondary small" data-action="editar-evento" data-id="'+e.id+'">👥 Participantes'+nPart+'</button>':'')+
@@ -2899,12 +2953,13 @@ async function handleSalvarEvento(key){
   const data = g('ev-data').value;
   if(!nome || !data){ alert('Informe nome e data.'); return; }
   const corpo = {nome, data, descricao:g('ev-desc').value, responsavel:g('ev-resp').value, ativo:g('ev-exib').value!=='oculto', soAba:g('ev-exib').value==='aba', ...lerEventoExtras(key)};
+  if(state.recDirty) corpo.receitas = (state.recDraft||[]).map(x=>({origem:x.origem, doador:x.doador, data:x.data, valor:x.valor}));
   if(state.despDirty) corpo.despesas = (state.despDraft||[]).map(x=>({despesa:x.despesa, fornecedor:x.fornecedor, data:x.data, valor:x.valor}));
   if(state.partDirty) corpo.participantes = (state.partDraft||[]).map(p=>({nome:p.nome, valor:p.valor, status:p.status, valorPago:p.pago}));
   try{
     if(key==='novo') await api('/api/admin/agenda', {method:'POST', adminAuth:true, body:corpo});
     else await api('/api/admin/agenda/'+key, {method:'PUT', adminAuth:true, body:corpo});
-    state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.eventoDre = null; state.eventoDreAberto = null;
+    state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.recDraft = null; state.recDirty = false; state.eventoDre = null; state.eventoDreAberto = null;
     await refreshEvento();
     await refreshHomeExtras();
     await render();
@@ -3035,7 +3090,7 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   if(action==='salvar-perfil') return handleSalvarPerfil();
   if(action==='cancelar-troca-pin') return handleCancelarTrocaPin();
   if(action==='tab'){
-    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; state.partDraft=null; state.partDirty=false; state.despDraft=null; state.despDirty=false; state.eventoDre=null; state.eventoDreAberto=null;
+    state.tab = el.dataset.tab; state.editingJogadorId=null; state.editingEventoId=null; state.partDraft=null; state.partDirty=false; state.despDraft=null; state.despDirty=false; state.recDraft=null; state.recDirty=false; state.eventoDre=null; state.eventoDreAberto=null;
     if(['sorteio','resenha','votacao'].includes(state.tab)) await irParaRodadaMaisRecente();
     return render();
   }
@@ -3123,6 +3178,12 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
     if(!p || !confirm('Remover "'+p.nome+'" da lista de participantes?\n\nA alteração só é gravada quando você tocar em "Criar evento" ou "Salvar alterações".')) return;
     state.partDraft.splice(Number(el.dataset.i), 1); state.partDirty = true; return pdRerender();
   }
+  if(action==='rd-add') return rdAdicionar();
+  if(action==='rd-del'){
+    const x = state.recDraft[Number(el.dataset.i)];
+    if(!x || !confirm('Remover a receita "'+(x.origem||'sem nome')+'"'+(x.valor?' ('+x.valor+')':'')+'? A alteração só é gravada quando você tocar em "Criar evento" ou "Salvar alterações".')) return;
+    state.recDraft.splice(Number(el.dataset.i), 1); state.recDirty = true; return rdRerender();
+  }
   if(action==='dd-add') return ddAdicionar();
   if(action==='dd-del'){
     const x = state.despDraft[Number(el.dataset.i)];
@@ -3131,9 +3192,9 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
   }
   if(action==='evento-dre-toggle') return handleEventoDreToggle(el.dataset.id);
   if(action==='baixar-evento-dre') return handleBaixarEventoDre(el.dataset.id, el.dataset.fmt);
-  if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
-  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
-  if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; return render(); }
+  if(action==='evento-novo'){ state.editingEventoId = 'novo'; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.recDraft = null; state.recDirty = false; return render(); }
+  if(action==='editar-evento'){ state.editingEventoId = el.dataset.id; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.recDraft = null; state.recDirty = false; return render(); }
+  if(action==='cancelar-edicao-evento'){ state.editingEventoId = null; state.partDraft = null; state.partDirty = false; state.despDraft = null; state.despDirty = false; state.recDraft = null; state.recDirty = false; return render(); }
   if(action==='salvar-evento') return handleSalvarEvento(el.dataset.id);
   if(action==='toggle-evento-ativo') return handleToggleEventoAtivo(el.dataset.id, el.dataset.ativo);
   if(action==='remover-evento') return handleRemoverEvento(el.dataset.id, el.dataset.nome);
@@ -3150,10 +3211,16 @@ document.getElementById('shell').addEventListener('click', async (e)=>{
 
 document.getElementById('shell').addEventListener('input', (e)=>{
   const t = e.target;
+  if(t && t.dataset && t.dataset.rd && state.recDraft && state.recDraft[Number(t.dataset.i)]){ state.recDraft[Number(t.dataset.i)][t.dataset.rd] = t.value; state.recDirty = true; }
   if(t && t.dataset && t.dataset.dd && state.despDraft && state.despDraft[Number(t.dataset.i)]){ state.despDraft[Number(t.dataset.i)][t.dataset.dd] = t.value; state.despDirty = true; }
   if(t && t.dataset && t.dataset.pd && state.partDraft && state.partDraft[Number(t.dataset.i)]){ state.partDraft[Number(t.dataset.i)][t.dataset.pd] = t.value; state.partDirty = true; }
 });
 document.getElementById('shell').addEventListener('change', async (e)=>{
+  if(e.target.dataset && e.target.dataset.rd && state.recDraft && state.recDraft[Number(e.target.dataset.i)]){
+    state.recDraft[Number(e.target.dataset.i)][e.target.dataset.rd] = e.target.value; state.recDirty = true;
+    if(e.target.dataset.rd==='valor') rdRerender();
+    return;
+  }
   if(e.target.dataset && e.target.dataset.dd && state.despDraft && state.despDraft[Number(e.target.dataset.i)]){
     state.despDraft[Number(e.target.dataset.i)][e.target.dataset.dd] = e.target.value; state.despDirty = true;
     if(e.target.dataset.dd==='valor') ddRerender();
