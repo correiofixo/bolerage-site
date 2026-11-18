@@ -827,10 +827,10 @@ function eventoLinhaHtml(p, i){
 }
 function eventoTotaisHtml(t){
   return '<div class="kpi-grid">'+
+    '<div class="kpi kpi-sm kpi-azul kpi-full"><div class="kpi-num">'+t.qtd+' <span class="kpi-un">participante'+(t.qtd===1?'':'s')+'</span></div><div class="kpi-rot kpi-uma">'+t.pagos+' pago total · '+t.parciais+' pago parcial · '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+'</div></div>'+
     '<div class="kpi kpi-sm kpi-verde"><div class="kpi-num">'+fmtBRLfront(t.arrecadado)+'</div><div class="kpi-rot">arrecadado</div></div>'+
     '<div class="kpi kpi-sm kpi-vermelho"><div class="kpi-num">'+fmtBRLfront(t.aReceber)+'</div><div class="kpi-rot">a receber</div></div>'+
-    '<div class="kpi kpi-sm kpi-dourado"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
-    '<div class="kpi kpi-sm kpi-azul kpi-full"><div class="kpi-num">'+t.qtd+' <span class="kpi-un">participante'+(t.qtd===1?'':'s')+'</span></div><div class="kpi-rot kpi-uma">'+t.pagos+' pago total · '+t.parciais+' pago parcial · '+t.pendentes+' pendente'+(t.pendentes===1?'':'s')+'</div></div>'+
+    '<div class="kpi kpi-sm kpi-dourado kpi-full kpi-centro"><div class="kpi-num">'+String(t.pctPago).replace('.',',')+'%</div><div class="kpi-rot">do total já pago</div></div>'+
   '</div>';
 }
 function pagamentoEventoHtml(pg){
@@ -876,7 +876,8 @@ function localBotoesHtml(e){
 }
 function participantesBlocoHtml(l){
   const t = l.totais;
-  return '<div class="evt-bloco"><div class="stack-tit">Resumo dos participantes</div>'+eventoTotaisHtml(t)+
+  // Card 4: resumo (centralizado) + gráfico; Card 5: lista de participantes
+  return '<div class="card hz hz-dourado evt-resumo"><div class="stack-tit">Resumo dos participantes</div>'+eventoTotaisHtml(t)+
     pizzaHtml('', [
       {label:'Pago Total', valor:t.pagos, cor:'#3FAE58', txt:t.pagos+' participante'+(t.pagos===1?'':'s')},
       {label:'Pago Parcial', valor:t.parciais, cor:'#F0902E', txt:t.parciais+' participante'+(t.parciais===1?'':'s')},
@@ -891,13 +892,23 @@ function renderEventoAbaHtml(){
   if(!eventos.length) return '<div class="empty">Nenhum evento cadastrado ainda.</div>';
   let h = '';
   eventos.forEach(e=>{
-    h += '<div class="card hz hz-verde evt-card"><div class="evt-card-topo"><h3 class="evt-card-nome">'+escapeHtml(e.nome)+'</h3><span class="badge">'+formatDataBR(e.data)+'</span></div>'+
-      (e.descricao ? '<p class="small avisos-text" style="margin:6px 0;">'+escapeHtml(e.descricao)+'</p>' : '')+
-      (e.responsavel ? '<div class="small muted">👤 Gestor: <strong style="color:var(--text)">'+escapeHtml(nomeExibicaoPorNomeReal(e.responsavel))+'</strong></div>' : '')+
-      localBotoesHtml(e)+
-      pagamentoEventoHtml(e.pagamento)+
-      ((e.mostrarParticipantes && l && l.participantes.length) ? participantesBlocoHtml(l) : (e.mostrarParticipantes ? '<p class="small muted">A lista de participantes ainda não foi cadastrada.</p>' : ''))+
-    '</div>';
+    const wa = waLink(e.responsavelTel);
+    // Card 1: nome, data e descrição
+    h += '<div class="card hz hz-roxo evt-c1"><h3 class="evt-card-nome">'+escapeHtml(e.nome)+'</h3><div class="evt-data">'+formatDataBR(e.data)+'</div>'+
+      (e.descricao ? '<p class="small avisos-text evt-desc">'+escapeHtml(e.descricao)+'</p>' : '')+'</div>';
+    // Card 2: gestor (com WhatsApp quando há telefone)
+    if(e.responsavel){
+      h += '<div class="card hz hz-azul evt-c2"><div class="evt-gestor">👤 Gestor: <strong>'+escapeHtml(nomeExibicaoPorNomeReal(e.responsavel))+'</strong>'+
+        (wa ? '<a class="wa-link" href="'+wa+'" target="_blank" rel="noopener" title="Falar no WhatsApp">'+WA_ICON+'</a>' : '')+'</div></div>';
+    }
+    // Card 3: local (Waze / Maps / Uber)
+    if(e.local) h += '<div class="card hz hz-ciano evt-c3">'+localBotoesHtml(e)+'</div>';
+    // dados para pagamento do evento
+    if(e.pagamento && (e.pagamento.nome || e.pagamento.chavePix || e.pagamento.valor)) h += '<div class="card hz hz-verde evt-c-pgto">'+pagamentoEventoHtml(e.pagamento)+'</div>';
+    // Cards 4 e 5: resumo + lista de participantes
+    if(e.mostrarParticipantes){
+      h += (l && l.participantes.length) ? participantesBlocoHtml(l) : '<div class="card hz hz-dourado"><p class="small muted" style="margin:0;text-align:center;">A lista de participantes ainda não foi cadastrada.</p></div>';
+    }
   });
   return h;
 }
