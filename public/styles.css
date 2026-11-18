@@ -1120,3 +1120,25 @@ body.na-tela-login #login-screen{
   .pg-val{font-size:min(16px,max(8px,calc((100cqw - 96px) * 1.5 / var(--n))));}
   .pg-long .pg-val{font-size:min(16px,max(8px,calc(96cqw * 1.5 / var(--n))));}
 }
+
+/* ---- v6.3: card de pagamento do evento igual ao do Aluguel da Quadra (rótulo à esquerda, valor à direita) ---- */
+.pg-row{flex-wrap:wrap;justify-content:space-between;align-items:center;column-gap:8px;row-gap:2px;}
+.pg-rot{font-size:clamp(13px,4vw,16px);}
+.pg-val,.pg-valor,.pg-chave{font-weight:400;color:var(--text);}
+.pg-val{flex:0 1 auto;margin-left:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;text-align:right;
+  font-size:min(16px,max(11px,calc((100vw - 190px) * 1.7 / var(--n))));}
+.pg-pixv{display:flex;align-items:center;gap:8px;margin-left:auto;max-width:100%;min-width:0;white-space:nowrap;}
+.pg-chave{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:right;letter-spacing:0;
+  font-size:min(16px,max(11px,calc((100vw - 210px) * 1.8 / var(--n))));}
+.pg-pixv .btn{flex:0 0 auto;}
+@supports (width:1cqw){
+  .pg-val{font-size:min(16px,max(11px,calc((100cqw - 100px) * 1.7 / var(--n))));}
+  .pg-chave{font-size:min(16px,max(11px,calc((100cqw - 160px) * 1.8 / var(--n))));}
+}
+/* v6.3b: ajuste fino (se não couber ao lado do rótulo, o valor desce sozinho para a linha de baixo) */
+.pg-val{font-size:min(16px,max(11px,calc((100vw - 190px) * 1.9 / var(--n))));}
+.pg-chave{font-size:min(16px,max(10px,calc((100vw - 210px) * 1.9 / var(--n))));}
+@supports (width:1cqw){
+  .pg-val{font-size:min(16px,max(11px,calc((100cqw - 100px) * 1.9 / var(--n))));}
+  .pg-chave{font-size:min(16px,max(10px,calc((100cqw - 160px) * 1.9 / var(--n))));}
+}
